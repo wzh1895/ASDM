@@ -14,5 +14,5 @@ This library is made public under the MIT licence.
 
 ## Author
 **Wang Zhao**  
-PhD candidate at University of Strachclyde, UK   
+PhD candidate at University of Strathclyde, UK   
 <wang.zhao@strath.ac.uk>  
