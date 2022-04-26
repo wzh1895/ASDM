@@ -1,0 +1,8 @@
+notebook
+numpy
+pandas
+matplotlib
+scipy
+networkx
+pymc3
+arviz
