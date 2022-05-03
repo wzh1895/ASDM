@@ -45,7 +45,7 @@ We use a series of Jupyter Notebooks to provide functionality guidance for the u
 
 Acknowledging that there are a number of SD tools that enable simulating SD models in a Python environment (see [PySD](https://github.com/JamesPHoughton/pysd) and [venpy](https://github.com/pbreach/venpy.git)), we build ASDM to bring the capability of **structure modelling** to the Python SD community. ASDM allows users to create an SD model from scratch and edit model structure as needed. With a native Python implementation of stock-and-flow structure, ASDM allows building SD models without software like [Vensim](https://vensim.com/) and [Stella](https://www.iseesystems.com/store/products/stella-architect.aspx).
 
-The long-term goal ASDM intends to achieve is an approach for **data-informed structure modelling** where data can be used to finetune SD model structure automatically. This is both an extension to data-informed SD model parameter estimation, and an innovative way to discover feedback structures from data.
+The long-term goal ASDM intends to achieve is an approach for **data-informed structure modelling** where data can be used to finetune SD model structure automatically. This is both an extension of data-informed SD model parameter estimation, and an innovative way to discover feedback structures from data.
 
 ## Limitations
 
