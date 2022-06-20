@@ -2,17 +2,42 @@
 
 ## **Agile System Dynamics Modelling**
 
-This project is a Python-based tool that could be used for **building, simulating, calibrating, and carrying out analyses of System Dynamics (SD) models**.
+This project is a Python-based tool that could be used for building, simulating, calibrating, and carrying out analyses of System Dynamics (SD) models.
 
 ## How to use
 
-The library is tested under Python 3.8.12 on Ubuntu Linux.
+### Python version
 
-To clone this repository, please make sure that ```git``` is installed in your system and use the following command:
+The library is tested under Python 3.7.13 on Ubuntu Linux. It is supposed to work also on higher versions of Python. If you encounter problems using it please contact the author through email or open an issue.
 
-```git clone https://github.com/wzh1895/ASDM.git```
+### OS
 
-Please set up the environment following ```requirements.txt``` and refer to the Jupyter notebooks for examples.
+It has been noticed that on macOS, the multi-thread sampling of PyMC3 does not work well. This is due to the fact that macOS handles multiprocess in a different way. The impact is that we can only use one thread to do multi-chain MCMC sampling which is much slower.
+
+Although the rest of the functionalities of ASDM still work on macOS, we recommend that you switch to Linux for the optimal parameter estimation experience.
+
+### Dependencies
+
+We recommend that you ues anaconda to manage the dependencies and use a dedicated fresh environment for ASDM.
+
+To create such an environment:
+
+```
+conda create --name asdm
+```
+
+To clone this repository to your local environment, please make sure that ```git``` is installed in your system and use the following command:
+
+```
+git clone https://github.com/wzh1895/ASDM.git
+```
+
+To install all dependencies:
+
+```
+cd ASDM
+conda install --file requirements.txt -c conda-forge
+```
 
 ## Tutorial Notebooks
 
