@@ -1,3 +1,4 @@
+from turtle import delay
 from scipy import stats
 import networkx as nx
 import pandas as pd
@@ -136,6 +137,7 @@ class Structure(object):
         self.MULTIPLICATION = self.multiplication
         self.RBINOM = self.rbinom
         self.DELAY1 = self.delay1
+        self.INIT = self.init
 
         self.function_names = [
             self.LINEAR, 
@@ -144,12 +146,18 @@ class Structure(object):
             self.ADDITION, 
             self.MULTIPLICATION,
             self.RBINOM,
-            self.DELAY1
+            self.DELAY1,
+            self.INIT
         ]
 
         self.custom_functions = {
             'rbinom': self.rbinom,
             'delay1': self.delay1,
+            # 'init': self.init
+        }
+
+        self.time_related_functions = {
+            'init': self.init
         }
 
         # Polarity table for functions
@@ -160,7 +168,8 @@ class Structure(object):
             self.SUBTRACTION: {0:'positive', 1:'negative'},
             self.DIVISION: {0:'positive', 1:'negative'},
             self.RBINOM: {-1:'positive'},
-            self.DELAY1: {0:'positive', 1:'negative', 2:'positive'}
+            self.DELAY1: {0:'positive', 1:'negative', 2:'positive'},
+            self.INIT: {0:'positive'}
         }
 
         # Define equation-text converter
@@ -180,6 +189,7 @@ class Structure(object):
         self.delay_registers = dict()
         
         self.current_step = 1 # object-wise global indicator for current simulation step. start from 1 (values after the 1st step)
+        self.dt = 0.25
 
         # Initialisation indicator
         self.is_initialised = False
@@ -214,6 +224,10 @@ class Structure(object):
         return stats.binom.rvs(int(n), p, size=1)[0]
     
     def delay1(self, input, delay_time, initial_value=None):
+        delay_time = float(delay_time)
+        if initial_value is not None:
+            initial_value = float(initial_value) 
+        # print(input, delay_time, initial_value)
         # create a register for the cumulative effect
         if input not in self.delay_registers.keys():
             self.delay_registers[input] = dict({self.DELAY1:0}) # delay1:cumulative value
@@ -231,6 +245,11 @@ class Structure(object):
         self.delay_registers[input][self.DELAY1] += (input-output)*self.dt
 
         return output
+
+    def init(self, var, subscript):
+        # print('calculating init', var)
+        v = self.__name_values[var].sub_contents[subscript][0]
+        return v
 
     def get_function_polarity(self, function, para_position):
         func_pol = self.function_polarities[function]
@@ -290,57 +309,70 @@ class Structure(object):
         for i in range(len(factors)):
             factors[i] = factors[i].strip()
         return factors
+    
+    def parsing_init(self, equation):
+        # init takes 2 arguments: input and subscript
+        # looks like init(input:subscript.element)
+        print('parsing init', equation)
+        a = equation.split('(')[1]
+        b = a.split(')')[0]
+        factors = [b]
+        return factors
 
-    def expr_eval(self, equation):
-        outcome = [True, None]
-        try:
-            outcome[1] = eval(equation)
-        except:
-            # print("Cannot eval {}".format(equation))
-            outcome[0] = False
+    # def expr_eval(self, equation):
+    #     outcome = [True, None]
+    #     try:
+    #         outcome[1] = eval(equation)
+    #     except:
+    #         print("Cannot eval {}".format(equation))
+    #         outcome[0] = False
         
-        return outcome
+    #     return outcome
 
-    def text_to_equation(self, equation):
-        """
-        This equation could be
-        1) a constant number
-        2) a variable's name
-        3) another equation
-        """
+    # def text_to_equation(self, equation):
+    #     """
+    #     This equation could be
+    #     1) a constant number
+    #     2) a variable's name
+    #     3) another equation
+    #     """
 
-        # Consider evaluables such as 0.05, '0.05', '1-4'
-        eval_outcome = self.expr_eval(str(equation))  # eval can only process string
-        if eval_outcome[0]:
-            return [eval_outcome[1]]
+    #     # Consider evaluables such as 0.05, '0.05', '1-4'
+    #     eval_outcome = self.expr_eval(str(equation))  # eval can only process string
+    #     if eval_outcome[0]:
+    #         return [eval_outcome[1]]
 
-        # Consider equations that are not directly evaluable
-        elif '+' in equation:
-            factors = self.parsing_addition(equation)
-            return [self.ADDITION] + factors
+    #     # Consider equations that are not directly evaluable
+    #     elif '+' in equation:
+    #         factors = self.parsing_addition(equation)
+    #         return [self.ADDITION] + factors
         
-        elif '-' in equation:
-            factors = self.parsing_subtract(equation)
-            return [self.SUBTRACTION] + factors
+    #     elif '-' in equation:
+    #         factors = self.parsing_subtract(equation)
+    #         return [self.SUBTRACTION] + factors
 
-        elif '*' in equation:
-            factors = self.parsing_multiplication(equation)
-            return [self.MULTIPLICATION] + factors
+    #     elif '*' in equation:
+    #         factors = self.parsing_multiplication(equation)
+    #         return [self.MULTIPLICATION] + factors
 
-        elif '/' in equation:
-            factors = self.parsing_division(equation)
-            return [self.DIVISION] + factors
+    #     elif '/' in equation:
+    #         factors = self.parsing_division(equation)
+    #         return [self.DIVISION] + factors
         
-        elif re.search('rbinom', equation) is not None:
-            factors = self.parsing_rbinom(equation)
-            return [self.RBINOM] + factors
+    #     elif re.search('rbinom', equation) is not None:
+    #         factors = self.parsing_rbinom(equation)
+    #         return [self.RBINOM] + factors
 
-        elif re.search('delay1', equation) is not None:
-            factors = self.parsing_delay1(equation)
-            return [self.DELAY1] + factors
+    #     elif re.search('delay1', equation) is not None:
+    #         factors = self.parsing_delay1(equation)
+    #         return [self.DELAY1] + factors
+        
+    #     elif re.search('init', equation) is not None:
+    #         factors = self.parsing_init(equation)
+    #         return [self.INIT] + factors
 
-        else:
-            return equation
+    #     else:
+    #         return equation
 
     def equation_to_text(self, equation):
         if type(equation) == int or type(equation) == float:
@@ -477,6 +509,7 @@ class Structure(object):
     # Simulate a structure based on a certain set of parameters
     def simulate(self, simulation_time=25, dt=0.25):
         self.simulation_time = simulation_time
+        self.dt = dt
         total_steps = int(simulation_time / dt)
         
         # initialise the state of the stocks if this is the first run
@@ -716,7 +749,24 @@ class Structure(object):
             equation = self.sfd.nodes[name]['equation'].sub_contents[subscript][0]
             value = None
 
-            while type(value) not in [int, float, np.int64]: # take care of the numpy data types
+            while type(value) not in [int, float, np.int64]: # if value has not become a number (taking care of the numpy data types)
+                
+                # decide if the remaining expression is a time-related function (like init(), delay1())
+                func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
+                # print('0',func_names)
+                if len(func_names) != 0:
+                    func_name = func_names[0]
+                    if func_name in self.time_related_functions.keys():
+                        func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
+                        # print('1',func_args)
+                        func_args_split = func_args[0].split(",")
+                        # print('2',func_names[0], func_args_split)
+
+                        # pass args to the corresponding time-related function
+                        func_args_full = func_args_split + [subscript]
+                        value = self.time_related_functions[func_names[0]](*func_args_full)
+                        break
+
                 try:
                     value = eval(str(equation), self.custom_functions)
                 except NameError as e:
