@@ -386,7 +386,7 @@ class Structure(object):
             elif equation[0] == self.LINEAR:
                 return str(equation[1])
 
-    def __add_element(self, element_name, element_type, flow_from=None, flow_to=None, x=0, y=0, equation=None, points=None, external=False):
+    def __add_element(self, element_name, element_type, flow_from=None, flow_to=None, x=0, y=0, equation=None, points=None, external=False, non_negative=False):
         uid = self.__uid_manager.get_new_uid()
 
         # construct subscripted equation indexer
@@ -419,7 +419,8 @@ class Structure(object):
                         pos=[x, y],
                         equation=subscripted_equation,
                         points=points,
-                        external=external)
+                        external=external,
+                        non_negative=non_negative)
         print('Engine: adding element:', element_name, 'equation:', equation)
 
         return uid
@@ -555,7 +556,7 @@ class Structure(object):
         # print('All flows default_dt:', flows_dt)
 
         # calculating changes in stocks
-        # have a dictionary of affected stocks and their changes, for one flow could affect 2 stocks.
+        # have a dictionary of affected stocks and their changes, since one flow could affect 2 stocks.
         affected_stocks = dict()
         for flow in flows_dt.keys():
             successors = list(self.sfd.successors(flow))  # successors of a flow into a list
@@ -589,9 +590,14 @@ class Structure(object):
                 current_value = self.__name_values[stock].sub_contents[ix][-1]
                 delta_value = subscripted_values[ix]
                 # print(delta_value, type(delta_value), current_value, type(current_value))
-                self.__name_values[stock].sub_contents[ix].append(delta_value + current_value)
+                new_value = delta_value + current_value
+                if self.sfd.nodes[stock]['non_negative'] is True and new_value < 0:# if the stock in non-negative and the new value is below 0, keep its current value
+                    # self.__name_values[stock].sub_contents[ix].append(self.__name_values[stock].sub_contents[ix][-1])
+                    self.__name_values[stock].sub_contents[ix].append(0)
+                else:
+                    self.__name_values[stock].sub_contents[ix].append(new_value)
 
-        # for those stocks not affected, extend its 'values' by the same value as it is
+        # for those stocks not affected, extend its 'values' by its current value
         for node in self.sfd.nodes:
             if self.sfd.nodes[node]['element_type'] == 'stock':
                 if node not in affected_stocks.keys():
@@ -701,7 +707,7 @@ class Structure(object):
         except AttributeError:
             pass
         
-        # print('\nCLCLT', name)
+        # print('\nCalculating', name)
 
         if type(name) in [int, float]:
             return name
@@ -753,7 +759,7 @@ class Structure(object):
                 
                 # decide if the remaining expression is a time-related function (like init(), delay1())
                 func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
-                # print('0',func_names)
+                # print('0',func_names, 'in', equation)
                 if len(func_names) != 0:
                     func_name = func_names[0]
                     if func_name in self.time_related_functions.keys():
@@ -764,9 +770,15 @@ class Structure(object):
 
                         # pass args to the corresponding time-related function
                         func_args_full = func_args_split + [subscript]
-                        value = self.time_related_functions[func_names[0]](*func_args_full)
-                        break
+                        init_value = self.time_related_functions[func_names[0]](*func_args_full)
+                        
+                        # replace the init() parts in the equation with their values
+                        init_value_str = str(init_value)
+                        init_func_str = func_name+'\('+func_args[0]+'\)' # use '\' to mark '(' and ')', otherwise Python will see them as reg grammar
 
+                        equation = re.sub(init_func_str, init_value_str, equation) # in case init() is a part of an equation, substitue init() with its value
+                        # print('1', init_value_str, init_func_str, equation)
+                
                 try:
                     value = eval(str(equation), self.custom_functions)
                 except NameError as e:
@@ -776,6 +788,15 @@ class Structure(object):
                     val_str = str(val)
                     reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
                     equation = re.sub(reg, val_str, equation)
+            
+            if self.sfd.nodes[name]['element_type'] == 'flow': # if a flow is overdrafting from a non-negative stock, its value should be the remainder (current value) of the stock
+                flow_from_stock = self.sfd.nodes[name]['flow_from']
+                if flow_from_stock is not None:
+                    if self.sfd.nodes[flow_from_stock]['non_negative']:
+                        remainder_of_stock = self.__name_values[flow_from_stock].sub_contents[subscript][-1]
+                        if remainder_of_stock < value:
+                            value = remainder_of_stock
+            
             self.__name_values[name].sub_contents[subscript].append(value)
             
             try:  # when initialising stock values, there's no 'self.visited' yet
@@ -805,7 +826,7 @@ class Structure(object):
         self.is_initialised = False
 
     # Add elements on a stock-and-flow level (work with model file handlers)
-    def add_stock(self, name=None, equation=None, x=0, y=0):
+    def add_stock(self, name=None, equation=None, x=0, y=0, non_negative=False):
         """
         :param name: name of the stock
         :param equation: initial value
@@ -815,7 +836,7 @@ class Structure(object):
         """
         if equation is not None:
             # equation = self.text_to_equation(equation)
-            uid = self.__add_element(name, element_type='stock', x=x, y=y, equation=equation)
+            uid = self.__add_element(name, element_type='stock', x=x, y=y, equation=equation, non_negative=non_negative)
             # # the initial value of a stock should be added to its simulation value DataFrame
             # for ix in self.__name_values[name].sub_index:
             #     self.__name_values[name].sub_contents[ix].append(equation)
