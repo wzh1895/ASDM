@@ -129,4 +129,7 @@ dmypy.json
 .pyre/
 
 # Customised
-3rdPartyModels/
+TestModels/
+Smoking_Cessation_Model.png
+Smoking_Cessation_ASDM_model.ipynb
+Fix_Smoking_Cessation_ASDM_model.ipynb
