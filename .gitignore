@@ -130,6 +130,7 @@ dmypy.json
 
 # Customised
 TestModels/
+BuiltInTestModels/*.isdb
 Smoking_Cessation_Model.png
 Smoking_Cessation_ASDM_model.ipynb
 Fix_Smoking_Cessation_ASDM_model.ipynb
