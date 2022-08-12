@@ -128,7 +128,7 @@ class ExtFunc(object):
 
 class Structure(object):
     # def __init__(self, sfd=None, uid_manager=None, name_manager=None, subscripts=None, uid_element_name=None, subscript_manager=None):
-    def __init__(self, subscripts={'default_sub':['default_ele']}):
+    def __init__(self, subscripts={'default_sub':['default_ele']}, from_xmile=None):
         # Make alias for function names
         self.LINEAR = self.linear
         self.SUBTRACTION = self.subtraction
@@ -157,7 +157,8 @@ class Structure(object):
         }
 
         self.time_related_functions = {
-            'init': self.init
+            'init': self.init,
+            'INIT': self.init  # Stella uses capital INIT
         }
 
         # Polarity table for functions
@@ -193,6 +194,63 @@ class Structure(object):
 
         # Initialisation indicator
         self.is_initialised = False
+
+        # If the model is based on an XMILE file
+        if from_xmile is not None:
+            from pathlib import Path
+            xmile_path = Path(from_xmile)
+            if xmile_path.exists():
+                with open(xmile_path) as f:
+                    xmile_content = f.read().encode()
+                    f.close()
+                from bs4 import BeautifulSoup
+                root = BeautifulSoup(xmile_content, 'xml').find('variables') # omit names in view
+
+                stocks = root.findAll('stock')
+                flows = root.findAll('flow')
+                auxiliaries = root.findAll('aux')
+
+                inflow_stock = dict()
+                outflow_stock = dict()
+
+                # create stocks
+                for stock in stocks:
+                    self.add_stock(self.name_handler(stock.get('name')), equation=stock.find('eqn').text)
+                    
+                    inflows = stock.findAll('inflow')
+                    if len(inflows) != 0:
+                        for inflow in inflows:
+                            inflow_stock[inflow.text]=self.name_handler(stock.get('name'))
+                    outflows = stock.findAll('outflow')
+                    if len(outflows) != 0:
+                        for outflow in outflows:
+                            outflow_stock[outflow.text]=self.name_handler(stock.get('name'))
+
+                # create auxiliaries
+                for auxiliary in auxiliaries:
+                    self.add_aux(self.name_handler(auxiliary.get('name')), equation=auxiliary.find('eqn').text)
+
+                print('outflow:stock', outflow_stock)
+                print('inflow:stock', inflow_stock)
+
+                # create flows
+                for flow in flows:
+                    if self.name_handler(flow.get('name')) in inflow_stock.keys():
+                        flow_to = inflow_stock[self.name_handler(flow.get('name'))]
+                    else:
+                        flow_to = None
+                    
+                    if self.name_handler(flow.get('name')) in outflow_stock.keys():
+                        flow_from = outflow_stock[self.name_handler(flow.get('name'))]
+                    else:
+                        flow_from = None
+
+                    print(flow_from, flow_to)
+                    
+                    self.add_flow(self.name_handler(flow.get('name')), equation=flow.find('eqn').text, flow_from=flow_from, flow_to=flow_to)
+
+            else:
+                print("Specified model file does not exist.")
 
     def name_handler(self, name):
         return name.replace(' ', '_').replace('\n', '_')

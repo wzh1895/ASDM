@@ -5,3 +5,5 @@ pandas==1.3.5
 pymc3==3.11.4
 scipy==1.7.1
 Theano-PyMC==1.1.2
+lxml==4.9.1
+beautifulsoup4 == 4.11.1
