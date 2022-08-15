@@ -61,7 +61,10 @@ class SubscriptIndexer(object):
                 raise TypeError("Subscript elements should be described using a list.")
             self.subscript_names.append(name)
             self.subscript_elements.append(elements)
+
+        # create a plain list of flattened dim_ele tuples
         self.sub_index = pd.MultiIndex.from_product(self.subscript_elements, names=self.subscript_names)
+        # use the plain list to create subscripted eqn/values
         self.sub_contents = dict()
         for ix in self.sub_index:
             self.sub_contents[ix] = list()
@@ -181,6 +184,7 @@ class Structure(object):
         self.__name_manager = NameManager()
         self.__uid_element_name = dict()
         self.__name_values = dict() # centralised simulation data manager
+        self.__expression_values = dict() # centralised data manager for init(expression)
         self.__name_external_data = dict() # centralised external data manager
         
         # Specify if subscript is used
@@ -204,18 +208,70 @@ class Structure(object):
                     xmile_content = f.read().encode()
                     f.close()
                 from bs4 import BeautifulSoup
-                root = BeautifulSoup(xmile_content, 'xml').find('variables') # omit names in view
 
-                stocks = root.findAll('stock')
-                flows = root.findAll('flow')
-                auxiliaries = root.findAll('aux')
+                # read subscritps
+                subscripts_root = BeautifulSoup(xmile_content, 'xml').find('dimensions')
+                dimensions = subscripts_root.findAll('dim')
+
+                dims = dict()
+                for dimension in dimensions:
+                    name = dimension.get('name')
+                    try:
+                        size = dimension.get('size')
+                        dims[name] = [str(i) for i in range(1, int(size)+1)]
+                    except:
+                        elems = dimension.findAll('elem')
+                        elem_names = list()
+                        for elem in elems:
+                            elem_names.append(elem.get('name'))
+                        dims[name] = elem_names
+                print(dims)
+                self.subscripts = dims
+                
+                # read variables
+                variables_root = BeautifulSoup(xmile_content, 'xml').find('variables') # omit names in view
+                stocks = variables_root.findAll('stock')
+                flows = variables_root.findAll('flow')
+                auxiliaries = variables_root.findAll('aux')
 
                 inflow_stock = dict()
                 outflow_stock = dict()
 
+                # create var subscripted equation
+                def subscripted_equation(var):
+                    try:
+                        var_dimensions = var.find('dimensions').findAll('dim')
+                        # print(var_dimensions)
+
+                        var_dims = dict()
+                        for dimension in var_dimensions:
+                            name = dimension.get('name')
+                            # print(dimension)
+                            # print(name)
+                            var_dims[name] = dims[name]
+                        var_subscripted_eqn = SubscriptIndexer(var_dims)
+
+                        var_elements = var.findAll('element')
+                        if len(var_elements) != 0:
+                            for var_element in var_elements:
+                                list_of_elements_text = var_element.get('subscript') # something like "1, First"
+                                list_of_elements = list_of_elements_text.split(', ')
+                                tuple_of_elements = tuple(list_of_elements)
+                                element_eqn = var_element.find('eqn').text
+                                var_subscripted_eqn.sub_contents[tuple_of_elements].append(element_eqn)
+                        else: # all elements share the same equation
+                            var_equation = var.find('eqn').text
+                            for ixx in var_subscripted_eqn.sub_index:
+                                var_subscripted_eqn.sub_contents[ixx].append(var_equation)
+                        return(var_subscripted_eqn)
+                    except AttributeError:
+                        return(var.find('eqn').text)
+                        
+
                 # create stocks
                 for stock in stocks:
-                    self.add_stock(self.name_handler(stock.get('name')), equation=stock.find('eqn').text)
+                    # self.add_stock(self.name_handler(stock.get('name')), equation=stock.find('eqn').text)
+                    self.add_stock(self.name_handler(stock.get('name')), equation=subscripted_equation(stock))
                     
                     inflows = stock.findAll('inflow')
                     if len(inflows) != 0:
@@ -228,10 +284,11 @@ class Structure(object):
 
                 # create auxiliaries
                 for auxiliary in auxiliaries:
-                    self.add_aux(self.name_handler(auxiliary.get('name')), equation=auxiliary.find('eqn').text)
+                    # self.add_aux(self.name_handler(auxiliary.get('name')), equation=auxiliary.find('eqn').text)
+                    self.add_aux(self.name_handler(auxiliary.get('name')), equation=subscripted_equation(auxiliary))
 
-                print('outflow:stock', outflow_stock)
-                print('inflow:stock', inflow_stock)
+                # print('outflow:stock', outflow_stock)
+                # print('inflow:stock', inflow_stock)
 
                 # create flows
                 for flow in flows:
@@ -247,13 +304,14 @@ class Structure(object):
 
                     print(flow_from, flow_to)
                     
-                    self.add_flow(self.name_handler(flow.get('name')), equation=flow.find('eqn').text, flow_from=flow_from, flow_to=flow_to)
+                    # self.add_flow(self.name_handler(flow.get('name')), equation=flow.find('eqn').text, flow_from=flow_from, flow_to=flow_to)
+                    self.add_flow(self.name_handler(flow.get('name')), equation=subscripted_equation(flow), flow_from=flow_from, flow_to=flow_to)
 
             else:
-                print("Specified model file does not exist.")
+                raise Exception("Specified model file does not exist.")
 
     def name_handler(self, name):
-        return name.replace(' ', '_').replace('\n', '_')
+        return name.replace(' ', '_').replace('\\n', '_')
 
     # Define functions
     
@@ -306,7 +364,51 @@ class Structure(object):
 
     def init(self, var, subscript):
         # print('calculating init', var)
-        v = self.__name_values[var].sub_contents[subscript][0]
+        # case 1: var is a variable in the model
+        if var in self.sfd.nodes:
+            v = self.__name_values[var].sub_contents[subscript][0]
+        # case 2: var is an expression
+        else:
+            if var in self.__expression_values.keys():
+                v = self.__expression_values[var]
+            else:
+                equation = var
+                value = None
+                while type(value) not in [int, float, np.int64]: # if value has not become a number (taking care of the numpy data types)
+                
+                    # decide if the remaining expression is a time-related function (like init(), delay1())
+                    func_names = re.findall(r"(\w+)[(].+[)]", str(var))
+                    # print('0',func_names, 'in', equation)
+                    if len(func_names) != 0:
+                        func_name = func_names[0]
+                        if func_name in self.time_related_functions.keys():
+                            func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
+                            # print('1',func_args)
+                            func_args_split = func_args[0].split(",")
+                            # print('2',func_names[0], func_args_split)
+
+                            # pass args to the corresponding time-related function
+                            func_args_full = func_args_split + [subscript]
+                            init_value = self.time_related_functions[func_names[0]](*func_args_full)
+                            
+                            # replace the init() parts in the equation with their values
+                            init_value_str = str(init_value)
+                            init_func_str = func_name+'\('+func_args[0]+'\)' # use '\' to mark '(' and ')', otherwise Python will see them as reg grammar
+
+                            equation = re.sub(init_func_str, init_value_str, equation) # in case init() is a part of an equation, substitue init() with its value
+                            # print('1', init_value_str, init_func_str, equation)
+                    
+                    try:
+                        value = eval(str(equation), self.custom_functions)
+                    except NameError as e:
+                        s = e.args[0]
+                        p = s.split("'")[1]
+                        val = self.calculate_experiment(p, subscript)
+                        val_str = str(val)
+                        reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
+                        equation = re.sub(reg, val_str, equation)
+                self.__expression_values[var] = value
+                v = value
         return v
 
     def get_function_polarity(self, function, para_position):
@@ -587,10 +689,50 @@ class Structure(object):
         
     def init_stocks(self):
         for element in self.get_all_certain_type(['stock']):
+            print(element)
             for ix in self.sfd.nodes[element]['equation'].sub_index:
-                equ = self.sfd.nodes[element]['equation'].sub_contents[ix][0]
-                val = eval(str(equ)) # TODO this equation should be able to take var name as well
-                self.__name_values[element].sub_contents[ix].append(val)
+                equation = self.sfd.nodes[element]['equation'].sub_contents[ix][0]
+                print('EQU', equation)
+
+                # an adapted version of self.calculate_experiment() is implemented here to initialise stocks with
+                # initial value defined as an equation
+                value = None
+                while type(value) not in [int, float, np.int64]: # if value has not become a number (taking care of the numpy data types)
+                
+                    # decide if the remaining expression is a time-related function (like init(), delay1())
+                    func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
+                    # print('0',func_names, 'in', equation)
+                    if len(func_names) != 0:
+                        func_name = func_names[0]
+                        if func_name in self.time_related_functions.keys():
+                            func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
+                            # print('1',func_args)
+                            func_args_split = func_args[0].split(",")
+                            # print('2',func_names[0], func_args_split)
+
+                            # pass args to the corresponding time-related function
+                            func_args_full = func_args_split + [ix]
+                            init_value = self.time_related_functions[func_names[0]](*func_args_full)
+                            
+                            # replace the init() parts in the equation with their values
+                            init_value_str = str(init_value)
+                            init_func_str = func_name+'\('+func_args[0]+'\)' # use '\' to mark '(' and ')', otherwise Python will see them as reg grammar
+
+                            equation = re.sub(init_func_str, init_value_str, equation) # in case init() is a part of an equation, substitue init() with its value
+                            # print('1', init_value_str, init_func_str, equation)
+                    
+                    try:
+                        value = eval(str(equation), self.custom_functions)
+                    except NameError as e:
+                        s = e.args[0]
+                        p = s.split("'")[1]
+                        val = self.calculate_experiment(p, ix)
+                        val_str = str(val)
+                        reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
+                        equation = re.sub(reg, val_str, equation)
+
+
+                self.__name_values[element].sub_contents[ix].append(value)
         
         # set is_initialised flag to True
         self.is_initialised = True
