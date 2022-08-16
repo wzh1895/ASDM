@@ -1,5 +1,6 @@
-from turtle import delay
+from distutils.debug import DEBUG
 from scipy import stats
+from copy import deepcopy
 import networkx as nx
 import pandas as pd
 import numpy as np
@@ -67,15 +68,15 @@ class SubscriptIndexer(object):
         # use the plain list to create subscripted eqn/values
         self.sub_contents = dict()
         for ix in self.sub_index:
-            self.sub_contents[ix] = list()
+            self.sub_contents[ix] = None
 
     def clear_data(self):
         for ix in self.sub_index:
-            self.sub_contents[ix] = list()
+            self.sub_contents[ix] = None
 
-    def clear_stock_data(self):
-        for ix in self.sub_index:
-            self.sub_contents[ix] = self.sub_contents[ix][:1]
+    # def clear_stock_data(self):
+    #     for ix in self.sub_index:
+    #         self.sub_contents[ix] = self.sub_contents[ix][:1]
 
 
 class Data(object):
@@ -183,7 +184,9 @@ class Structure(object):
         self.__uid_manager = UidManager()
         self.__name_manager = NameManager()
         self.__uid_element_name = dict()
+        self.__time_slice_values = dict() # a time-slice of name values
         self.__name_values = dict() # centralised simulation data manager
+        self.__built_in_values = dict()
         self.__expression_values = dict() # centralised data manager for init(expression)
         self.__name_external_data = dict() # centralised external data manager
         
@@ -193,6 +196,8 @@ class Structure(object):
         # Define cumulative registers for time-related functions, such as delays
         self.delay_registers = dict()
         
+        self.initial_time = 0
+        self.current_time = self.initial_time
         self.current_step = 1 # object-wise global indicator for current simulation step. start from 1 (values after the 1st step)
         self.dt = 0.25
 
@@ -210,23 +215,26 @@ class Structure(object):
                 from bs4 import BeautifulSoup
 
                 # read subscritps
-                subscripts_root = BeautifulSoup(xmile_content, 'xml').find('dimensions')
-                dimensions = subscripts_root.findAll('dim')
+                try:
+                    subscripts_root = BeautifulSoup(xmile_content, 'xml').find('dimensions')
+                    dimensions = subscripts_root.findAll('dim')
 
-                dims = dict()
-                for dimension in dimensions:
-                    name = dimension.get('name')
-                    try:
-                        size = dimension.get('size')
-                        dims[name] = [str(i) for i in range(1, int(size)+1)]
-                    except:
-                        elems = dimension.findAll('elem')
-                        elem_names = list()
-                        for elem in elems:
-                            elem_names.append(elem.get('name'))
-                        dims[name] = elem_names
-                print(dims)
-                self.subscripts = dims
+                    dims = dict()
+                    for dimension in dimensions:
+                        name = dimension.get('name')
+                        try:
+                            size = dimension.get('size')
+                            dims[name] = [str(i) for i in range(1, int(size)+1)]
+                        except:
+                            elems = dimension.findAll('elem')
+                            elem_names = list()
+                            for elem in elems:
+                                elem_names.append(elem.get('name'))
+                            dims[name] = elem_names
+                    print(dims)
+                    self.subscripts = dims
+                except AttributeError:
+                    pass
                 
                 # read variables
                 variables_root = BeautifulSoup(xmile_content, 'xml').find('variables') # omit names in view
@@ -258,11 +266,11 @@ class Structure(object):
                                 list_of_elements = list_of_elements_text.split(', ')
                                 tuple_of_elements = tuple(list_of_elements)
                                 element_eqn = var_element.find('eqn').text
-                                var_subscripted_eqn.sub_contents[tuple_of_elements].append(element_eqn)
+                                var_subscripted_eqn.sub_contents[tuple_of_elements] = element_eqn
                         else: # all elements share the same equation
                             var_equation = var.find('eqn').text
                             for ixx in var_subscripted_eqn.sub_index:
-                                var_subscripted_eqn.sub_contents[ixx].append(var_equation)
+                                var_subscripted_eqn.sub_contents[ixx] = var_equation
                         return(var_subscripted_eqn)
                     except AttributeError:
                         return(var.find('eqn').text)
@@ -301,8 +309,6 @@ class Structure(object):
                         flow_from = outflow_stock[self.name_handler(flow.get('name'))]
                     else:
                         flow_from = None
-
-                    print(flow_from, flow_to)
                     
                     # self.add_flow(self.name_handler(flow.get('name')), equation=flow.find('eqn').text, flow_from=flow_from, flow_to=flow_to)
                     self.add_flow(self.name_handler(flow.get('name')), equation=subscripted_equation(flow), flow_from=flow_from, flow_to=flow_to)
@@ -366,7 +372,7 @@ class Structure(object):
         # print('calculating init', var)
         # case 1: var is a variable in the model
         if var in self.sfd.nodes:
-            v = self.__name_values[var].sub_contents[subscript][0]
+            v = self.__name_values[self.initial_time][var].sub_contents[subscript]
         # case 2: var is an expression
         else:
             if var in self.__expression_values.keys():
@@ -561,14 +567,14 @@ class Structure(object):
             for ix in subscripted_equation.sub_index:
                 for ixx in equation.sub_index:
                     if set(ixx).issubset(ix):
-                        subscripted_equation.sub_contents[ix].append(equation.sub_contents[ixx][0])
+                        subscripted_equation.sub_contents[ix] = equation.sub_contents[ixx]
         else:
             for ix in subscripted_equation.sub_index:
-                subscripted_equation.sub_contents[ix].append(equation)  # use the default equation for this subscript index
+                subscripted_equation.sub_contents[ix] = equation  # use the default equation for this subscript index
 
 
         # create a name_values binding for its simulation data
-        self.__name_values[element_name] = SubscriptIndexer(self.subscripts)
+        self.__time_slice_values[element_name] = SubscriptIndexer(self.subscripts)
 
         # create a node in the SFD graph
         self.sfd.add_node(element_name,
@@ -673,26 +679,34 @@ class Structure(object):
         self.dt = dt
         total_steps = int(simulation_time / dt)
         
-        # initialise the state of the stocks if this is the first run
+        # Setp 1 initialise the state of the stocks if this is the first run
+
         if self.is_initialised == False:
             self.init_stocks()
         else:
             self.update_stocks(dt)
         
+        # Step 2
+
         for _ in range(total_steps):
             self.update_states()
-            self.update_stocks(dt)
             self.current_step += 1  # update current_step counter
-            # print('cur step:', self.current_step)
+            self.current_time += self.dt
+            self.__built_in_values['TIME'].append(self.current_time)
+            self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
+            self.update_stocks(dt)
         
+        # Step 3
+
         self.update_states()
         
     def init_stocks(self):
+        self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
         for element in self.get_all_certain_type(['stock']):
             print(element)
             for ix in self.sfd.nodes[element]['equation'].sub_index:
-                equation = self.sfd.nodes[element]['equation'].sub_contents[ix][0]
-                print('EQU', equation)
+                equation = self.sfd.nodes[element]['equation'].sub_contents[ix]
+                # print('EQU', equation)
 
                 # an adapted version of self.calculate_experiment() is implemented here to initialise stocks with
                 # initial value defined as an equation
@@ -731,8 +745,7 @@ class Structure(object):
                         reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
                         equation = re.sub(reg, val_str, equation)
 
-
-                self.__name_values[element].sub_contents[ix].append(value)
+                self.__name_values[self.current_time][element].sub_contents[ix] = value
         
         # set is_initialised flag to True
         self.is_initialised = True
@@ -752,7 +765,7 @@ class Structure(object):
         for flow in flows_dt.keys():
             for ix in self.sfd.nodes[flow]['equation'].sub_index:
                 # flows_dt[flow][ix] = dt * self.calculate_experiment(flow, ix)
-                flows_dt[flow][ix] = dt * self.__name_values[flow].sub_contents[ix][-1]
+                flows_dt[flow][ix] = dt * self.__name_values[self.current_time-self.dt][flow].sub_contents[ix]
         # print('All flows default_dt:', flows_dt)
 
         # calculating changes in stocks
@@ -786,23 +799,23 @@ class Structure(object):
 
         # updating affected stocks values
         for stock, subscripted_values in affected_stocks.items():
-            for ix in self.__name_values[stock].sub_index:
-                current_value = self.__name_values[stock].sub_contents[ix][-1]
+            for ix in self.__name_values[self.current_time][stock].sub_index:
+                current_value = self.__name_values[self.current_time-self.dt][stock].sub_contents[ix]
                 delta_value = subscripted_values[ix]
                 # print(delta_value, type(delta_value), current_value, type(current_value))
                 new_value = delta_value + current_value
                 if self.sfd.nodes[stock]['non_negative'] is True and new_value < 0:# if the stock in non-negative and the new value is below 0, keep its current value
                     # self.__name_values[stock].sub_contents[ix].append(self.__name_values[stock].sub_contents[ix][-1])
-                    self.__name_values[stock].sub_contents[ix].append(0)
+                    self.__name_values[self.current_time][stock].sub_contents[ix] = 0
                 else:
-                    self.__name_values[stock].sub_contents[ix].append(new_value)
+                    self.__name_values[self.current_time][stock].sub_contents[ix] = new_value
 
         # for those stocks not affected, extend its 'values' by its current value
         for node in self.sfd.nodes:
             if self.sfd.nodes[node]['element_type'] == 'stock':
                 if node not in affected_stocks.keys():
-                    for ix in self.__name_values[node].sub_index:
-                        self.__name_values[node].sub_contents[ix].append(self.__name_values[node].sub_contents[ix][-1])
+                    for ix in self.__name_values[self.current_time][node].sub_index:
+                        self.__name_values[self.current_time][node].sub_contents[ix] = self.__name_values[self.current_time-self.dt][node].sub_contents[ix]
     
     def update_states(self):
         """
@@ -897,6 +910,7 @@ class Structure(object):
     #         return value
 
     def calculate_experiment(self, name, subscript):
+        # print('name:', name)
         # check if this value has been calculated and stored in buffer
         try:  # when initialising stock values, there's no 'self.visited' yet
             if name in self.visited.keys():
@@ -906,53 +920,57 @@ class Structure(object):
                     return value
         except AttributeError:
             pass
-        
-        # print('\nCalculating', name)
 
-        if type(name) in [int, float]:
+        # check if this value has been calculated
+        value = self.__name_values[self.current_time][name].sub_contents[subscript]
+        if value is not None:
+            return value
+        
+        elif type(name) in [int, float]:
             return name
 
-        elif type(self.sfd.nodes[name]['equation'].sub_contents[subscript][0]) is DataFeeder:
+        elif type(self.sfd.nodes[name]['equation'].sub_contents[subscript]) is DataFeeder:
             if name not in self.visited.keys():
-                value = self.sfd.nodes[name]['equation'].sub_contents[subscript][0](self.current_step)
-                self.__name_values[name].sub_contents[subscript].append(value)  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
+                value = self.sfd.nodes[name]['equation'].sub_contents[subscript](self.current_step)
+                self.__name_values[self.current_time][name].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
                 self.visited[name] = dict()
                 self.visited[name][subscript] = value  # mark it as visited and store the value
             elif subscript not in self.visited[name].keys():
-                value = self.sfd.nodes[name]['equation'].sub_contents[subscript][0](self.current_step)
-                self.__name_values[name].sub_contents[subscript].append(value)  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
+                value = self.sfd.nodes[name]['equation'].sub_contents[subscript](self.current_step)
+                self.__name_values[name].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
                 self.visited[name][subscript] = value  # mark it as visited and store the value
             else:
                 # value = self.__name_values[name].sub_contents[subscript][-1]
                 value = self.visited[name][subscript]
             return value
         
-        elif type(self.sfd.nodes[name]['equation'].sub_contents[subscript][0]) is ExtFunc:
+        elif type(self.sfd.nodes[name]['equation'].sub_contents[subscript]) is ExtFunc:
             if name not in self.visited.keys():
                 arg_values = list()
-                for arg in self.sfd.nodes[name]['equation'].sub_contents[subscript][0].args:
+                for arg in self.sfd.nodes[name]['equation'].sub_contents[subscript].args:
                     arg_values.append(self.calculate_experiment(arg, subscript))
-                value = self.sfd.nodes[name]['equation'].sub_contents[subscript][0].evaluate(arg_values)  
-                self.__name_values[name].sub_contents[subscript].append(value)
+                value = self.sfd.nodes[name]['equation'].sub_contents[subscript].evaluate(arg_values)  
+                self.__name_values[name].sub_contents[subscript] = value
                 self.visited[name] = dict()
                 self.visited[name][subscript] = value  # mark it as visited and store the value
             elif subscript not in self.visited[name].keys():
                 arg_values = list()
-                for arg in self.sfd.nodes[name]['equation'].sub_contents[subscript][0].args:
+                for arg in self.sfd.nodes[name]['equation'].sub_contents[subscript].args:
                     arg_values.append(self.calculate_experiment(arg, subscript))
-                value = self.sfd.nodes[name]['equation'].sub_contents[subscript][0].evaluate(arg_values)  
-                self.__name_values[name].sub_contents[subscript].append(value)
+                value = self.sfd.nodes[name]['equation'].sub_contents[subscript].evaluate(arg_values)  
+                self.__name_values[self.current_time][name].sub_contents[subscript] = value
                 self.visited[name][subscript] = value  # mark it as visited and store the value
             else:
                 value = self.visited[name][subscript]
             return value
 
         elif self.sfd.nodes[name]['element_type'] == 'stock':
-            equ = self.__name_values[name].sub_contents[subscript][-1]
+            print(self.__name_values.keys())
+            equ = self.__name_values[self.current_time][name].sub_contents[subscript]
             return equ
 
         else:  # calculation is needed
-            equation = self.sfd.nodes[name]['equation'].sub_contents[subscript][0]
+            equation = self.sfd.nodes[name]['equation'].sub_contents[subscript]
             value = None
 
             while type(value) not in [int, float, np.int64]: # if value has not become a number (taking care of the numpy data types)
@@ -993,11 +1011,11 @@ class Structure(object):
                 flow_from_stock = self.sfd.nodes[name]['flow_from']
                 if flow_from_stock is not None:
                     if self.sfd.nodes[flow_from_stock]['non_negative']:
-                        remainder_of_stock = self.__name_values[flow_from_stock].sub_contents[subscript][-1]
+                        remainder_of_stock = self.__name_values[self.current_time][flow_from_stock].sub_contents[subscript]
                         if remainder_of_stock < value:
                             value = remainder_of_stock
             
-            self.__name_values[name].sub_contents[subscript].append(value)
+            self.__name_values[self.current_time][name].sub_contents[subscript] = value
             
             try:  # when initialising stock values, there's no 'self.visited' yet
                 if name not in self.visited.keys():
@@ -1015,9 +1033,12 @@ class Structure(object):
         :return:
         """
         self.current_step = 1
+        self.current_time = 0
 
         for name in self.__name_values.keys():
             self.__name_values[name].clear_data()
+        
+        self.__built_in_values['TIME'] = list()
         
         # reset delay_registers
         self.delay_registers = dict()
@@ -1165,7 +1186,7 @@ class Structure(object):
             subscripts = pd.MultiIndex.from_product(subscript_elements, subscript_names)
         
         for ix in subscripts:
-            self.sfd.nodes[name]['equation'].sub_contents[ix][0] = new_equation
+            self.sfd.nodes[name]['equation'].sub_contents[ix] = new_equation
         
             # step 3:
             if type(new_equation_parsed[0]) not in [int, float]:
@@ -1206,17 +1227,21 @@ class Structure(object):
     # Return all simulation results as a pandas DataFrame
     def export_simulation_result(self):
         full_result = pd.DataFrame()
-        for node in self.sfd.nodes:
-            index = self.__name_values[node].sub_index.to_flat_index().to_list()
-            if len(index) != 1:
-                df = pd.DataFrame()
-                for ix in index:
-                    df[(node, ix)] = self.__name_values[node].sub_contents[ix]
-                full_result = pd.concat([full_result, df], axis=1)
-            else:
-                df = pd.DataFrame()
-                df[node] = self.__name_values[node].sub_contents[index[0]]
-                full_result = pd.concat([full_result, df], axis=1)
+        for time, values in self.__name_values.items():
+            time_result = pd.DataFrame(index=None)
+            time_result['TIME'] = [time]
+            for node in self.sfd.nodes:
+                index = self.__name_values[time][node].sub_index.to_flat_index().to_list()
+                if len(index) != 1:
+                    df = pd.DataFrame(index=None)
+                    for ix in index:
+                        df[(node, ix)] = [values[node].sub_contents[ix]]
+                    time_result = pd.concat([time_result, df], axis=1)
+                else:
+                    df = pd.DataFrame(index=None)
+                    df[node] = [values[node].sub_contents[index[0]]]
+                    time_result = pd.concat([time_result, df], axis=1)
+            full_result = pd.concat([full_result, time_result], ignore_index=True)
         return full_result
 
     # Draw results
