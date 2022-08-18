@@ -10,10 +10,7 @@ import random
 import math
 import re
 
-# from matplotlib.patches import FancyArrowPatch, Circle
-
 # random.seed(1)
-
 
 class UidManager(object):
     def __init__(self):
@@ -74,11 +71,6 @@ class SubscriptIndexer(object):
         for ix in self.sub_index:
             self.sub_contents[ix] = None
 
-    # def clear_stock_data(self):
-    #     for ix in self.sub_index:
-    #         self.sub_contents[ix] = self.sub_contents[ix][:1]
-
-
 class Data(object):
     def __init__(self, data_source):
         """
@@ -101,10 +93,6 @@ class DataFeeder(object):
     def __call__(self, current_step): # make a datafeeder callable
         if current_step >= self.from_step:
             ix, dp = next(self.ts_enumerator)
-            
-            # print(dp)
-            # print('num:', self.n)
-            # self.n+=1
 
             return(float(dp))
         else:
@@ -311,9 +299,6 @@ class Structure(object):
                     # self.add_aux(self.name_handler(auxiliary.get('name')), equation=auxiliary.find('eqn').text)
                     self.add_aux(self.name_handler(auxiliary.get('name')), equation=subscripted_equation(auxiliary))
 
-                # print('outflow:stock', outflow_stock)
-                # print('inflow:stock', inflow_stock)
-
                 # create flows
                 for flow in flows:
                     if self.name_handler(flow.get('name')) in inflow_stock.keys():
@@ -500,61 +485,6 @@ class Structure(object):
         b = a.split(')')[0]
         factors = [b]
         return factors
-
-    # def expr_eval(self, equation):
-    #     outcome = [True, None]
-    #     try:
-    #         outcome[1] = eval(equation)
-    #     except:
-    #         print("Cannot eval {}".format(equation))
-    #         outcome[0] = False
-        
-    #     return outcome
-
-    # def text_to_equation(self, equation):
-    #     """
-    #     This equation could be
-    #     1) a constant number
-    #     2) a variable's name
-    #     3) another equation
-    #     """
-
-    #     # Consider evaluables such as 0.05, '0.05', '1-4'
-    #     eval_outcome = self.expr_eval(str(equation))  # eval can only process string
-    #     if eval_outcome[0]:
-    #         return [eval_outcome[1]]
-
-    #     # Consider equations that are not directly evaluable
-    #     elif '+' in equation:
-    #         factors = self.parsing_addition(equation)
-    #         return [self.ADDITION] + factors
-        
-    #     elif '-' in equation:
-    #         factors = self.parsing_subtract(equation)
-    #         return [self.SUBTRACTION] + factors
-
-    #     elif '*' in equation:
-    #         factors = self.parsing_multiplication(equation)
-    #         return [self.MULTIPLICATION] + factors
-
-    #     elif '/' in equation:
-    #         factors = self.parsing_division(equation)
-    #         return [self.DIVISION] + factors
-        
-    #     elif re.search('rbinom', equation) is not None:
-    #         factors = self.parsing_rbinom(equation)
-    #         return [self.RBINOM] + factors
-
-    #     elif re.search('delay1', equation) is not None:
-    #         factors = self.parsing_delay1(equation)
-    #         return [self.DELAY1] + factors
-        
-    #     elif re.search('init', equation) is not None:
-    #         factors = self.parsing_init(equation)
-    #         return [self.INIT] + factors
-
-    #     else:
-    #         return equation
 
     def equation_to_text(self, equation):
         if type(equation) == int or type(equation) == float:
@@ -875,57 +805,6 @@ class Structure(object):
                     # if ix not in self.visited[element].keys():
                     self.calculate_experiment(element, ix)
                         # self.visited[element][ix] = v  # mark it as visited and store calculated value
-    
-    # def calculate_experiment(self, name, subscript):
-    #     print('\nCALC', name)
-    #     if type(name) in [int, float]:
-    #         return name
-        
-    #     elif type(self.sfd.nodes[name]['equation'].sub_contents[subscript][0]) is DataFeeder:
-    #         if (name, subscript) not in self.visited:
-    #             value = self.sfd.nodes[name]['equation'].sub_contents[subscript][0](self.current_step)
-    #             self.visited.append((name, subscript))  # mark it as visited
-    #         else:
-    #             value = self.__name_values[name].sub_contents[subscript][-1]
-    #         return value
-        
-    #     elif type(self.sfd.nodes[name]['equation'].sub_contents[subscript][0]) is ExtFunc:
-    #         if (name, subscript) not in self.visited:
-    #             arg_values = list()
-    #             for arg in self.sfd.nodes[name]['equation'].sub_contents[subscript][0].args:
-    #                 arg_values.append(self.calculate_experiment(arg, subscript))
-    #             value = self.sfd.nodes[name]['equation'].sub_contents[subscript][0].evaluate(arg_values)  
-    #             self.__name_values[name].sub_contents[subscript].append(value)
-    #             self.visited.append((name, subscript))  # mark it as visited
-    #         else:
-    #             value = self.__name_values[name].sub_contents[subscript][-1]
-    #         return value
-
-    #     elif self.sfd.nodes[name]['element_type'] == 'stock':
-    #         equ = self.__name_values[name].sub_contents[subscript][-1]
-    #         return equ
-
-    #     else:
-    #         equation = self.sfd.nodes[name]['equation'].sub_contents[subscript][0]
-    #         value = None
-
-    #         while type(value) not in [int, float, np.int64]: # take care of the numpy data types
-    #             try:
-    #                 value = eval(str(equation), self.custom_functions)
-    #             except NameError as e:
-    #                 s = e.args[0]
-    #                 p = s.split("'")[1]
-    #                 val = self.calculate_experiment(p, subscript)
-    #                 val_str = str(val)
-    #                 reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
-    #                 equation = re.sub(reg, val_str, equation)
-    #         self.__name_values[name].sub_contents[subscript].append(value)
-            
-    #         try:  # when initialising stock values, there's no 'self.visited' yet
-    #             self.visited.append((name, subscript))
-    #         except AttributeError:
-    #             pass
-    #         return value
 
     def calculate_experiment(self, expression, subscript):
         # print('expression:', expression)
