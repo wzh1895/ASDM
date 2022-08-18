@@ -186,7 +186,7 @@ class Structure(object):
         self.__uid_element_name = dict()
         self.__time_slice_values = dict() # a time-slice of name values
         self.__name_values = dict() # centralised simulation data manager
-        self.__built_in_values = dict()
+        self.__built_in_variables = dict()
         self.__expression_values = dict() # centralised data manager for init(expression)
         self.__name_external_data = dict() # centralised external data manager
         
@@ -683,6 +683,7 @@ class Structure(object):
 
         if self.is_initialised == False:
             self.init_stocks()
+            self.__built_in_variables['TIME'].append(self.initial_time)
         else:
             self.update_stocks(dt)
         
@@ -692,7 +693,7 @@ class Structure(object):
             self.update_states()
             self.current_step += 1  # update current_step counter
             self.current_time += self.dt
-            self.__built_in_values['TIME'].append(self.current_time)
+            self.__built_in_variables['TIME'].append(self.current_time)
             self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
             self.update_stocks(dt)
         
@@ -703,7 +704,6 @@ class Structure(object):
     def init_stocks(self):
         self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
         for element in self.get_all_certain_type(['stock']):
-            print(element)
             for ix in self.sfd.nodes[element]['equation'].sub_index:
                 equation = self.sfd.nodes[element]['equation'].sub_contents[ix]
                 # print('EQU', equation)
@@ -921,6 +921,10 @@ class Structure(object):
         except AttributeError:
             pass
 
+        # check if this is a system variable like TIME
+        if name in self.__built_in_variables.keys():
+            return self.__built_in_variables[name][-1]
+
         # check if this value has been calculated
         value = self.__name_values[self.current_time][name].sub_contents[subscript]
         if value is not None:
@@ -1038,7 +1042,7 @@ class Structure(object):
         for name in self.__name_values.keys():
             self.__name_values[name].clear_data()
         
-        self.__built_in_values['TIME'] = list()
+        self.__built_in_variables['TIME'] = list()
         
         # reset delay_registers
         self.delay_registers = dict()
