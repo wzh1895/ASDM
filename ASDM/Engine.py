@@ -909,80 +909,116 @@ class Structure(object):
     #             pass
     #         return value
 
-    def calculate_experiment(self, name, subscript):
-        # print('name:', name)
+    def calculate_experiment(self, expression, subscript):
+        # print('expression:', expression)
         # check if this value has been calculated and stored in buffer
-        try:  # when initialising stock values, there's no 'self.visited' yet
-            if name in self.visited.keys():
-                if subscript in self.visited[name].keys():
-                    # print('\nRETRV', name)
-                    value = self.visited[name][subscript]
-                    return value
-        except AttributeError:
-            pass
-
+        # when initialising stock values, there's no 'self.visited' yet
+        if expression in self.visited.keys():
+            # print('calc a')
+            # print(self.visited[expression])
+            if subscript in self.visited[expression].keys():
+                # print(self.visited[expression][subscript])
+                return self.visited[expression][subscript]
+            else:
+                pass
         # check if this is a system variable like TIME
-        if name in self.__built_in_variables.keys():
-            return self.__built_in_variables[name][-1]
+        if expression in self.__built_in_variables.keys():
+            # print('calc b')
+            return self.__built_in_variables[expression][-1]
 
+        elif type(expression) in [int, float]:
+            # print('calc d')
+            return expression
+            
         # check if this value has been calculated
-        value = self.__name_values[self.current_time][name].sub_contents[subscript]
-        if value is not None:
-            return value
+        # if expression in self.__name_values[self.current_time].keys(): # name might be equation such as 'a > b'
+        if expression in self.sfd.nodes and self.__name_values[self.current_time][expression].sub_contents[subscript] is not None:
+            # print('calc c')
+            return self.__name_values[self.current_time][expression].sub_contents[subscript]
         
-        elif type(name) in [int, float]:
-            return name
-
-        elif type(self.sfd.nodes[name]['equation'].sub_contents[subscript]) is DataFeeder:
-            if name not in self.visited.keys():
-                value = self.sfd.nodes[name]['equation'].sub_contents[subscript](self.current_step)
-                self.__name_values[self.current_time][name].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
-                self.visited[name] = dict()
-                self.visited[name][subscript] = value  # mark it as visited and store the value
-            elif subscript not in self.visited[name].keys():
-                value = self.sfd.nodes[name]['equation'].sub_contents[subscript](self.current_step)
-                self.__name_values[name].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
-                self.visited[name][subscript] = value  # mark it as visited and store the value
+        elif expression in self.sfd.nodes and type(self.sfd.nodes[expression]['equation'].sub_contents[subscript]) is DataFeeder:
+            # print('calc e')
+            if expression not in self.visited.keys():
+                value = self.sfd.nodes[expression]['equation'].sub_contents[subscript](self.current_step)
+                self.__name_values[self.current_time][expression].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
+                self.visited[expression] = dict()
+                self.visited[expression][subscript] = value  # mark it as visited and store the value
+            elif subscript not in self.visited[expression].keys():
+                value = self.sfd.nodes[expression]['equation'].sub_contents[subscript](self.current_step)
+                self.__name_values[expression].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
+                self.visited[expression][subscript] = value  # mark it as visited and store the value
             else:
                 # value = self.__name_values[name].sub_contents[subscript][-1]
-                value = self.visited[name][subscript]
+                value = self.visited[expression][subscript]
             return value
         
-        elif type(self.sfd.nodes[name]['equation'].sub_contents[subscript]) is ExtFunc:
-            if name not in self.visited.keys():
+        elif expression in self.sfd.nodes and type(self.sfd.nodes[expression]['equation'].sub_contents[subscript]) is ExtFunc:
+            # print('calc f')
+            if expression not in self.visited.keys():
                 arg_values = list()
-                for arg in self.sfd.nodes[name]['equation'].sub_contents[subscript].args:
+                for arg in self.sfd.nodes[expression]['equation'].sub_contents[subscript].args:
                     arg_values.append(self.calculate_experiment(arg, subscript))
-                value = self.sfd.nodes[name]['equation'].sub_contents[subscript].evaluate(arg_values)  
-                self.__name_values[name].sub_contents[subscript] = value
-                self.visited[name] = dict()
-                self.visited[name][subscript] = value  # mark it as visited and store the value
-            elif subscript not in self.visited[name].keys():
+                value = self.sfd.nodes[expression]['equation'].sub_contents[subscript].evaluate(arg_values)  
+                self.__name_values[expression].sub_contents[subscript] = value
+                self.visited[expression] = dict()
+                self.visited[expression][subscript] = value  # mark it as visited and store the value
+            elif subscript not in self.visited[expression].keys():
                 arg_values = list()
-                for arg in self.sfd.nodes[name]['equation'].sub_contents[subscript].args:
+                for arg in self.sfd.nodes[expression]['equation'].sub_contents[subscript].args:
                     arg_values.append(self.calculate_experiment(arg, subscript))
-                value = self.sfd.nodes[name]['equation'].sub_contents[subscript].evaluate(arg_values)  
-                self.__name_values[self.current_time][name].sub_contents[subscript] = value
-                self.visited[name][subscript] = value  # mark it as visited and store the value
+                value = self.sfd.nodes[expression]['equation'].sub_contents[subscript].evaluate(arg_values)  
+                self.__name_values[self.current_time][expression].sub_contents[subscript] = value
+                self.visited[expression][subscript] = value  # mark it as visited and store the value
             else:
-                value = self.visited[name][subscript]
+                value = self.visited[expression][subscript]
             return value
 
-        elif self.sfd.nodes[name]['element_type'] == 'stock':
-            print(self.__name_values.keys())
-            equ = self.__name_values[self.current_time][name].sub_contents[subscript]
-            return equ
+        elif expression in self.sfd.nodes and self.sfd.nodes[expression]['element_type'] == 'stock':
+            # print('calc g')
+            # print(self.__name_values.keys())
+            value = self.__name_values[self.current_time][expression].sub_contents[subscript]
+            return value
 
         else:  # calculation is needed
-            equation = self.sfd.nodes[name]['equation'].sub_contents[subscript]
+            # print('calc h')
+            if expression in self.sfd.nodes:
+                equation = self.sfd.nodes[expression]['equation'].sub_contents[subscript]
+            else:
+                equation = expression
+            # print('EQU', equation)
             value = None
 
-            while type(value) not in [int, float, np.int64]: # if value has not become a number (taking care of the numpy data types)
+            while type(value) not in [int, float, np.int64, bool]: # if value has not become a number (taking care of the numpy data types)
                 
-                # decide if the remaining expression is a time-related function (like init(), delay1())
+                # check if this is a conditional statement
+                if len(equation) > 2 and equation[:2] == 'IF':
+                    # print('calc h1')
+                    con_if = equation[2:].split('THEN')[0]
+                    con_then = equation[2:].split('THEN')[1].split('ELSE')[0]
+                    con_else = equation[2:].split('THEN')[1].split('ELSE')[1]
+                    if con_if is None:
+                        raise Exception("Condition IF cannot be None.")
+                    elif con_then is None and con_else is None:
+                        raise Exception("Condition THEN and ELSE cannot both be None")
+                    else:
+                        con_eval = self.calculate_experiment(con_if, subscript)
+                        # print(con_eval)
+                        if con_eval not in [True, False]:
+                            raise Exception("Condition IF must be True of False")
+                        elif con_eval:
+                            con_outcome = self.calculate_experiment(con_then, subscript)
+                        else:
+                            con_outcome = self.calculate_experiment(con_else, subscript)
+                    con_outcome = str(con_outcome)
+                    con_statement = 'IF'+con_if+'THEN'+con_then+'ELSE'+con_else
+                    # print('Constat', con_statement)
+                    equation = re.sub(con_statement, con_outcome, equation)
+
+                # check if the remaining expression is a time-related function (like init(), delay1())
                 func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
                 # print('0',func_names, 'in', equation)
                 if len(func_names) != 0:
+                    # print('calc h2')
                     func_name = func_names[0]
                     if func_name in self.time_related_functions.keys():
                         func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
@@ -1011,23 +1047,26 @@ class Structure(object):
                     reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
                     equation = re.sub(reg, val_str, equation)
             
-            if self.sfd.nodes[name]['element_type'] == 'flow': # if a flow is overdrafting from a non-negative stock, its value should be the remainder (current value) of the stock
-                flow_from_stock = self.sfd.nodes[name]['flow_from']
-                if flow_from_stock is not None:
-                    if self.sfd.nodes[flow_from_stock]['non_negative']:
-                        remainder_of_stock = self.__name_values[self.current_time][flow_from_stock].sub_contents[subscript]
-                        if remainder_of_stock < value:
-                            value = remainder_of_stock
-            
-            self.__name_values[self.current_time][name].sub_contents[subscript] = value
-            
-            try:  # when initialising stock values, there's no 'self.visited' yet
-                if name not in self.visited.keys():
-                    self.visited[name] = dict()
-                if subscript not in self.visited[name].keys():
-                    self.visited[name][subscript] = value
-            except AttributeError:
-                pass
+            if expression in self.sfd.nodes:
+                if self.sfd.nodes[expression]['element_type'] == 'flow': # if a flow is overdrafting from a non-negative stock, its value should be the remainder (current value) of the stock
+                    flow_from_stock = self.sfd.nodes[expression]['flow_from']
+                    if flow_from_stock is not None:
+                        if self.sfd.nodes[flow_from_stock]['non_negative']:
+                            remainder_of_stock = self.__name_values[self.current_time][flow_from_stock].sub_contents[subscript]
+                            if remainder_of_stock < value:
+                                value = remainder_of_stock
+                
+                self.__name_values[self.current_time][expression].sub_contents[subscript] = value
+
+                try:  # when initialising stock values, there's no 'self.visited' yet
+                    # print('calc updating vidited', expression, subscript, value)
+                    if expression in self.sfd.nodes: # only register those that are variable names in the model
+                        if expression not in self.visited.keys():
+                            self.visited[expression] = dict()
+                        if subscript not in self.visited[expression].keys():
+                            self.visited[expression][subscript] = value
+                except AttributeError:
+                    pass
             return value
 
 
