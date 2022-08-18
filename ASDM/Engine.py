@@ -200,6 +200,7 @@ class Structure(object):
         self.current_time = self.initial_time
         self.current_step = 1 # object-wise global indicator for current simulation step. start from 1 (values after the 1st step)
         self.dt = 0.25
+        self.simulation_time = 25
 
         # Initialisation indicator
         self.is_initialised = False
@@ -213,6 +214,21 @@ class Structure(object):
                     xmile_content = f.read().encode()
                     f.close()
                 from bs4 import BeautifulSoup
+
+                # read sim_specs
+                sim_specs_root = BeautifulSoup(xmile_content, 'xml').find('sim_specs')
+                sim_start = float(sim_specs_root.find('start').text)
+                sim_stop = float(sim_specs_root.find('stop').text)
+                sim_duration = sim_stop - sim_start
+                sim_dt_root = sim_specs_root.find('dt')
+                sim_dt = float(sim_dt_root.text)
+                if sim_dt_root.get('reciprocal') == 'true':
+                    sim_dt = 1/sim_dt
+                
+                self.initial_time = float(sim_start)
+                self.current_time = self.initial_time
+                self.dt = sim_dt
+                self.simulation_time = sim_duration
 
                 # read subscritps
                 try:
@@ -674,10 +690,12 @@ class Structure(object):
         return self.sfd.nodes[name]['pos']
 
     # Simulate a structure based on a certain set of parameters
-    def simulate(self, simulation_time=25, dt=0.25):
-        self.simulation_time = simulation_time
-        self.dt = dt
-        total_steps = int(simulation_time / dt)
+    def simulate(self, simulation_time=None, dt=None):
+        if simulation_time is not None:
+            self.simulation_time = simulation_time
+        if dt is not None:
+            self.dt = dt
+        total_steps = int(self.simulation_time / self.dt)
         
         # Setp 1 initialise the state of the stocks if this is the first run
 
@@ -685,7 +703,7 @@ class Structure(object):
             self.init_stocks()
             self.__built_in_variables['TIME'].append(self.initial_time)
         else:
-            self.update_stocks(dt)
+            self.update_stocks(self.dt)
         
         # Step 2
 
@@ -695,7 +713,7 @@ class Structure(object):
             self.current_time += self.dt
             self.__built_in_variables['TIME'].append(self.current_time)
             self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
-            self.update_stocks(dt)
+            self.update_stocks(self.dt)
         
         # Step 3
 
