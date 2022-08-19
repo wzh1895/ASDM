@@ -118,6 +118,22 @@ class ExtFunc(object):
         return v
 
 
+class GraphFunc(object):
+    def __init__(self, xscale, yscale, ypts, eqn):
+        self.xscale = xscale
+        self.yscale = yscale
+        self.ypts = ypts
+        self.eqn = eqn
+        
+        from scipy.interpolate import interp1d
+
+        self.xpts = np.linspace(self.xscale[0], self.xscale[1], num=len(self.ypts))
+        self.interp_func = interp1d(self.xpts, self.ypts, kind='linear')
+
+    def __call__(self, input):
+        return self.interp_func(input)
+
+
 class Structure(object):
     # def __init__(self, sfd=None, uid_manager=None, name_manager=None, subscripts=None, uid_element_name=None, subscript_manager=None):
     def __init__(self, subscripts={'default_sub':['default_ele']}, from_xmile=None):
@@ -213,7 +229,7 @@ class Structure(object):
                 if sim_dt_root.get('reciprocal') == 'true':
                     sim_dt = 1/sim_dt
                 
-                self.initial_time = float(sim_start)
+                self.initial_time = sim_start
                 self.current_time = self.initial_time
                 self.dt = sim_dt
                 self.simulation_time = sim_duration
@@ -248,10 +264,25 @@ class Structure(object):
 
                 inflow_stock = dict()
                 outflow_stock = dict()
+                
+                # read graph functions
+                def read_graph_func(var):
+                    xscale = [
+                        float(var.find('gf').find('xscale').get('min')),
+                        float(var.find('gf').find('xscale').get('max'))
+                    ]
+                    yscale = [
+                        float(var.find('gf').find('yscale').get('min')),
+                        float(var.find('gf').find('yscale').get('max'))
+                    ]
+                    ypts = [float(t) for t in var.find('gf').find('ypts').text.split(',')]
+                    element_equation = var.find('eqn').text
+                    equation = GraphFunc(xscale, yscale, ypts, element_equation)
+                    return equation
 
                 # create var subscripted equation
                 def subscripted_equation(var):
-                    try:
+                    if var.find('dimensions'):
                         var_dimensions = var.find('dimensions').findAll('dim')
                         # print(var_dimensions)
 
@@ -266,18 +297,35 @@ class Structure(object):
                         var_elements = var.findAll('element')
                         if len(var_elements) != 0:
                             for var_element in var_elements:
+
                                 list_of_elements_text = var_element.get('subscript') # something like "1, First"
                                 list_of_elements = list_of_elements_text.split(', ')
                                 tuple_of_elements = tuple(list_of_elements)
-                                element_eqn = var_element.find('eqn').text
-                                var_subscripted_eqn.sub_contents[tuple_of_elements] = element_eqn
+                                if var_element.find('gf'):
+                                    equation = read_graph_func(var_element)
+                                elif var.find('eqn'):
+                                    element_equation = var_element.find('eqn').text
+                                    equation = element_equation
+                                var_subscripted_eqn.sub_contents[tuple_of_elements] = equation
+
                         else: # all elements share the same equation
-                            var_equation = var.find('eqn').text
+                            if var.find('gf'):
+                                equation = read_graph_func(var)
+                            elif var.find('eqn'):
+                                var_equation = var.find('eqn').text
+                                equation = var_equation
+                            else:
+                                raise Exception('No meaningful definition found for variable {}'.format(var.get('name')))
                             for ixx in var_subscripted_eqn.sub_index:
-                                var_subscripted_eqn.sub_contents[ixx] = var_equation
+                                var_subscripted_eqn.sub_contents[ixx] =equation
                         return(var_subscripted_eqn)
-                    except AttributeError:
-                        return(var.find('eqn').text)
+                    else:
+                        if var.find('gf'):
+                            equation = read_graph_func(var)
+                        elif var.find('eqn'):
+                            var_equation = var.find('eqn').text
+                            equation = var_equation
+                        return(equation)
                         
 
                 # create stocks
@@ -818,6 +866,7 @@ class Structure(object):
                 return self.visited[expression][subscript]
             else:
                 pass
+        
         # check if this is a system variable like TIME
         if expression in self.__built_in_variables.keys():
             # print('calc b')
@@ -832,7 +881,7 @@ class Structure(object):
         if expression in self.sfd.nodes and self.__name_values[self.current_time][expression].sub_contents[subscript] is not None:
             # print('calc c')
             return self.__name_values[self.current_time][expression].sub_contents[subscript]
-        
+
         elif expression in self.sfd.nodes and type(self.sfd.nodes[expression]['equation'].sub_contents[subscript]) is DataFeeder:
             # print('calc e')
             if expression not in self.visited.keys():
@@ -887,8 +936,14 @@ class Structure(object):
 
             while type(value) not in [int, float, np.int64, bool]: # if value has not become a number (taking care of the numpy data types)
                 
+                # check if the variable is a graph function which has an additonal layer that transforms the equation outcome
+                if type(equation) is GraphFunc:
+                    # print('calc h3')
+                    input = self.calculate_experiment(equation.eqn, subscript)
+                    equation = equation(input)
+              
                 # check if this is a conditional statement
-                if len(equation) > 2 and equation[:2] == 'IF':
+                elif len(equation) > 2 and equation[:2] == 'IF':
                     # print('calc h1')
                     con_if = equation[2:].split('THEN')[0]
                     con_then = equation[2:].split('THEN')[1].split('ELSE')[0]
@@ -911,10 +966,8 @@ class Structure(object):
                     # print('Constat', con_statement)
                     equation = re.sub(con_statement, con_outcome, equation)
 
-                # check if the remaining expression is a time-related function (like init(), delay1())
-                func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
-                # print('0',func_names, 'in', equation)
-                if len(func_names) != 0:
+                elif len(re.findall(r"(\w+)[(].+[)]", str(equation))) != 0:
+                    func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
                     # print('calc h2')
                     func_name = func_names[0]
                     if func_name in self.time_related_functions.keys():
@@ -933,9 +986,14 @@ class Structure(object):
 
                         equation = re.sub(init_func_str, init_value_str, equation) # in case init() is a part of an equation, substitue init() with its value
                         # print('1', init_value_str, init_func_str, equation)
-                
+
+                '''
+                Until here, all we want to have is an modified equation suitable for evaluation.
+                '''
+
                 try:
                     value = eval(str(equation), self.custom_functions)
+
                 except NameError as e:
                     s = e.args[0]
                     p = s.split("'")[1]
@@ -943,7 +1001,7 @@ class Structure(object):
                     val_str = str(val)
                     reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
                     equation = re.sub(reg, val_str, equation)
-            
+
             if expression in self.sfd.nodes:
                 if self.sfd.nodes[expression]['element_type'] == 'flow': # if a flow is overdrafting from a non-negative stock, its value should be the remainder (current value) of the stock
                     flow_from_stock = self.sfd.nodes[expression]['flow_from']
@@ -973,10 +1031,10 @@ class Structure(object):
         :return:
         """
         self.current_step = 1
-        self.current_time = 0
+        self.current_time = self.initial_time
 
         for name in self.__name_values.keys():
-            self.__name_values[name].clear_data()
+            self.__name_values[name] = dict()
         
         self.__built_in_variables['TIME'] = list()
         
