@@ -1,3 +1,4 @@
+from ast import Expression
 from distutils.debug import DEBUG
 from scipy import stats
 from copy import deepcopy
@@ -948,6 +949,11 @@ class Structure(object):
                         # self.visited[element][ix] = v  # mark it as visited and store calculated value
 
     def calculate_experiment(self, expression, subscript):
+        # pre-process expression to match Python syntax
+        # replace '=' with '=='
+        if type(expression) is str:
+            reg = "(?<!(<|>|=))=(?!(<|>|=))"
+            expression = re.sub(reg, "==", expression)
         # print('expression:', expression)
 
         # check if this value has been calculated and stored in buffer
@@ -1059,17 +1065,19 @@ class Structure(object):
               
                 # check if this is a conditional statement
                 elif len(equation) > 2 and equation[:2] == 'IF':
-                    # print('calc h1')
-                    con_if = equation[2:].split('THEN')[0].replace('=', '==') # Stella uses '=' while Python uses '=='
+                    print('calc h1')
+                    con_if = equation[2:].split('THEN')[0]
                     con_then = equation[2:].split('THEN')[1].split('ELSE')[0]
+                    print(con_then)
                     con_else = equation[2:].split('THEN')[1].split('ELSE')[1]
+                    print(con_else)
                     if con_if is None:
                         raise Exception("Condition IF cannot be None.")
                     elif con_then is None and con_else is None:
                         raise Exception("Condition THEN and ELSE cannot both be None")
                     else:
                         con_eval = self.calculate_experiment(con_if, subscript)
-                        # print(con_eval)
+                        print('con_eval', con_eval)
                         if con_eval not in [True, False]:
                             raise Exception("Condition IF must be True of False")
                         elif con_eval:
