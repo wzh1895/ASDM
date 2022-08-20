@@ -141,9 +141,9 @@ class Conveyor(object):
         self.initial_value = None # to be decided when initialising stocks
         self.conveyor = list()
     
-    def initialize(self):
-        for _ in range(self.length):
-            self.conveyor.append(self.initial_value/self.length)
+    def initialize(self, length):
+        for _ in range(length):
+            self.conveyor.append(self.initial_value/length)
 
     def inflow(self, value):
         self.conveyor = [value] + self.conveyor
@@ -304,6 +304,7 @@ class Structure(object):
 
                 # create var subscripted equation
                 def subscripted_equation(var):
+                    # print('Reading variable from XMILE: {}'.format(var.get('name')))
                     if var.find('dimensions'):
                         print('Processing XMILE definition for:', var.get('name'))
                         var_dimensions = var.find('dimensions').findAll('dim')
@@ -326,7 +327,7 @@ class Structure(object):
                                 tuple_of_elements = tuple(list_of_elements)
                                 if var.find('conveyor'):
                                     equation = var_element.find('eqn').text
-                                    length = int(int(var.find('len').text)/self.dt)
+                                    length = var.find('len').text
                                     equation = Conveyor(length, equation)
                                 elif var_element.find('gf'): 
                                     equation = read_graph_func(var_element)
@@ -339,7 +340,7 @@ class Structure(object):
                         else: # all elements share the same equation
                             if var.find('conveyor'):
                                 equation = var.find('eqn').text
-                                length = int(int(var.find('len').text)/self.dt)
+                                length = int(var.find('len').text)
                                 equation = Conveyor(length, equation)
                             elif var.find('gf'):
                                 equation = read_graph_func(var)
@@ -355,7 +356,7 @@ class Structure(object):
                     else:
                         if var.find('conveyor'):
                             equation = var.find('eqn').text
-                            length = int(int(var.find('len').text)/self.dt)
+                            length = var.find('len').text
                             equation = Conveyor(length, equation)
                         elif var.find('gf'):
                             equation = read_graph_func(var)
@@ -713,11 +714,13 @@ class Structure(object):
             self.dt = dt
         total_steps = int(self.simulation_time / self.dt)
         
+        self.visited = dict()
+
         # Setp 1 initialise the state of the stocks if this is the first run
 
         if self.is_initialised == False:
+            self.__built_in_variables['TIME'].append(self.initial_time) # initialization of stocks might require TIME
             self.init_stocks()
-            self.__built_in_variables['TIME'].append(self.initial_time)
         else:
             self.update_stocks(self.dt)
         
@@ -729,6 +732,9 @@ class Structure(object):
             self.current_time += self.dt
             self.__built_in_variables['TIME'].append(self.current_time)
             self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
+
+            self.visited = dict()
+
             self.update_stocks(self.dt)
         
         # Step 3
@@ -738,6 +744,7 @@ class Structure(object):
     def init_stocks(self):
         self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
         for element in self.get_all_certain_type(['stock']):
+            print('Initializing stock: {}'.format(element))
             for ix in self.sfd.nodes[element]['equation'].sub_index:
                 equation = self.sfd.nodes[element]['equation'].sub_contents[ix]
                 # print('EQU', equation)
@@ -789,7 +796,8 @@ class Structure(object):
 
                 try:
                     conveyor.initial_value = value
-                    conveyor.initialize()
+                    length = int(self.calculate_experiment(conveyor.length, ix) / self.dt)
+                    conveyor.initialize(length)
                 except UnboundLocalError:
                     pass
 
@@ -881,7 +889,7 @@ class Structure(object):
         # have a dict for all visited (calculated) variables (F/V/P) in this model
         # this is also a buffer to store calculated value for variables, to avoid calculating the same variable multiple times.
         # ususally this is not a problem, but when random process is included, values from multiple calculations can be different.
-        self.visited = dict()
+        # self.visited = dict()
 
         # calculate flows
         for flow in flows.keys():
@@ -994,6 +1002,28 @@ class Structure(object):
                 equation = self.sfd.nodes[expression]['equation'].sub_contents[subscript]
             else:
                 equation = expression
+
+            # chech if there is any cross-reference arrays - if so, calculate the leftmost one.
+            while '[' in equation:
+                cr_0 = equation.split('[')[0]
+
+                # match leftward to get the subscripted variable's name
+                leftward_stoppers = [' ', '(', '+', '-', '*', '/', '=', ] # upon meeting these characters, stop the matching
+                cr_variable = []
+                for char in reversed(list(cr_0)): # +xyz[s] -> +zyx -> loop z, y, x, + -> [z,y,x] -> [x, y, z] -> xyz
+                    if char not in leftward_stoppers:
+                        cr_variable.append(char)
+                    else:
+                        break
+                cr_variable = ''.join(reversed(cr_variable))
+                cr_subscript_text = equation.split('[')[1].split(']')[0]
+                cr_subscript = re.sub(' ', '', cr_subscript_text) # remove all ' ' to align ', ' and ','
+                cr_subscript = tuple(cr_subscript.split(','))
+                # calculate the cross-reference value
+                cr_value = self.calculate_experiment(cr_variable, cr_subscript)
+                cr_variable_subscript = cr_variable+'['+cr_subscript_text+']'
+                equation = equation.replace(cr_variable_subscript, str(cr_value)) # re.sub has problem with [], we use re.replace
+            
             # print('EQU', equation)
             value = None
 
@@ -1008,7 +1038,7 @@ class Structure(object):
                 # check if this is a conditional statement
                 elif len(equation) > 2 and equation[:2] == 'IF':
                     # print('calc h1')
-                    con_if = equation[2:].split('THEN')[0]
+                    con_if = equation[2:].split('THEN')[0].replace('=', '==') # Stella uses '=' while Python uses '=='
                     con_then = equation[2:].split('THEN')[1].split('ELSE')[0]
                     con_else = equation[2:].split('THEN')[1].split('ELSE')[1]
                     if con_if is None:
@@ -1058,6 +1088,7 @@ class Structure(object):
                     value = eval(str(equation), self.custom_functions)
 
                 except NameError as e:
+                    print(e)
                     s = e.args[0]
                     p = s.split("'")[1]
                     val = self.calculate_experiment(p, subscript)
