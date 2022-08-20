@@ -183,12 +183,16 @@ class Structure(object):
         self.custom_functions = {
             'rbinom': self.rbinom,
             'delay1': self.delay1,
+            'delay': self.delay,
+            'DELAY': self.delay
             # 'init': self.init
         }
 
         self.time_related_functions = {
             'init': self.init,
-            'INIT': self.init  # Stella uses capital INIT
+            'INIT': self.init,  # Stella uses capital INIT
+            'delay': self.delay,
+            'DELAY': self.delay
         }
 
         # Polarity table for functions
@@ -433,6 +437,24 @@ class Structure(object):
     def rbinom(self, n, p):
         return stats.binom.rvs(int(n), p, size=1)[0]
     
+    def delay(self, subscript, input, delay_time, initial_value=None):
+        delay_time = float(delay_time)
+        try:
+            output = self.__name_values[self.current_time-delay_time][input].sub_contents[subscript]
+            # print(input, 'aa')
+        except KeyError: # current time < delay time
+            if initial_value is not None: # initial value is supplied
+                output = initial_value
+                # print(input, 'bb')
+            else: # initial values is not supplied
+                try:
+                    output = self.__name_values[self.initial_time][input].sub_contents[subscript]
+                    # print(input, 'cc')
+                except KeyError: # the delayed variable has not been calculated for once
+                    output = self.calculate_experiment(input, subscript)
+                    # print(input, 'dd')
+        return output
+
     def delay1(self, input, delay_time, initial_value=None):
         delay_time = float(delay_time)
         if initial_value is not None:
@@ -456,7 +478,7 @@ class Structure(object):
 
         return output
 
-    def init(self, var, subscript):
+    def init(self, subscript, var):
         # print('calculating init', var)
         # case 1: var is a variable in the model
         if var in self.sfd.nodes:
@@ -470,7 +492,7 @@ class Structure(object):
                 value = None
                 while type(value) not in [int, float, np.int64]: # if value has not become a number (taking care of the numpy data types)
                 
-                    # decide if the remaining expression is a time-related function (like init(), delay1())
+                    # decide if the remaining expression is a time-related function (like init(), delay1(), delay())
                     func_names = re.findall(r"(\w+)[(].+[)]", str(var))
                     # print('0',func_names, 'in', equation)
                     if len(func_names) != 0:
@@ -927,6 +949,7 @@ class Structure(object):
 
     def calculate_experiment(self, expression, subscript):
         # print('expression:', expression)
+
         # check if this value has been calculated and stored in buffer
         # when initialising stock values, there's no 'self.visited' yet
         if expression in self.visited.keys():
@@ -1004,9 +1027,8 @@ class Structure(object):
                 equation = expression
 
             # chech if there is any cross-reference arrays - if so, calculate the leftmost one.
-            while '[' in equation:
+            while type(equation) is str and '[' in equation:
                 cr_0 = equation.split('[')[0]
-
                 # match leftward to get the subscripted variable's name
                 leftward_stoppers = [' ', '(', '+', '-', '*', '/', '=', ] # upon meeting these characters, stop the matching
                 cr_variable = []
@@ -1059,26 +1081,27 @@ class Structure(object):
                     # print('Constat', con_statement)
                     equation = re.sub(con_statement, con_outcome, equation)
 
-                elif len(re.findall(r"(\w+)[(].+[)]", str(equation))) != 0:
+                # check if there are time-related functions in the equation
+                elif re.findall(r"(\w+)[(].+[)]", str(equation)):
                     func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
                     # print('calc h2')
-                    func_name = func_names[0]
-                    if func_name in self.time_related_functions.keys():
-                        func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
-                        # print('1',func_args)
-                        func_args_split = func_args[0].split(",")
-                        # print('2',func_names[0], func_args_split)
+                    for func_name in func_names:
+                        # print(0, equation)
+                        if func_name in self.time_related_functions.keys():
+                            func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
+                            # print('1',func_args)
+                            func_args_split = func_args[0].split(",")
+                            # print('2',func_names[0], func_args_split)
 
-                        # pass args to the corresponding time-related function
-                        func_args_full = func_args_split + [subscript]
-                        init_value = self.time_related_functions[func_names[0]](*func_args_full)
-                        
-                        # replace the init() parts in the equation with their values
-                        init_value_str = str(init_value)
-                        init_func_str = func_name+'\('+func_args[0]+'\)' # use '\' to mark '(' and ')', otherwise Python will see them as reg grammar
-
-                        equation = re.sub(init_func_str, init_value_str, equation) # in case init() is a part of an equation, substitue init() with its value
-                        # print('1', init_value_str, init_func_str, equation)
+                            # pass args to the corresponding time-related function
+                            func_args_full = [subscript] + func_args_split
+                            func_value = self.time_related_functions[func_names[0]](*func_args_full)
+                            
+                            # replace the init() parts in the equation with their values
+                            func_value_str = str(func_value)
+                            func_str = func_name+'('+func_args[0]+')'
+                            equation = equation.replace(func_str, func_value_str) # in case init() is a part of an equation, substitue init() with its value
+                            # print('3', equation)
 
                 '''
                 Until here, all we want to have is an modified equation suitable for evaluation.
@@ -1088,7 +1111,6 @@ class Structure(object):
                     value = eval(str(equation), self.custom_functions)
 
                 except NameError as e:
-                    print(e)
                     s = e.args[0]
                     p = s.split("'")[1]
                     val = self.calculate_experiment(p, subscript)
