@@ -119,11 +119,11 @@ class ExtFunc(object):
 
 
 class GraphFunc(object):
-    def __init__(self, xscale, yscale, ypts, eqn):
+    def __init__(self, xscale, yscale, ypts):
         self.xscale = xscale
         self.yscale = yscale
         self.ypts = ypts
-        self.eqn = eqn
+        self.eqn = None
         
         from scipy.interpolate import interp1d
 
@@ -132,6 +132,28 @@ class GraphFunc(object):
 
     def __call__(self, input):
         return self.interp_func(input)
+
+
+class Conveyor(object):
+    def __init__(self, length, eqn):
+        self.length = length
+        self.equation = eqn
+        self.initial_value = None # to be decided when initialising stocks
+        self.conveyor = list()
+    
+    def initialize(self):
+        for _ in range(self.length):
+            self.conveyor.append(self.initial_value/self.length)
+
+    def inflow(self, value):
+        self.conveyor = [value] + self.conveyor
+
+    def outflow(self):
+        output = self.conveyor.pop()
+        return output
+
+    def level(self):
+        return sum(self.conveyor)
 
 
 class Structure(object):
@@ -276,13 +298,14 @@ class Structure(object):
                         float(var.find('gf').find('yscale').get('max'))
                     ]
                     ypts = [float(t) for t in var.find('gf').find('ypts').text.split(',')]
-                    element_equation = var.find('eqn').text
-                    equation = GraphFunc(xscale, yscale, ypts, element_equation)
+
+                    equation = GraphFunc(xscale, yscale, ypts)
                     return equation
 
                 # create var subscripted equation
                 def subscripted_equation(var):
                     if var.find('dimensions'):
+                        print('Processing XMILE definition for:', var.get('name'))
                         var_dimensions = var.find('dimensions').findAll('dim')
                         # print(var_dimensions)
 
@@ -301,16 +324,26 @@ class Structure(object):
                                 list_of_elements_text = var_element.get('subscript') # something like "1, First"
                                 list_of_elements = list_of_elements_text.split(', ')
                                 tuple_of_elements = tuple(list_of_elements)
-                                if var_element.find('gf'):
+                                if var.find('conveyor'):
+                                    equation = var_element.find('eqn').text
+                                    length = int(int(var.find('len').text)/self.dt)
+                                    equation = Conveyor(length, equation)
+                                elif var_element.find('gf'): 
                                     equation = read_graph_func(var_element)
-                                elif var.find('eqn'):
+                                    equation.eqn = var.find('eqn').text # subscripted graph function must share the same eqn
+                                elif var_element.find('eqn'): # eqn is per element
                                     element_equation = var_element.find('eqn').text
                                     equation = element_equation
                                 var_subscripted_eqn.sub_contents[tuple_of_elements] = equation
 
                         else: # all elements share the same equation
-                            if var.find('gf'):
+                            if var.find('conveyor'):
+                                equation = var.find('eqn').text
+                                length = int(int(var.find('len').text)/self.dt)
+                                equation = Conveyor(length, equation)
+                            elif var.find('gf'):
                                 equation = read_graph_func(var)
+                                equation.eqn = var.find('eqn').text
                             elif var.find('eqn'):
                                 var_equation = var.find('eqn').text
                                 equation = var_equation
@@ -320,8 +353,13 @@ class Structure(object):
                                 var_subscripted_eqn.sub_contents[ixx] =equation
                         return(var_subscripted_eqn)
                     else:
-                        if var.find('gf'):
+                        if var.find('conveyor'):
+                            equation = var.find('eqn').text
+                            length = int(int(var.find('len').text)/self.dt)
+                            equation = Conveyor(length, equation)
+                        elif var.find('gf'):
                             equation = read_graph_func(var)
+                            equation.eqn = var.find('eqn').text
                         elif var.find('eqn'):
                             var_equation = var.find('eqn').text
                             equation = var_equation
@@ -707,6 +745,12 @@ class Structure(object):
                 # an adapted version of self.calculate_experiment() is implemented here to initialise stocks with
                 # initial value defined as an equation
                 value = None
+                
+                # if the stock is a conveyor, extract its equation
+                if type(equation) is Conveyor:
+                    conveyor = equation
+                    equation = equation.equation
+                
                 while type(value) not in [int, float, np.int64]: # if value has not become a number (taking care of the numpy data types)
                 
                     # decide if the remaining expression is a time-related function (like init(), delay1())
@@ -740,9 +784,15 @@ class Structure(object):
                         val_str = str(val)
                         reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
                         equation = re.sub(reg, val_str, equation)
-
+                
                 self.__name_values[self.current_time][element].sub_contents[ix] = value
-        
+
+                try:
+                    conveyor.initial_value = value
+                    conveyor.initialize()
+                except UnboundLocalError:
+                    pass
+
         # set is_initialised flag to True
         self.is_initialised = True
 
@@ -754,15 +804,13 @@ class Structure(object):
         for element in self.get_all_certain_type('flow'):  # loop through all flows in this SFD,
             flows_dt[element] = dict()  # make a position for it in the dict of flows_dt, initializing it with 0
 
-        # have a list for all visited (calculated) variables (F/V/P) in this model
-        self.visited = list()
+        # # have a list for all visited (calculated) variables (F/V/P) in this model
+        # self.visited = list()
 
         # calculate flows
         for flow in flows_dt.keys():
             for ix in self.sfd.nodes[flow]['equation'].sub_index:
-                # flows_dt[flow][ix] = dt * self.calculate_experiment(flow, ix)
                 flows_dt[flow][ix] = dt * self.__name_values[self.current_time-self.dt][flow].sub_contents[ix]
-        # print('All flows default_dt:', flows_dt)
 
         # calculating changes in stocks
         # have a dictionary of affected stocks and their changes, since one flow could affect 2 stocks.
@@ -783,23 +831,28 @@ class Structure(object):
                     elif self.sfd.nodes[flow]['flow_to'] == successor:  # if flow influences this stock positively
                         in_out_factor = 1
                     else:
-                        print("Engine: Strange! {} seems to influence {} but not found in graph's attributes.".format(
-                            flow, successor))
+                        print("Engine: Strange! {} seems to influence {} but not found in graph's attributes.".format(flow, successor))
                     
                     # because the connection between a flow and a stock does not vary across subscripts, we only consider indexer from here
                     for ix in self.sfd.nodes[flow]['equation'].sub_index:
-                        if ix in affected_stocks[successor].keys():  # this stock may have been added by other flows
+                        if self.sfd.nodes[flow]['flow_from'] == successor and type(self.sfd.nodes[successor]['equation'].sub_contents[ix]) is Conveyor:
+                            pass
+                        elif ix in affected_stocks[successor].keys():  # this stock may have been added by other flows
                             affected_stocks[successor][ix] += flows_dt[flow][ix] * in_out_factor
                         else:
                             affected_stocks[successor][ix] = flows_dt[flow][ix] * in_out_factor
 
         # updating affected stocks values
-        for stock, subscripted_values in affected_stocks.items():
+        for stock, subscripted_delta_values in affected_stocks.items():
             for ix in self.__name_values[self.current_time][stock].sub_index:
-                current_value = self.__name_values[self.current_time-self.dt][stock].sub_contents[ix]
-                delta_value = subscripted_values[ix]
-                # print(delta_value, type(delta_value), current_value, type(current_value))
-                new_value = delta_value + current_value
+                delta_value = subscripted_delta_values[ix]
+                if type(self.sfd.nodes[stock]['equation'].sub_contents[ix]) is Conveyor:
+                    self.sfd.nodes[stock]['equation'].sub_contents[ix].inflow(delta_value)
+                    new_value = self.sfd.nodes[stock]['equation'].sub_contents[ix].level()
+                else:
+                    current_value = self.__name_values[self.current_time-self.dt][stock].sub_contents[ix]
+                    # print(delta_value, type(delta_value), current_value, type(current_value))
+                    new_value = delta_value + current_value
                 if self.sfd.nodes[stock]['non_negative'] is True and new_value < 0:# if the stock in non-negative and the new value is below 0, keep its current value
                     # self.__name_values[stock].sub_contents[ix].append(self.__name_values[stock].sub_contents[ix][-1])
                     self.__name_values[self.current_time][stock].sub_contents[ix] = 0
@@ -833,7 +886,17 @@ class Structure(object):
         # calculate flows
         for flow in flows.keys():
             for ix in self.sfd.nodes[flow]['equation'].sub_index:
-                flows[flow][ix] = self.calculate_experiment(flow, ix)
+                # in case the flow is the outflow of a conveyor:
+                flow_from = self.sfd.nodes[flow]['flow_from']
+                if flow_from is not None:
+                    flow_from_equation = self.sfd.nodes[flow_from]['equation'].sub_contents[ix]
+                if flow_from is not None and type(flow_from_equation) is Conveyor:
+                    v = self.sfd.nodes[self.sfd.nodes[flow]['flow_from']]['equation'].sub_contents[ix].outflow() / self.dt # the conveyor outputs the value of this DT but we need a flow value for the whole time unit (DT = 1)
+                    flows[flow][ix] = v
+                    # as this flow is not calculated through calculate(), we manually register its value to __name_values
+                    self.__name_values[self.current_time][flow].sub_contents[ix] = v
+                else:
+                    flows[flow][ix] = self.calculate_experiment(flow, ix)
             self.visited[flow] = flows[flow]  # save calculated flow to buffer
         # print('All flows default_dt:', flows_dt)
 
