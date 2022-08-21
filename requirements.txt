@@ -7,3 +7,6 @@ scipy==1.7.1
 Theano-PyMC==1.1.2
 lxml==4.9.1
 beautifulsoup4 == 4.11.1
+tqdm==4.64.0
+ipywidgets==7.6.5
+openpyxl==3.0.10

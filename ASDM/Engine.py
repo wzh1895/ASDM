@@ -1,5 +1,6 @@
 from ast import Expression
 from distutils.debug import DEBUG
+from multiprocessing.sharedctypes import Value
 from scipy import stats
 from copy import deepcopy
 import networkx as nx
@@ -137,14 +138,38 @@ class GraphFunc(object):
 
 class Conveyor(object):
     def __init__(self, length, eqn):
-        self.length = length
+        self.length_time_units = length
         self.equation = eqn
-        self.initial_value = None # to be decided when initialising stocks
+        self.length_steps = None # to be decided at runtime
+        self.initial_total = None # to be decided when initialising stocks
         self.conveyor = list()
     
-    def initialize(self, length):
-        for _ in range(length):
-            self.conveyor.append(self.initial_value/length)
+    def initialize(self, length, value, leak_fraction=None):
+        self.initial_total = value
+        self.length_steps = length
+        if leak_fraction is None or leak_fraction == 0:
+            for _ in range(self.length_steps):
+                self.conveyor.append(self.initial_total/self.length_steps)
+        else:
+            # print('Conveyor Initial Total:', self.initial_total)
+            # print('Conveyor Leak fraction:', leak_fraction)
+            # length_steps * output + nleaks * leak = initial_total
+            # leak = output * (leak_fraction / length_in_steps)
+            # ==> length_steps * output + n(length) * (output * (leak_fraction/length_in_steps)) = initial_total
+            # print('Conveyor Length in steps:', self.length_steps)
+            n_leak = 0
+            for i in range(1, self.length_steps+1):
+                n_leak += i
+            # print('Conveyor Nleaks:', n_leak)
+            output = self.initial_total / (self.length_steps + n_leak * (leak_fraction / self.length_steps))
+            # print('Conveyor Output:', output)
+            leak = output * (leak_fraction/self.length_steps)
+            # print('Conveyor Leak:', leak)
+            # generate slats
+            for i in range(self.length_steps):
+                self.conveyor.append(output + (i+1)*leak)
+            self.conveyor.reverse()
+        # print('Conveyor Initialised:', self.conveyor)
 
     def inflow(self, value):
         self.conveyor = [value] + self.conveyor
@@ -156,6 +181,25 @@ class Conveyor(object):
     def level(self):
         return sum(self.conveyor)
 
+    def leak_linear(self, leak_fraction):
+        leaked = 0
+        for i in range(self.length_steps):
+            # keep slats non-negative
+            if self.conveyor[i] > 0:
+                already_leak_fraction = leak_fraction*((i+1)/self.length_steps) # 1+1: position indicator starting from 1
+                remaining_fraction = 1-already_leak_fraction
+                original = self.conveyor[i] / remaining_fraction
+                i_leaked = original * leak_fraction / self.length_steps
+                # print(i_leaked)
+                if self.conveyor[i] - i_leaked < 0:
+                    i_leaked = self.conveyor[i]
+                    self.conveyor[i] = 0
+                else:
+                    self.conveyor[i] = self.conveyor[i] - i_leaked
+                leaked = leaked + i_leaked
+        # print('Leaked conveyor:', self.conveyor)
+        # print('Leaked:', leaked)
+        return leaked
 
 class Structure(object):
     # def __init__(self, sfd=None, uid_manager=None, name_manager=None, subscripts=None, uid_element_name=None, subscript_manager=None):
@@ -403,8 +447,12 @@ class Structure(object):
                     else:
                         flow_from = None
                     
-                    # self.add_flow(self.name_handler(flow.get('name')), equation=flow.find('eqn').text, flow_from=flow_from, flow_to=flow_to)
-                    self.add_flow(self.name_handler(flow.get('name')), equation=subscripted_equation(flow), flow_from=flow_from, flow_to=flow_to)
+                    # check if flow is a leakage flow
+                    if flow.find('leak'):
+                        leak = True
+                    else:
+                        leak = False
+                    self.add_flow(self.name_handler(flow.get('name')), equation=subscripted_equation(flow), flow_from=flow_from, flow_to=flow_to, leak=leak)
 
             else:
                 raise Exception("Specified model file does not exist.")
@@ -608,7 +656,7 @@ class Structure(object):
             elif equation[0] == self.LINEAR:
                 return str(equation[1])
 
-    def __add_element(self, element_name, element_type, flow_from=None, flow_to=None, x=0, y=0, equation=None, points=None, external=False, non_negative=False):
+    def __add_element(self, element_name, element_type, flow_from=None, flow_to=None, x=0, y=0, equation=None, points=None, external=False, non_negative=False, leak=None):
         uid = self.__uid_manager.get_new_uid()
 
         # construct subscripted equation indexer
@@ -642,7 +690,8 @@ class Structure(object):
                         equation=subscripted_equation,
                         points=points,
                         external=external,
-                        non_negative=non_negative)
+                        non_negative=non_negative,
+                        leak=leak)
         print('Engine: adding element:', element_name, 'equation:', equation)
 
         return uid
@@ -748,9 +797,8 @@ class Structure(object):
             self.update_stocks(self.dt)
         
         # Step 2
-
-        for _ in range(total_steps):
-            print('current time:', self.current_time)
+        from tqdm import tnrange
+        for _ in tnrange(total_steps):
             self.update_states()
             self.current_step += 1  # update current_step counter
             self.current_time += self.dt
@@ -774,20 +822,27 @@ class Structure(object):
                 # print('EQU', equation)
 
                 # if the stock is a conveyor, extract its equation
+                is_conveyor = False
                 if type(equation) is Conveyor:
+                    is_conveyor = True
                     conveyor = equation
                     equation = equation.equation
 
-                value = self.calculate_experiment(element, ix)
+                value = self.calculate_experiment(equation, ix)
                 
                 self.__name_values[self.current_time][element].sub_contents[ix] = value
 
-                try:
-                    conveyor.initial_value = value
-                    length = int(self.calculate_experiment(conveyor.length, ix) / self.dt)
-                    conveyor.initialize(length)
-                except UnboundLocalError:
-                    pass
+                if is_conveyor:
+                    length = int(self.calculate_experiment(conveyor.length_time_units, ix) / self.dt)
+                    # search for leaking flow
+                    leak_fraction = None
+                    for e in self.sfd.nodes:
+                        if self.sfd.nodes[e]['element_type'] == 'flow':
+                            if self.sfd.nodes[e]['leak']:
+                                if self.sfd.nodes[e]['flow_from'] == element:
+                                    leak_fraction_eqn = self.sfd.nodes[e]['equation'].sub_contents[ix]
+                                    leak_fraction = self.calculate_experiment(leak_fraction_eqn, ix)
+                    conveyor.initialize(length, value, leak_fraction)
 
         # set is_initialised flag to True
         print('All stocks initialised.')
@@ -880,21 +935,54 @@ class Structure(object):
         # ususally this is not a problem, but when random process is included, values from multiple calculations can be different.
         # self.visited = dict()
 
+        leaking_flows = list()
+        non_leaking_flows = list()
         # calculate flows
+        
+        # prioritise leaking flows
         for flow in flows.keys():
+            if self.sfd.nodes[flow]['leak']:
+                leaking_flows.append(flow)
+            else:
+                non_leaking_flows.append(flow)
+
+        for flow in leaking_flows:
+
             for ix in self.sfd.nodes[flow]['equation'].sub_index:
+                
+                # print('f leak:', flow)
+                flow_leak_fraction = self.calculate_experiment(flow, ix)
+                # print('f leak frac:', flow_leak_fraction)
+                v = self.sfd.nodes[self.sfd.nodes[flow]['flow_from']]['equation'].sub_contents[ix].leak_linear(flow_leak_fraction) / self.dt
+                # print('f leak v:', v)
+                
+                flows[flow][ix] = v
+                # as this flow is not calculated through calculate(), we manually register its value to __name_values
+                self.__name_values[self.current_time][flow].sub_contents[ix] = v
+            
+            self.visited[flow] = flows[flow]  # save calculated flow to buffer
+        
+        for flow in non_leaking_flows:
+            for ix in self.sfd.nodes[flow]['equation'].sub_index:
+                
                 # in case the flow is the outflow of a conveyor:
+                
                 flow_from = self.sfd.nodes[flow]['flow_from']
                 if flow_from is not None:
                     flow_from_equation = self.sfd.nodes[flow_from]['equation'].sub_contents[ix]
+                
                 if flow_from is not None and type(flow_from_equation) is Conveyor:
-                    v = self.sfd.nodes[self.sfd.nodes[flow]['flow_from']]['equation'].sub_contents[ix].outflow() / self.dt # the conveyor outputs the value of this DT but we need a flow value for the whole time unit (DT = 1)
+                    # print('f out:', flow)
+                    v = self.sfd.nodes[flow_from]['equation'].sub_contents[ix].outflow() / self.dt # the conveyor outputs the value of this DT but we need a flow value for the whole time unit (DT = 1)
+                    # print('f out v:', v)
                     flows[flow][ix] = v
                     # as this flow is not calculated through calculate(), we manually register its value to __name_values
                     self.__name_values[self.current_time][flow].sub_contents[ix] = v
+                
                 else:
                     flows[flow][ix] = self.calculate_experiment(flow, ix)
             self.visited[flow] = flows[flow]  # save calculated flow to buffer
+
         # print('All flows default_dt:', flows_dt)
 
         # calculate all not visited variables and parameters in this model, in order to update their value list
@@ -1084,7 +1172,7 @@ class Structure(object):
                     equation = and_outcome
 
                 elif type(equation) is str and len(equation) > 2 and 'OR' in equation:
-                    print('calc h2.2')
+                    # print('calc h2.2')
                     and_0, and_1 = equation.split('OR')
                     # print('and_0', and_0)
                     # print('and_1', and_1)
@@ -1206,7 +1294,7 @@ class Structure(object):
         # print('Engine: added stock:', name, 'to graph.')
         return uid
 
-    def add_flow(self, name=None, equation=None, x=0, y=0, points=None, flow_from=None, flow_to=None):
+    def add_flow(self, name=None, equation=None, x=0, y=0, points=None, flow_from=None, flow_to=None, leak=None):
         if name is None:
             name = self.__name_manager.get_new_name(element_type='flow')
         if equation is not None:
@@ -1217,7 +1305,8 @@ class Structure(object):
                                     x=x,
                                     y=y,
                                     equation=equation,
-                                    points=points)
+                                    points=points,
+                                    leak=leak)
 
         self.connect_stock_flow(name, flow_from=flow_from, flow_to=flow_to)
         # print('Engine: added flow:', name, 'to graph.')
