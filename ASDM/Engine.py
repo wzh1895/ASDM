@@ -1065,12 +1065,13 @@ class Structure(object):
               
                 # check if this is a conditional statement
                 elif len(equation) > 2 and equation[:2] == 'IF':
-                    print('calc h1')
+                    # print('calc h1')
                     con_if = equation[2:].split('THEN')[0]
+                    # print('con_if:', con_if)
                     con_then = equation[2:].split('THEN')[1].split('ELSE')[0]
-                    print(con_then)
+                    # print('con_then:', con_then)
                     con_else = equation[2:].split('THEN')[1].split('ELSE')[1]
-                    print(con_else)
+                    # print('con_else:', con_else)
                     if con_if is None:
                         raise Exception("Condition IF cannot be None.")
                     elif con_then is None and con_else is None:
@@ -1078,21 +1079,54 @@ class Structure(object):
                     else:
                         con_eval = self.calculate_experiment(con_if, subscript)
                         print('con_eval', con_eval)
-                        if con_eval not in [True, False]:
-                            raise Exception("Condition IF must be True of False")
+                        if type(con_eval) is not bool:
+                            raise TypeError("Condition IF must be True of False")
                         elif con_eval:
                             con_outcome = self.calculate_experiment(con_then, subscript)
                         else:
                             con_outcome = self.calculate_experiment(con_else, subscript)
                     con_outcome = str(con_outcome)
+                    # print('con_outcome:', con_outcome)
                     con_statement = 'IF'+con_if+'THEN'+con_then+'ELSE'+con_else
                     # print('Constat', con_statement)
                     equation = re.sub(con_statement, con_outcome, equation)
+                
+                elif len(equation) > 3 and 'AND' in equation:
+                    # print('calc h2.1')
+                    and_0, and_1 = equation.split('AND')
+                    # print('and_0', and_0)
+                    # print('and_1', and_1)
+                    and_0_eval = self.calculate_experiment(and_0, subscript)
+                    if type(and_0_eval) is not bool:
+                        raise TypeError
+                    and_1_eval = self.calculate_experiment(and_1, subscript)
+                    if type(and_1_eval) is not bool:
+                        raise TypeError
+                    if and_0_eval and and_1_eval:
+                        equation = 'True'
+                    else:
+                        equation = 'False'
+
+                elif len(equation) > 2 and 'OR' in equation:
+                    # print('calc h2.2')
+                    and_0, and_1 = equation.split('OR')
+                    # print('and_0', and_0)
+                    # print('and_1', and_1)
+                    and_0_eval = self.calculate_experiment(and_0, subscript)
+                    if type(and_0_eval) is not bool:
+                        raise TypeError
+                    and_1_eval = self.calculate_experiment(and_1, subscript)
+                    if type(and_1_eval) is not bool:
+                        raise TypeError
+                    if and_0_eval or and_1_eval:
+                        equation = 'True'
+                    else:
+                        equation = 'False'
 
                 # check if there are time-related functions in the equation
                 elif re.findall(r"(\w+)[(].+[)]", str(equation)):
                     func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
-                    # print('calc h2')
+                    # print('calc h3')
                     for func_name in func_names:
                         # print(0, equation)
                         if func_name in self.time_related_functions.keys():
