@@ -750,6 +750,7 @@ class Structure(object):
         # Step 2
 
         for _ in range(total_steps):
+            print('current time:', self.current_time)
             self.update_states()
             self.current_step += 1  # update current_step counter
             self.current_time += self.dt
@@ -772,48 +773,12 @@ class Structure(object):
                 equation = self.sfd.nodes[element]['equation'].sub_contents[ix]
                 # print('EQU', equation)
 
-                # an adapted version of self.calculate_experiment() is implemented here to initialise stocks with
-                # initial value defined as an equation
-                value = None
-                
                 # if the stock is a conveyor, extract its equation
                 if type(equation) is Conveyor:
                     conveyor = equation
                     equation = equation.equation
-                
-                while type(value) not in [int, float, np.int64]: # if value has not become a number (taking care of the numpy data types)
-                
-                    # decide if the remaining expression is a time-related function (like init(), delay1())
-                    func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
-                    # print('0',func_names, 'in', equation)
-                    if len(func_names) != 0:
-                        func_name = func_names[0]
-                        if func_name in self.time_related_functions.keys():
-                            func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
-                            # print('1',func_args)
-                            func_args_split = func_args[0].split(",")
-                            # print('2',func_names[0], func_args_split)
 
-                            # pass args to the corresponding time-related function
-                            func_args_full = func_args_split + [ix]
-                            init_value = self.time_related_functions[func_names[0]](*func_args_full)
-                            
-                            # replace the init() parts in the equation with their values
-                            init_value_str = str(init_value)
-                            init_func_str = func_name+'\('+func_args[0]+'\)' # use '\' to mark '(' and ')', otherwise Python will see them as reg grammar
-
-                            equation = re.sub(init_func_str, init_value_str, equation) # in case init() is a part of an equation, substitue init() with its value
-                            # print('1', init_value_str, init_func_str, equation)
-                    
-                    try:
-                        value = eval(str(equation), self.custom_functions)
-                    except NameError as e:
-                        s = e.args[0]
-                        p = s.split("'")[1]
-                        val = self.calculate_experiment(p, ix)
-                        val_str = str(val)
-                        reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
-                        equation = re.sub(reg, val_str, equation)
+                value = self.calculate_experiment(element, ix)
                 
                 self.__name_values[self.current_time][element].sub_contents[ix] = value
 
@@ -825,6 +790,7 @@ class Structure(object):
                     pass
 
         # set is_initialised flag to True
+        print('All stocks initialised.')
         self.is_initialised = True
 
     def update_stocks(self, dt):
@@ -949,11 +915,6 @@ class Structure(object):
                         # self.visited[element][ix] = v  # mark it as visited and store calculated value
 
     def calculate_experiment(self, expression, subscript):
-        # pre-process expression to match Python syntax
-        # replace '=' with '=='
-        if type(expression) is str:
-            reg = "(?<!(<|>|=))=(?!(<|>|=))"
-            expression = re.sub(reg, "==", expression)
         # print('expression:', expression)
 
         # check if this value has been calculated and stored in buffer
@@ -972,7 +933,7 @@ class Structure(object):
             # print('calc b')
             return self.__built_in_variables[expression][-1]
 
-        elif type(expression) in [int, float]:
+        elif type(expression) in [int, float, np.int64]:
             # print('calc d')
             return expression
             
@@ -982,55 +943,68 @@ class Structure(object):
             # print('calc c')
             return self.__name_values[self.current_time][expression].sub_contents[subscript]
 
-        elif expression in self.sfd.nodes and type(self.sfd.nodes[expression]['equation'].sub_contents[subscript]) is DataFeeder:
-            # print('calc e')
-            if expression not in self.visited.keys():
-                value = self.sfd.nodes[expression]['equation'].sub_contents[subscript](self.current_step)
-                self.__name_values[self.current_time][expression].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
-                self.visited[expression] = dict()
-                self.visited[expression][subscript] = value  # mark it as visited and store the value
-            elif subscript not in self.visited[expression].keys():
-                value = self.sfd.nodes[expression]['equation'].sub_contents[subscript](self.current_step)
-                self.__name_values[expression].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
-                self.visited[expression][subscript] = value  # mark it as visited and store the value
-            else:
-                # value = self.__name_values[name].sub_contents[subscript][-1]
-                value = self.visited[expression][subscript]
-            return value
+        # elif expression in self.sfd.nodes and type(self.sfd.nodes[expression]['equation'].sub_contents[subscript]) is DataFeeder:
+        #     print('calc e')
+        #     if expression not in self.visited.keys():
+        #         value = self.sfd.nodes[expression]['equation'].sub_contents[subscript](self.current_step)
+        #         self.__name_values[self.current_time][expression].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
+        #         self.visited[expression] = dict()
+        #         self.visited[expression][subscript] = value  # mark it as visited and store the value
+        #     elif subscript not in self.visited[expression].keys():
+        #         value = self.sfd.nodes[expression]['equation'].sub_contents[subscript](self.current_step)
+        #         self.__name_values[expression].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
+        #         self.visited[expression][subscript] = value  # mark it as visited and store the value
+        #     else:
+        #         # value = self.__name_values[name].sub_contents[subscript][-1]
+        #         value = self.visited[expression][subscript]
+        #     return value
         
-        elif expression in self.sfd.nodes and type(self.sfd.nodes[expression]['equation'].sub_contents[subscript]) is ExtFunc:
-            # print('calc f')
-            if expression not in self.visited.keys():
-                arg_values = list()
-                for arg in self.sfd.nodes[expression]['equation'].sub_contents[subscript].args:
-                    arg_values.append(self.calculate_experiment(arg, subscript))
-                value = self.sfd.nodes[expression]['equation'].sub_contents[subscript].evaluate(arg_values)  
-                self.__name_values[expression].sub_contents[subscript] = value
-                self.visited[expression] = dict()
-                self.visited[expression][subscript] = value  # mark it as visited and store the value
-            elif subscript not in self.visited[expression].keys():
-                arg_values = list()
-                for arg in self.sfd.nodes[expression]['equation'].sub_contents[subscript].args:
-                    arg_values.append(self.calculate_experiment(arg, subscript))
-                value = self.sfd.nodes[expression]['equation'].sub_contents[subscript].evaluate(arg_values)  
-                self.__name_values[self.current_time][expression].sub_contents[subscript] = value
-                self.visited[expression][subscript] = value  # mark it as visited and store the value
-            else:
-                value = self.visited[expression][subscript]
-            return value
+        # elif expression in self.sfd.nodes and type(self.sfd.nodes[expression]['equation'].sub_contents[subscript]) is ExtFunc:
+        #     print('calc f')
+        #     if expression not in self.visited.keys():
+        #         arg_values = list()
+        #         for arg in self.sfd.nodes[expression]['equation'].sub_contents[subscript].args:
+        #             arg_values.append(self.calculate_experiment(arg, subscript))
+        #         value = self.sfd.nodes[expression]['equation'].sub_contents[subscript].evaluate(arg_values)  
+        #         self.__name_values[expression].sub_contents[subscript] = value
+        #         self.visited[expression] = dict()
+        #         self.visited[expression][subscript] = value  # mark it as visited and store the value
+        #     elif subscript not in self.visited[expression].keys():
+        #         arg_values = list()
+        #         for arg in self.sfd.nodes[expression]['equation'].sub_contents[subscript].args:
+        #             arg_values.append(self.calculate_experiment(arg, subscript))
+        #         value = self.sfd.nodes[expression]['equation'].sub_contents[subscript].evaluate(arg_values)  
+        #         self.__name_values[self.current_time][expression].sub_contents[subscript] = value
+        #         self.visited[expression][subscript] = value  # mark it as visited and store the value
+        #     else:
+        #         value = self.visited[expression][subscript]
+        #     return value
 
         elif expression in self.sfd.nodes and self.sfd.nodes[expression]['element_type'] == 'stock':
             # print('calc g')
             # print(self.__name_values.keys())
-            value = self.__name_values[self.current_time][expression].sub_contents[subscript]
+            if not self.is_initialised:
+                stock_eqn = self.sfd.nodes[expression]['equation'].sub_contents[subscript]
+                if type(stock_eqn) is Conveyor:
+                    value = self.calculate_experiment(stock_eqn.equation, subscript)
+                else:
+                    value = self.calculate_experiment(stock_eqn, subscript)
+            else:
+                value = self.__name_values[self.current_time][expression].sub_contents[subscript]
             return value
 
         else:  # calculation is needed
-            # print('calc h')
+            # print('calc h:', expression)
             if expression in self.sfd.nodes:
                 equation = self.sfd.nodes[expression]['equation'].sub_contents[subscript]
             else:
                 equation = expression
+            
+            # pre-process expression to match Python syntax
+            # replace '=' with '=='
+            if type(equation) is str:
+                reg = "(?<!(<|>|=))=(?!(<|>|=))"
+                equation = re.sub(reg, "==", equation)
 
             # chech if there is any cross-reference arrays - if so, calculate the leftmost one.
             while type(equation) is str and '[' in equation:
@@ -1050,7 +1024,7 @@ class Structure(object):
                 # calculate the cross-reference value
                 cr_value = self.calculate_experiment(cr_variable, cr_subscript)
                 cr_variable_subscript = cr_variable+'['+cr_subscript_text+']'
-                equation = equation.replace(cr_variable_subscript, str(cr_value)) # re.sub has problem with [], we use re.replace
+                equation = equation.replace(cr_variable_subscript, str(cr_value)) # re.sub has problem with [], we use str.replace
             
             # print('EQU', equation)
             value = None
@@ -1059,12 +1033,12 @@ class Structure(object):
                 
                 # check if the variable is a graph function which has an additonal layer that transforms the equation outcome
                 if type(equation) is GraphFunc:
-                    # print('calc h3')
+                    # print('calc h0')
                     input = self.calculate_experiment(equation.eqn, subscript)
                     equation = equation(input)
               
                 # check if this is a conditional statement
-                elif len(equation) > 2 and equation[:2] == 'IF':
+                elif type(equation) is str and len(equation) > 2 and equation[:2] == 'IF':
                     # print('calc h1')
                     con_if = equation[2:].split('THEN')[0]
                     # print('con_if:', con_if)
@@ -1078,7 +1052,7 @@ class Structure(object):
                         raise Exception("Condition THEN and ELSE cannot both be None")
                     else:
                         con_eval = self.calculate_experiment(con_if, subscript)
-                        print('con_eval', con_eval)
+                        # print('con_eval', con_eval)
                         if type(con_eval) is not bool:
                             raise TypeError("Condition IF must be True of False")
                         elif con_eval:
@@ -1089,9 +1063,10 @@ class Structure(object):
                     # print('con_outcome:', con_outcome)
                     con_statement = 'IF'+con_if+'THEN'+con_then+'ELSE'+con_else
                     # print('Constat', con_statement)
-                    equation = re.sub(con_statement, con_outcome, equation)
+                    equation = equation.replace(con_statement, con_outcome)
+                    # print('equation after con', equation)
                 
-                elif len(equation) > 3 and 'AND' in equation:
+                elif type(equation) is str and len(equation) > 3 and 'AND' in equation:
                     # print('calc h2.1')
                     and_0, and_1 = equation.split('AND')
                     # print('and_0', and_0)
@@ -1103,12 +1078,13 @@ class Structure(object):
                     if type(and_1_eval) is not bool:
                         raise TypeError
                     if and_0_eval and and_1_eval:
-                        equation = 'True'
+                        and_outcome = 'True'
                     else:
-                        equation = 'False'
+                        and_outcome = 'False'
+                    equation = and_outcome
 
-                elif len(equation) > 2 and 'OR' in equation:
-                    # print('calc h2.2')
+                elif type(equation) is str and len(equation) > 2 and 'OR' in equation:
+                    print('calc h2.2')
                     and_0, and_1 = equation.split('OR')
                     # print('and_0', and_0)
                     # print('and_1', and_1)
@@ -1124,11 +1100,12 @@ class Structure(object):
                         equation = 'False'
 
                 # check if there are time-related functions in the equation
-                elif re.findall(r"(\w+)[(].+[)]", str(equation)):
+                elif type(equation) is str and re.findall(r"(\w+)[(].+[)]", str(equation)):
                     func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
                     # print('calc h3')
                     for func_name in func_names:
                         # print(0, equation)
+                        # print('calc h3 0', func_name)
                         if func_name in self.time_related_functions.keys():
                             func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
                             # print('1',func_args)
@@ -1153,13 +1130,18 @@ class Structure(object):
                     value = eval(str(equation), self.custom_functions)
 
                 except NameError as e:
+                    # print('eval error for equation:', equation, ', of expression:', expression)
                     s = e.args[0]
                     p = s.split("'")[1]
                     val = self.calculate_experiment(p, subscript)
                     val_str = str(val)
                     reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
                     equation = re.sub(reg, val_str, equation)
-
+                
+                # if value is None:
+                #     print('aaa', self.__name_values[self.current_time]['Stock'].sub_contents[subscript])
+                #     raise ValueError("Value cannot be None for equation:\n{}, of expression:\n{}".format(equation, expression))
+            
             if expression in self.sfd.nodes:
                 if self.sfd.nodes[expression]['element_type'] == 'flow': # if a flow is overdrafting from a non-negative stock, its value should be the remainder (current value) of the stock
                     flow_from_stock = self.sfd.nodes[expression]['flow_from']
@@ -1180,6 +1162,8 @@ class Structure(object):
                             self.visited[expression][subscript] = value
                 except AttributeError:
                     pass
+
+            
             return value
 
 
