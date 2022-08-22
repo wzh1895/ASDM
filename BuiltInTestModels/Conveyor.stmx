@@ -7,10 +7,10 @@
 		<vendor>isee systems, inc.</vendor>
 		<product version="2.0" isee:build_number="2190" isee:saved_by_v1="true" lang="en">Stella Professional</product>
 	</header>
-	<sim_specs isee:sim_duration="1.5" isee:simulation_delay="0.125" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="true" isee:loop_exhaustive_allowed="1000">
-		<start>1</start>
-		<stop>13</stop>
-		<dt reciprocal="true">4</dt>
+	<sim_specs isee:sim_duration="1.5" isee:simulation_delay="0.375" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="true" isee:loop_exhaustive_allowed="1000">
+		<start>0</start>
+		<stop>4</stop>
+		<dt reciprocal="true">2</dt>
 	</sim_specs>
 	<isee:prefs show_module_prefix="true" live_update_on_drag="true" show_restore_buttons="false" layer="model" interface_scale_ui="true" interface_max_page_width="10000" interface_max_page_height="10000" interface_min_page_width="0" interface_min_page_height="0" rerun_on_structure_change="false" saved_runs="1" keep="false" rifp="true"/>
 	<isee:multiplayer_settings include_chat="true" allow_observers="false" advance_time_increment="1" observer_start_page="home_page" enabled="false"/>
@@ -24,6 +24,9 @@
 			<alias>mo</alias>
 			<alias>month</alias>
 		</unit>
+		<unit name="Per Month">
+			<eqn>1/Months</eqn>
+		</unit>
 	</model_units>
 	<model>
 		<variables>
@@ -34,7 +37,6 @@
 				<conveyor>
 					<len>12</len>
 				</conveyor>
-				<units/>
 			</stock>
 			<flow name="Flow Out">
 				<eqn>0</eqn>
