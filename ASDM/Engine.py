@@ -977,7 +977,8 @@ class Structure(object):
             for ix in self.sfd.nodes[flow]['equation'].sub_index:
                 
                 # print('f leak:', flow)
-                flow_leak_fraction = self.calculate_experiment(flow, ix)
+                flow_leak_fraction_eqn = self.sfd.nodes[flow]['equation'].sub_contents[ix]
+                flow_leak_fraction = self.calculate_experiment(flow_leak_fraction_eqn, ix)
                 # print('f leak frac:', flow_leak_fraction)
                 v = self.sfd.nodes[self.sfd.nodes[flow]['flow_from']]['equation'].sub_contents[ix].leak_linear(flow_leak_fraction) / self.dt
                 # print('f leak v:', flow, v)
@@ -998,13 +999,16 @@ class Structure(object):
                 flows[flow][ix] = v
                 # as this flow is not calculated through calculate(), we manually register its value to __name_values
                 self.__name_values[self.current_time][flow].sub_contents[ix] = v
+            
+            self.visited[flow] = flows[flow]  # save calculated flow to buffer
 
         # tier 3
         for flow in non_leaking_flows:
-            v = self.calculate_experiment(flow, ix)
-            flows[flow][ix] = v
+            for ix in self.sfd.nodes[flow]['equation'].sub_index:
+                v = self.calculate_experiment(flow, ix)
+                flows[flow][ix] = v
         
-        self.visited[flow] = flows[flow]  # save calculated flow to buffer
+            self.visited[flow] = flows[flow]  # save calculated flow to buffer
 
         # print('All flows default_dt:', flows_dt)
 
