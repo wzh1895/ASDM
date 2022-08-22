@@ -204,6 +204,9 @@ class Conveyor(object):
 class Structure(object):
     # def __init__(self, sfd=None, uid_manager=None, name_manager=None, subscripts=None, uid_element_name=None, subscript_manager=None):
     def __init__(self, subscripts={'default_sub':['default_ele']}, from_xmile=None):
+        # debug functionalities
+        self.n_indentation = 0
+        
         # Make alias for function names
         self.LINEAR = self.linear
         self.SUBTRACTION = self.subtraction
@@ -418,8 +421,13 @@ class Structure(object):
 
                 # create stocks
                 for stock in stocks:
-                    # self.add_stock(self.name_handler(stock.get('name')), equation=stock.find('eqn').text)
-                    self.add_stock(self.name_handler(stock.get('name')), equation=subscripted_equation(stock))
+                    
+                    non_negative = False
+                    if stock.find('non_negative'):
+                        # print('nonnegstock', stock)
+                        non_negative = True
+
+                    self.add_stock(self.name_handler(stock.get('name')), equation=subscripted_equation(stock), non_negative=non_negative)
                     
                     inflows = stock.findAll('inflow')
                     if len(inflows) != 0:
@@ -452,7 +460,12 @@ class Structure(object):
                         leak = True
                     else:
                         leak = False
-                    self.add_flow(self.name_handler(flow.get('name')), equation=subscripted_equation(flow), flow_from=flow_from, flow_to=flow_to, leak=leak)
+
+                    # check if can be negative
+                    non_negative = False
+                    if flow.find('non_negative'):
+                        non_negative = True
+                    self.add_flow(self.name_handler(flow.get('name')), equation=subscripted_equation(flow), flow_from=flow_from, flow_to=flow_to, leak=leak, non_negative=non_negative)
 
             else:
                 raise Exception("Specified model file does not exist.")
@@ -692,7 +705,7 @@ class Structure(object):
                         external=external,
                         non_negative=non_negative,
                         leak=leak)
-        print('Engine: adding element:', element_name, 'equation:', equation)
+        # print('Engine: adding element:', element_name, 'equation:', equation)
 
         return uid
 
@@ -905,8 +918,10 @@ class Structure(object):
                     current_value = self.__name_values[self.current_time-self.dt][stock].sub_contents[ix]
                     # print(delta_value, type(delta_value), current_value, type(current_value))
                     new_value = delta_value + current_value
-                if self.sfd.nodes[stock]['non_negative'] is True and new_value < 0:# if the stock in non-negative and the new value is below 0, keep its current value
+                if self.sfd.nodes[stock]['non_negative'] is True and new_value < 0:# if the stock in non-negative and the new value is below 0
+                    # raise ValueError("Stock {} is non-negative but its value is going below 0.".format(stock))
                     # self.__name_values[stock].sub_contents[ix].append(self.__name_values[stock].sub_contents[ix][-1])
+                    # print("Stock {} is non-negative but its value is going below 0.".format(stock))
                     self.__name_values[self.current_time][stock].sub_contents[ix] = 0
                 else:
                     self.__name_values[self.current_time][stock].sub_contents[ix] = new_value
@@ -935,8 +950,9 @@ class Structure(object):
         # ususally this is not a problem, but when random process is included, values from multiple calculations can be different.
         # self.visited = dict()
 
-        leaking_flows = list()
-        non_leaking_flows = list()
+        leaking_flows = list() # tier 1
+        convey_outflows = list() # tier 2
+        non_leaking_flows = list() # tier 3
         # calculate flows
         
         # prioritise leaking flows
@@ -944,17 +960,27 @@ class Structure(object):
             if self.sfd.nodes[flow]['leak']:
                 leaking_flows.append(flow)
             else:
-                non_leaking_flows.append(flow)
+                flow_from = self.sfd.nodes[flow]['flow_from']
+                if flow_from is not None:
+                    for ix in self.sfd.nodes[flow_from]['equation'].sub_index:
+                        flow_from_equation = self.sfd.nodes[flow_from]['equation'].sub_contents[ix]
+                        if type(flow_from_equation) is Conveyor:
+                            convey_outflows.append(flow)
+                        else:
+                            non_leaking_flows.append(flow)
+                        break
+                else:
+                    non_leaking_flows.append(flow)
 
+        # tier 1
         for flow in leaking_flows:
-
             for ix in self.sfd.nodes[flow]['equation'].sub_index:
                 
                 # print('f leak:', flow)
                 flow_leak_fraction = self.calculate_experiment(flow, ix)
                 # print('f leak frac:', flow_leak_fraction)
                 v = self.sfd.nodes[self.sfd.nodes[flow]['flow_from']]['equation'].sub_contents[ix].leak_linear(flow_leak_fraction) / self.dt
-                # print('f leak v:', v)
+                # print('f leak v:', flow, v)
                 
                 flows[flow][ix] = v
                 # as this flow is not calculated through calculate(), we manually register its value to __name_values
@@ -962,26 +988,23 @@ class Structure(object):
             
             self.visited[flow] = flows[flow]  # save calculated flow to buffer
         
-        for flow in non_leaking_flows:
+        # tier 2
+        for flow in convey_outflows:
             for ix in self.sfd.nodes[flow]['equation'].sub_index:
-                
-                # in case the flow is the outflow of a conveyor:
-                
                 flow_from = self.sfd.nodes[flow]['flow_from']
-                if flow_from is not None:
-                    flow_from_equation = self.sfd.nodes[flow_from]['equation'].sub_contents[ix]
-                
-                if flow_from is not None and type(flow_from_equation) is Conveyor:
-                    # print('f out:', flow)
-                    v = self.sfd.nodes[flow_from]['equation'].sub_contents[ix].outflow() / self.dt # the conveyor outputs the value of this DT but we need a flow value for the whole time unit (DT = 1)
-                    # print('f out v:', v)
-                    flows[flow][ix] = v
-                    # as this flow is not calculated through calculate(), we manually register its value to __name_values
-                    self.__name_values[self.current_time][flow].sub_contents[ix] = v
-                
-                else:
-                    flows[flow][ix] = self.calculate_experiment(flow, ix)
-            self.visited[flow] = flows[flow]  # save calculated flow to buffer
+                # print('f out:', flow)
+                v = self.sfd.nodes[flow_from]['equation'].sub_contents[ix].outflow() / self.dt # the conveyor outputs the value of this DT but we need a flow value for the whole time unit (DT = 1)
+                # print('f out v:', v)
+                flows[flow][ix] = v
+                # as this flow is not calculated through calculate(), we manually register its value to __name_values
+                self.__name_values[self.current_time][flow].sub_contents[ix] = v
+
+        # tier 3
+        for flow in non_leaking_flows:
+            v = self.calculate_experiment(flow, ix)
+            flows[flow][ix] = v
+        
+        self.visited[flow] = flows[flow]  # save calculated flow to buffer
 
         # print('All flows default_dt:', flows_dt)
 
@@ -1003,7 +1026,8 @@ class Structure(object):
                         # self.visited[element][ix] = v  # mark it as visited and store calculated value
 
     def calculate_experiment(self, expression, subscript):
-        # print('expression:', expression)
+        self.n_indentation += 1
+        # print(self.n_indentation*'\t' + 'expression:', expression)
 
         # check if this value has been calculated and stored in buffer
         # when initialising stock values, there's no 'self.visited' yet
@@ -1012,6 +1036,7 @@ class Structure(object):
             # print(self.visited[expression])
             if subscript in self.visited[expression].keys():
                 # print(self.visited[expression][subscript])
+                self.n_indentation -= 1
                 return self.visited[expression][subscript]
             else:
                 pass
@@ -1019,16 +1044,19 @@ class Structure(object):
         # check if this is a system variable like TIME
         if expression in self.__built_in_variables.keys():
             # print('calc b')
+            self.n_indentation -= 1
             return self.__built_in_variables[expression][-1]
 
         elif type(expression) in [int, float, np.int64]:
             # print('calc d')
+            self.n_indentation -= 1
             return expression
             
         # check if this value has been calculated
         # if expression in self.__name_values[self.current_time].keys(): # name might be equation such as 'a > b'
         if expression in self.sfd.nodes and self.__name_values[self.current_time][expression].sub_contents[subscript] is not None:
             # print('calc c')
+            self.n_indentation -= 1
             return self.__name_values[self.current_time][expression].sub_contents[subscript]
 
         # elif expression in self.sfd.nodes and type(self.sfd.nodes[expression]['equation'].sub_contents[subscript]) is DataFeeder:
@@ -1079,11 +1107,18 @@ class Structure(object):
                     value = self.calculate_experiment(stock_eqn, subscript)
             else:
                 value = self.__name_values[self.current_time][expression].sub_contents[subscript]
+            self.n_indentation -= 1
             return value
+        
+        # expression is the name of a leaking flow
+        elif expression in self.sfd.nodes and self.sfd.nodes[expression]['leak']:
+             if not self.is_initialised: # it's currently in the process of init_stocks, no leaks have been calculated
+                self.n_indentation -= 1
+                return 0 # leaks are currently all 0
 
         else:  # calculation is needed
             # print('calc h:', expression)
-            if expression in self.sfd.nodes:
+            if expression in self.sfd.nodes: # careful - outflows from conveyors have eqn 0 but should not be dealt with here
                 equation = self.sfd.nodes[expression]['equation'].sub_contents[subscript]
             else:
                 equation = expression
@@ -1131,7 +1166,7 @@ class Structure(object):
                     con_if = equation[2:].split('THEN')[0]
                     # print('con_if:', con_if)
                     con_then = equation[2:].split('THEN')[1].split('ELSE')[0]
-                    # print('con_then:', con_then)
+                    # print(self.n_indentation*'\t'+'con_then:', con_then)
                     con_else = equation[2:].split('THEN')[1].split('ELSE')[1]
                     # print('con_else:', con_else)
                     if con_if is None:
@@ -1144,11 +1179,12 @@ class Structure(object):
                         if type(con_eval) is not bool:
                             raise TypeError("Condition IF must be True of False")
                         elif con_eval:
+                            # print(self.n_indentation*'\t'+'here')
                             con_outcome = self.calculate_experiment(con_then, subscript)
                         else:
                             con_outcome = self.calculate_experiment(con_else, subscript)
                     con_outcome = str(con_outcome)
-                    # print('con_outcome:', con_outcome)
+                    # print(self.n_indentation*'\t'+'con_outcome:', con_outcome)
                     con_statement = 'IF'+con_if+'THEN'+con_then+'ELSE'+con_else
                     # print('Constat', con_statement)
                     equation = equation.replace(con_statement, con_outcome)
@@ -1216,30 +1252,56 @@ class Structure(object):
 
                 try:
                     value = eval(str(equation), self.custom_functions)
+                    # print(self.n_indentation*'\t'+'Evaluated {} = {}'.format(equation, value))
 
                 except NameError as e:
-                    # print('eval error for equation:', equation, ', of expression:', expression)
                     s = e.args[0]
                     p = s.split("'")[1]
+                    # print(self.n_indentation*'\t'+'NameError {} for equation: {}'.format(p,equation))
                     val = self.calculate_experiment(p, subscript)
+                    # print(self.n_indentation*'\t'+'Calculated value for {}: {}'.format(p, val))
                     val_str = str(val)
                     reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
                     equation = re.sub(reg, val_str, equation)
+                
+                except ZeroDivisionError as e:
+                    # print(e)
+                    # print(self.n_indentation*'\t'+'ZeroDivisionError for equation:', equation, ' of expression', expression)
+                    # print('\n\n')
+                    # for k, v in self.__name_values[self.current_time].items():
+                    #     print(k)
+                    #     print(v.sub_contents)
+                    # print('\n\n')
+                    raise e
+
                 
                 # if value is None:
                 #     print('aaa', self.__name_values[self.current_time]['Stock'].sub_contents[subscript])
                 #     raise ValueError("Value cannot be None for equation:\n{}, of expression:\n{}".format(equation, expression))
             
             if expression in self.sfd.nodes:
-                if self.sfd.nodes[expression]['element_type'] == 'flow': # if a flow is overdrafting from a non-negative stock, its value should be the remainder (current value) of the stock
-                    flow_from_stock = self.sfd.nodes[expression]['flow_from']
-                    if flow_from_stock is not None:
-                        if self.sfd.nodes[flow_from_stock]['non_negative']:
-                            remainder_of_stock = self.__name_values[self.current_time][flow_from_stock].sub_contents[subscript]
-                            if remainder_of_stock < value:
-                                value = remainder_of_stock
+
+                # Noted 21/8/2022: This is not OK. Positive check of non-negative stocks should be performed when updating the stock, not calculating flows. -10->[0]-10-> is legitimate but not pass here.
+                # if self.sfd.nodes[expression]['element_type'] == 'flow': # if a flow is overdrafting from a non-negative stock, its value should be the remainder (current value) of the stock
+                #     flow_from_stock = self.sfd.nodes[expression]['flow_from']
+                #     if flow_from_stock is not None:
+                #         if self.sfd.nodes[flow_from_stock]['non_negative']:
+                #             remainder_of_stock = self.__name_values[self.current_time][flow_from_stock].sub_contents[subscript]
+                #             if remainder_of_stock < value:
+                #                 value = remainder_of_stock
+
+                # non-negative control of flows
+                if self.sfd.nodes[expression]['element_type'] == 'flow':
+                    if self.sfd.nodes[expression]['non_negative']:
+                        if value < 0:
+                            # print('Flow {} is non-negative but is going under 0 to {}.'.format(expression, value))
+                            value = 0
                 
-                self.__name_values[self.current_time][expression].sub_contents[subscript] = value
+                # leak flows have eqn but it's not for value, but for leak fraction. Check before register
+                if self.sfd.nodes[expression]['leak']:
+                    pass
+                else:
+                    self.__name_values[self.current_time][expression].sub_contents[subscript] = value
 
                 try:  # when initialising stock values, there's no 'self.visited' yet
                     # print('calc updating vidited', expression, subscript, value)
@@ -1250,8 +1312,8 @@ class Structure(object):
                             self.visited[expression][subscript] = value
                 except AttributeError:
                     pass
-
             
+            self.n_indentation -= 1
             return value
 
 
@@ -1294,7 +1356,7 @@ class Structure(object):
         # print('Engine: added stock:', name, 'to graph.')
         return uid
 
-    def add_flow(self, name=None, equation=None, x=0, y=0, points=None, flow_from=None, flow_to=None, leak=None):
+    def add_flow(self, name=None, equation=None, x=0, y=0, points=None, flow_from=None, flow_to=None, leak=None, non_negative=False):
         if name is None:
             name = self.__name_manager.get_new_name(element_type='flow')
         if equation is not None:
@@ -1306,7 +1368,8 @@ class Structure(object):
                                     y=y,
                                     equation=equation,
                                     points=points,
-                                    leak=leak)
+                                    leak=leak,
+                                    non_negative=non_negative)
 
         self.connect_stock_flow(name, flow_from=flow_from, flow_to=flow_to)
         # print('Engine: added flow:', name, 'to graph.')
