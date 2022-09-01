@@ -95,7 +95,9 @@ class Var(object):
 class Structure(object):
     def __init__(self, subscripts=None, from_xmile=None):
         # causal loop diagram
-        # there are three types of connections
+        # 0. proto CLD
+        self.cld = nx.DiGraph()
+        # there are three types of sub-CLDs
         # 1. those used to forward calculate flows
         self.cld_flows = nx.DiGraph()
         # 2. those used to initialise stocks
@@ -103,6 +105,11 @@ class Structure(object):
         # 3. those used to update stocks with flows
         self.cld_update_stocks = nx.DiGraph()
 
+        # collections of variables by type
+        self.stocks = list()
+        self.flows = list()
+        self.auxiliaries = list()
+        
         # run specs
         self.run_specs = {
             'initial_time': 0,
@@ -114,16 +121,11 @@ class Structure(object):
 
         # equations & values
         self.var_eqns = dict()
+        self.var_eqns_compiled = dict()
         self.var_eqns_runtime = dict() # after initialisation, stocks should not have equations
+        
+        # historical values
         self.historical_values = list() # 2-d array
-
-        # collections of variables by type
-        self.stocks = list()
-        self.flows = list()
-        self.auxiliaries = list()
-
-        # collections of all dependencies
-        # self.all_dependencies = dict()
 
         # subscripts
         self.dimensions = dict()
@@ -132,7 +134,7 @@ class Structure(object):
         self.elements_mapping = dict()
 
         # collective namespace
-        self.name_space = dict() # a__ele__b__comma__space__1__ele -> a[b, 1]
+        # self.name_space = dict() # a__ele__b__comma__space__1__ele -> a[b, 1]
 
     ##################
     # Model definition
@@ -174,6 +176,7 @@ class Structure(object):
     ###################
     # Model Compilation
     ###################
+    
     @staticmethod
     def remove_bracket(input_str): # a[b] --> a
         # print('input eqn:', input_str)
@@ -206,6 +209,22 @@ class Structure(object):
         output_str = input_str.replace('[', '__ele1__').replace(']', '__ele2__').replace(',', '__cmm__').replace(' ','')
         return output_str
     
+    def recursive_trace(self, var, diagram, n_steps=None, type_stop_con=None):
+        if var in diagram.nodes:
+            # if stop_con is not None:
+            #     not_end = 
+            not_end = True
+            while not_end and n_steps != 0:
+                dependencies = list(diagram.predecessors(var))
+                if len(dependencies) != 0:
+                    for dependency in dependencies:
+                        diagram.add_edge(dependency, var)
+                        self.recursive_trace()
+
+        else:
+            diagram.nodes[var] # trigger ValueError
+
+
     def generate_stock_cld(self, vars, diagram):
         # print('sss0')
         for var in vars:
@@ -214,26 +233,41 @@ class Structure(object):
             # self.all_dependencies[var] = set()
             
             if type(equation) is str:
-                # print('sss2.0', var, equation)
+                # print('sss1.1', var, equation)
+
+                # self.name_space[var] = equation
+
                 cause_vars = dict()
                 success = False
                 while not success: 
+                    equation_1 = self.remove_bracket(equation)
                     try: 
-                        eval(equation, cause_vars)
+                        eval(equation_1, cause_vars)
                         if var not in diagram.nodes:
                             diagram.add_node(var) # add node (stock) to CLD (e.g. stock=10)
                         success = True
+                        
                     except NameError as e:
                         s = e.args[0]
                         p = s.split("'")[1]
                         diagram.add_edge(p, var) # add edge to CLD (e.g. stock=init_stock=10)
-                        # self.all_dependencies[var].add(p)
+                        # put dependency p to name_space
+
                         cause_vars[p] = 1
+                    except TypeError as e:
+                        print('TypeError:', equation_1)
+                        raise e
                 
+                processed_equation = self.process_equation(equation)
+                try:
+                    processed_equation = float(processed_equation) # constants str -> float
+                except:
+                    pass
+
                 self.var_eqns_compiled[var] = self.process_equation(equation)
             
             elif type(equation) is dict:
-                # print('sss2.1', var, equation)
+                # print('sss1.2', var, equation)
                 # print('found eqn subscripted: {}={}'.format(var, equation))
                 subscripted_equation = Var(self.var_dimensions[var])
                 self.var_elements[var] = set()
@@ -242,11 +276,17 @@ class Structure(object):
                     processed_ele = self.process_element(ele)
                     # print('sss2.2.1', var, ele, processed_ele)
                     self.elements_mapping[ele] = processed_ele
+                    
+                    processed_eqn = self.process_equation(eqn)
+                    try:
+                        processed_eqn = float(processed_eqn)
+                    except:
+                        pass
+                    
                     subscripted_equation[processed_ele] = self.process_equation(eqn)
                     subscripted_equation.custom_attrs.add(processed_ele)
                     
-                    
-                    self.name_space[var+processed_ele] = subscripted_equation[processed_ele]
+                    self.var_eqns_compiled[var+processed_ele] = subscripted_equation[processed_ele]
                     self.var_elements[var].add(processed_ele)
 
                     cause_vars = dict()
@@ -301,7 +341,12 @@ class Structure(object):
                         print('TypeError:', equation_1)
                         raise e
                 
-                self.var_eqns_compiled[var] = self.process_equation(equation)
+                processed_equation = self.process_equation(equation)
+                try:
+                    processed_equation = float(processed_equation) # constants str -> float
+                except:
+                    pass
+                self.var_eqns_compiled[var] = processed_equation
 
             elif type(equation) is dict: # with subscripts
                 # print('found eqn subscripted: {}={}'.format(var, equation))
@@ -311,10 +356,17 @@ class Structure(object):
                     processed_ele = self.process_element(ele)
                     # print('p_ele', processed_ele)
                     self.elements_mapping[ele] = processed_ele
-                    subscripted_equation[processed_ele] = self.process_equation(eqn)
+
+                    processed_eqn = self.process_equation(eqn)
+                    try:
+                        processed_eqn = float(processed_eqn)
+                    except:
+                        pass
+
+                    subscripted_equation[processed_ele] = processed_eqn
                     subscripted_equation.custom_attrs.add(processed_ele)
 
-                    self.name_space[var+processed_ele] = subscripted_equation[processed_ele]
+                    self.var_eqns_compiled[var+processed_ele] = subscripted_equation[processed_ele]
                     self.var_elements[var].add(processed_ele)
                     
                     cause_vars = dict()
@@ -339,7 +391,7 @@ class Structure(object):
                             print('TypeError:', eqn_1)
                             raise e
                         
-                self.var_eqns_compiled[var] = subscripted_equation
+                # self.var_eqns_compiled[var] = subscripted_equation
 
 
     def compile(self):
@@ -360,6 +412,175 @@ class Structure(object):
     # Simulation
     ############
 
+    def evaluation(self, expression, gb, lc):
+        try:
+            value = eval(expression, gb, lc)
+        except TypeError as e:
+            if type(expression) in [int, float, np.int64, np.float64]:
+                value = expression
+            else:
+                raise e
+
+        return value
+
+
+    def init_stock(self, var, diagram, calculated, if_stock):
+        self.visited.add(var)
+        print('iii0, init stock:', var)
+        
+        dependencies = list(diagram.predecessors(var))
+
+        try:
+            elements = self.var_elements[var]
+        
+            for element in elements:
+                var_ele = var+element
+                var_ele_eqn = self.var_eqns_compiled[var_ele]
+
+                for dependency in dependencies:
+                    if dependency in self.stocks:
+                        ifstk = True
+                    else:
+                        ifstk = False
+                    self.init_stock(dependency, diagram, calculated, if_stock=ifstk)
+                
+                # try:
+                #     var_ele_v = eval(var_ele_eqn, {}, calculated)
+                # except TypeError:
+                #     if type(var_ele_eqn) in [int, float, np.int64, np.float64]:
+                #         var_ele_v = var_ele_eqn
+
+                var_ele_v = self.evaluation(var_ele_eqn, gb={}, lc=calculated)
+                
+                calculated[var_ele] = var_ele_v
+                
+                # check if this var_ele is of stock
+                # if so, update the runtime namespace to replace a stock's initilisaion expression
+                if if_stock:
+                    self.var_eqns_runtime[var_ele] = str(var_ele_v) # str needed for eval()
+        
+        except: # the model does not use arrays
+            
+            var_eqn = self.var_eqns_compiled[var]
+
+            for dependency in dependencies:
+                if dependency in self.stocks:
+                    ifstk = True
+                else:
+                    ifstk = False
+                self.init_stock(dependency, diagram, calculated, if_stock=ifstk)
+            
+            # try:
+            #     var_v = eval(var_eqn, {}, calculated)
+            # except TypeError: # when var_eqn has been converted to number at the compiling stage
+            #     if type(var_eqn) in [int, float, np.int64, np.float64]:
+            #         var_v = var_eqn 
+
+            var_v = self.evaluation(var_eqn, gb={}, lc=calculated)
+
+            calculated[var] = var_v
+
+            if if_stock:
+                self.var_eqns_runtime[var] = str(var_v)
+        
+
+    def update_flow_aux(self, var, diagram, calculated=dict()):
+        self.visited.add(var)
+        dependencies = list(diagram.predecessors(var))
+        # print('ufa1', calculated)
+        try:
+            elements = self.var_elements[var]
+        
+            for element in elements:
+                var_ele = var+element
+                var_ele_eqn = self.var_eqns_runtime[var_ele]
+
+                for dependency in dependencies:
+                    self.update_flow_aux(dependency, diagram, calculated)
+                
+                # e.g., constants are not included in calculated yet, so self.var_eqns_runtime is necessary
+                # try:
+                #     var_ele_v = eval(var_ele_eqn, self.var_eqns_runtime, calculated)
+                # except TypeError:
+                #     if type(var_ele_eqn) in [int, float, np.int64, np.float64]:
+                #         var_ele_v = var_ele_eqn
+
+                var_ele_v = self.evaluation(var_ele_eqn, gb=self.var_eqns_runtime, lc=calculated)
+
+                calculated[var_ele] = var_ele_v
+                # print('ufa', var_ele, var_ele_v)
+        except: # var is not subscripted
+            var_eqn = self.var_eqns_runtime[var]
+            
+            for dependency in dependencies:
+                self.update_flow_aux(dependency, diagram, calculated)
+
+            # try:
+            #     var_v = eval(var_eqn, self.var_eqns_runtime, calculated)
+            # except TypeError:
+            #     if type(var_eqn) in [int, float, np.int64, np.float64]:
+            #         var_v = var_eqn
+
+            var_v = self.evaluation(var_eqn, gb=self.var_eqns_runtime, lc=calculated)
+
+            calculated[var] = var_v
+
+        
+    def update_stock(self, stock, diagram, calculated, to_be_calculated):
+        self.visited.add(stock)
+        # print('bbb0.1', stock)
+        # print('bbb0.2', diagram.edges)
+        delta_value = 0
+        flows = list(diagram.in_edges(stock))
+        # print('bbb0.3', flows)
+
+        try:
+            elements = self.var_elements[stock]
+            for element in elements:
+                data_value = 0
+                stock_ele = stock+element
+                stock_ele_v_current = calculated[stock_ele]
+
+                for flow in flows:
+                    flow_var = flow[0]
+                    flow_ele = flow_var+element
+                    # print('bbb1.0', flow_ele)
+                    flow_ele_v = calculated[flow_ele]
+                    # print('bbb1.1', flow_ele_v)
+                    p = flow_ele_v * diagram.edges[flow]['sign']
+                    # print('bbb1.2', p)
+                    delta_value = data_value + p
+                
+                delta_value = delta_value * self.run_specs['dt']
+                
+                stock_ele_v_new = stock_ele_v_current + delta_value
+
+                to_be_calculated[stock_ele] = stock_ele_v_new
+
+                self.var_eqns_runtime[stock_ele] = str(stock_ele_v_new)
+        
+        except:
+            data_value = 0
+            stock_v_current = calculated[stock]
+
+            for flow in flows:
+                flow_var = flow[0]
+                # print('bbb1.0', flow_ele)
+                flow_v = calculated[flow_var]
+                # print('bbb1.1', flow_ele_v)
+                p = flow_v * diagram.edges[flow]['sign']
+                # print('bbb1.2', p)
+                delta_value = data_value + p
+            
+            delta_value = delta_value * self.run_specs['dt']
+            
+            stock_v_new = stock_v_current + delta_value
+
+            to_be_calculated[stock] = stock_v_new
+
+            self.var_eqns_runtime[stock] = str(stock_v_new)
+    
+
     def simulate(self, simulation_time=None, dt=None):
         # Generate all clds (and compile subscripted variables)
         self.compile()
@@ -379,10 +600,14 @@ class Structure(object):
         # print('\nSimulate: init stocks')
         # self.var_eqns_runtime = deepcopy(self.var_eqns_compiled)
 
-        self.name_space_runtime = copy(self.name_space)
+        self.var_eqns_runtime = deepcopy(self.var_eqns_compiled)
+
+        # print('zzz0', self.var_eqns_runtime)
 
         for stock in self.stocks:
-            self.init_stocks(stock, diagram=self.cld_init_stocks, calculated=step_values, if_stock=True)
+            self.init_stock(stock, diagram=self.cld_init_stocks, calculated=step_values, if_stock=True)
+
+        # print('zzz1', self.var_eqns_runtime)
 
         # calculate flows and update stocks
         for step in range(total_steps):
@@ -390,7 +615,8 @@ class Structure(object):
             # print('\nSimulate: update flows_1')
             for flow in self.flows:
                 self.update_flow_aux(flow, diagram=self.cld_flows, calculated=step_values)
- 
+            
+            # print('zzz2', step_values)
             
             # step 3
             # some isolated vars need to be updated (e.g., stock_init-->stock)
@@ -402,6 +628,8 @@ class Structure(object):
             
             # self.historical_values.append(step_values.values())
             self.historical_values.append(step_values)
+
+            # print('zzz3', step_values)
 
             # move to next step
             self.current_step += 1
@@ -416,18 +644,9 @@ class Structure(object):
                 self.update_stock(stock, diagram=self.cld_update_stocks, calculated=step_values, to_be_calculated=new_step_values)
                 # new_step_values[stock] = v
                 # self.var_eqns_runtime[stock] = str(v)
-            
-            # from pprint import pprint
-            # print('\nstep values')
-            # pprint(step_values)  
-
-            # print('\nnew step values')
-            # pprint(new_step_values)
-
-            # print('\nhistorical values')
-            # pprint(self.historical_values)
 
             step_values = new_step_values
+            # print('zzz4', step_values)
 
         # step 2
         for flow in self.flows:
@@ -445,81 +664,6 @@ class Structure(object):
         # self.historical_values.append(step_values.values())
         self.historical_values.append(step_values)
 
-    def init_stocks(self, var, diagram, calculated, if_stock):
-        self.visited.add(var)
-        # print('iii0, init stock:', var)
-        dependencies = list(diagram.predecessors(var))
-        # dependencies = self.all_dependencies[var]
-        elements = self.var_elements[var]
-        
-        for element in elements:
-            var_ele = var+element
-            var_ele_eqn = self.name_space[var_ele]
-
-            for dependency in dependencies:
-                if dependency in self.stocks:
-                    ifstk = True
-                else:
-                    ifstk = False
-                self.init_stocks(dependency, diagram, calculated, if_stock=ifstk)
-            
-            var_ele_v = eval(var_ele_eqn, {}, calculated)
-            
-            calculated[var_ele] = var_ele_v
-            
-            # check if this var_ele is of stock
-            # if so, update the runtime namespace to replace a stock's initilisaion expression
-            if if_stock:
-                self.name_space_runtime[var_ele] = str(var_ele_v) # str needed for eval()
-
-    def update_flow_aux(self, var, diagram, calculated=dict()):
-        self.visited.add(var)
-        dependencies = list(diagram.predecessors(var))
-        elements = self.var_elements[var]
-        
-        for element in elements:
-            var_ele = var+element
-            var_ele_eqn = self.name_space_runtime[var_ele]
-
-            for dependency in dependencies:
-                self.update_flow_aux(dependency, diagram, calculated)
-            
-            var_ele_v = eval(var_ele_eqn, {}, calculated)
-            
-            calculated[var_ele] = var_ele_v
-            # print('ufa', var_ele, var_ele_v)
-        
-    def update_stock(self, stock, diagram, calculated, to_be_calculated):
-        # print('bbb0.1', stock)
-        # print('bbb0.2', diagram.edges)
-        # delta_value = 0
-        flows = list(diagram.in_edges(stock))
-        # print('bbb0.3', flows)
-
-        elements = self.var_elements[stock]
-        for element in elements:
-            data_value = 0
-            stock_ele = stock+element
-            stock_ele_v_current = calculated[stock_ele]
-
-            for flow in flows:
-                flow_var = flow[0]
-                flow_ele = flow_var+element
-                # print('bbb1.0', flow_ele)
-                flow_ele_v = calculated[flow_ele]
-                # print('bbb1.1', flow_ele_v)
-                p = flow_ele_v * diagram.edges[flow]['sign']
-                # print('bbb1.2', p)
-                delta_value = data_value + p
-            
-            delta_value = delta_value * self.run_specs['dt']
-            
-            stock_ele_v_new = stock_ele_v_current + delta_value
-
-            to_be_calculated[stock_ele] = stock_ele_v_new
-
-            self.name_space_runtime[stock_ele] = str(stock_ele_v_new)
-
     #################
     # Data Processing
     #################
@@ -531,118 +675,112 @@ class Structure(object):
 
 if __name__ == '__main__':
 
-    test_set = 7
+    def test(test_set):
 
-    if test_set == 0:
-        x = 'x'
-        y = 'y'
-
-        a = Var('dim1')
-        a.x = 10
-        a[y] = 20
-        b = 30
-
-
-        v = eval("b + a[x] + a[y] ")
-        print(v)
-
-    if test_set == 1:
-        model = Structure()
-        model.add_aux(name='initial_stock', equation='100')
-        model.add_stock(name='stock1', equation='initial_stock', inflows=['flow1'])
-        model.add_stock(name='stock2', equation='100')
+        if test_set == 1:
+            model = Structure()
+            model.add_aux(name='initial_stock', equation='100')
+            model.add_stock(name='stock1', equation='initial_stock', inflows=['flow1'])
+            model.add_stock(name='stock2', equation='200')
+            
+            model.add_flow(name='flow1', equation='gap1/at1', flow_to='stock1')
+            model.add_aux(name='goal1', equation='20')
+            model.add_aux(name='gap1', equation='goal1-stock1')
+            model.add_aux(name='at1', equation='5')
         
-        model.add_flow(name='flow1', equation='gap1/at1', flow_to='stock1')
-        model.add_aux(name='goal1', equation='20')
-        model.add_aux(name='gap1', equation='goal1-stock1')
-        model.add_aux(name='at1', equation='5')
-    
-    elif test_set == 2:
-        model = Structure()
-        model.subscripts = {'dim1': ['x', 'y'], 'dim2': ['1', '2']}
-        # model.add_aux(name='a', equation='5')
-        model.add_aux(name='b', dims=['dim1', 'dim2'], equation={'x, 1':'100', 'y, 1':'200', 'x, 2':'300', 'y, 2':'400'})
-        model.add_aux(name='c', equation='b[x, 2]')
-        # model.add_flow(name='flow1', equation='aux1 *2 + aux2[ele1] * 1')
-    
-    elif test_set == 3:
-        model = Structure()
-        print(model.replace_bracket('a[ele1, 1]+b[ele2, 2]'))
+        elif test_set == 2:
+            model = Structure()
+            model.subscripts = {'dim1': ['x', 'y'], 'dim2': ['1', '2']}
+            # model.add_aux(name='a', equation='5')
+            model.add_aux(name='b', dims=['dim1', 'dim2'], equation={'x, 1':'100', 'y, 1':'200', 'x, 2':'300', 'y, 2':'400'})
+            model.add_aux(name='c', equation='b[x, 2]')
+            # model.add_flow(name='flow1', equation='aux1 *2 + aux2[ele1] * 1')
+        
+        # elif test_set == 3:
+        #     model = Structure()
+        #     print(model.replace_bracket('a[ele1, 1]+b[ele2, 2]'))
 
-    elif test_set == 4:
-        model = Structure()
-        print(model.remove_bracket('a[ele1]+b[ele2]'))
-    
-    elif test_set == 5:
-        model = Structure()
-        a0 = '1, Element_1, a'
-        a= model.process_element(a0)
-        b = model.reverse_element(a)
-        print(b)
+        elif test_set == 4:
+            model = Structure()
+            print(model.remove_bracket('a[ele1]+b[ele2]'))
+        
+        elif test_set == 5:
+            model = Structure()
+            a0 = '1, Element_1, a'
+            a= model.process_element(a0)
+            b = model.reverse_element(a)
+            print(b)
 
-    elif test_set == 6:
-        model = Structure()
-        model.subscripts = {'dim1': ['x', 'y'], 'dim2': ['1', '2']}
-        model.add_aux(name='b', dims=['dim1', 'dim2'], equation={
-            'x, 1':'100', 
-            'y, 1':'200', 
-            'x, 2':'300', 
-            'y, 2':'400'}
+        elif test_set == 6:
+            model = Structure()
+            model.subscripts = {'dim1': ['x', 'y'], 'dim2': ['1', '2']}
+            model.add_aux(name='b', dims=['dim1', 'dim2'], equation={
+                'x, 1':'100', 
+                'y, 1':'200', 
+                'x, 2':'300', 
+                'y, 2':'400'}
+                )
+            model.add_flow(name='c', dims=['dim1', 'dim2'], equation = {
+                'x, 1':'b[x, 1]',
+                'x, 2':'b[x, 2]',
+                'y, 1':'b[y, 1]',
+                'y, 2':'b[y, 2]'}
+                )
+        
+        elif test_set == 7:
+            model = Structure()
+            model.add_aux(name='init_stock', dims=['dim1'], equation={
+                'x': '100',
+                'y': '200'}
             )
-        model.add_flow(name='c', dims=['dim1', 'dim2'], equation = {
-            'x, 1':'b[x, 1]',
-            'x, 2':'b[x, 2]',
-            'y, 1':'b[y, 1]',
-            'y, 2':'b[y, 2]'}
+            model.add_aux(name='goal', dims=['dim1'], equation={
+                'x': '10',
+                'y': '20'}
             )
-    
-    elif test_set == 7:
-        model = Structure()
-        model.add_aux(name='init_stock', dims=['dim1'], equation={
-            'x': '100',
-            'y': '200'}
-        )
-        model.add_aux(name='goal', dims=['dim1'], equation={
-            'x': '10',
-            'y': '20'}
-        )
-        model.add_aux(name='gap', dims=['dim1'], equation={
-            'x': 'goal[x]-stock[x]',
-            'y': 'goal[y]-stock[y]'}
-        )
-        model.add_aux(name='adj_time', dims=['dim1'], equation={
-            'x': '5',
-            'y': '3'}
-        )
-        model.add_stock(name='stock', dims=['dim1'], equation={
-            'x': 'init_stock[x]',
-            'y': 'init_stock[y]'}
+            model.add_aux(name='gap', dims=['dim1'], equation={
+                'x': 'goal[x]-stock[x]',
+                'y': 'goal[y]-stock[y]'}
             )
-        model.add_flow(name='flow', dims=['dim1'], equation={
-            'x': 'gap[x]/adj_time[x]',
-            'y': 'gap[y]/adj_time[y]'},
-            flow_to='stock')
+            model.add_aux(name='adj_time', dims=['dim1'], equation={
+                'x': '5',
+                'y': '3'}
+            )
+            model.add_stock(name='stock', dims=['dim1'], equation={
+                'x': 'init_stock[x]',
+                'y': 'init_stock[y]'}
+                )
+            model.add_flow(name='flow', dims=['dim1'], equation={
+                'x': 'gap[x]/adj_time[x]',
+                'y': 'gap[y]/adj_time[y]'},
+                flow_to='stock')
 
-    elif test_set == 8:
-        model = Structure()
-        a = model.process_equation('a[b,1]')
-        print(a)
+        elif test_set == 8:
+            model = Structure()
+            a = model.process_equation('a[b,1]')
+            print(a)
 
-    model.compile()
-    
-    print('\nCLDs:')
-    print('1 CLD flows:', model.cld_flows.edges(data=True))
-    print('2 CLD init_stocks:', model.cld_init_stocks.edges(data=True)) # single stocks won't show here
-    print('3 CLD update_stocks:', model.cld_update_stocks.edges(data=True))
-    
-    model.simulate(simulation_time=5, dt=1)
+        model.compile()
+        
+        print('\nCLDs:')
+        print('1 CLD flows:', model.cld_flows.edges(data=True))
+        print('2 CLD init_stocks:', model.cld_init_stocks.edges(data=True)) # single stocks won't show here
+        print('3 CLD update_stocks:', model.cld_update_stocks.edges(data=True))
+        
+        model.simulate(simulation_time=2, dt=1)
 
-    # print('\nEquations defined:')
-    # print(model.var_eqns)
-    
-    # print('\nEquations compiled:')
-    # print(model.var_eqns_compiled)
+        # print('\nEquations defined:')
+        # print(model.var_eqns)
+        
+        # print('\nEquations compiled:')
+        # print(model.var_eqns_compiled)
 
-    print('\nResults')
-    print(model.export_simulation_result().transpose())
-    print('\nPASS\n')
+        print('\nResults')
+        print(model.export_simulation_result().transpose())
+        print('\nPASS\n')
+
+
+for test_set in [1, 2, 4, 5, 6, 7, 8]:
+    print('\n'+'*'*10)
+    print('Test Set {}'.format(test_set))
+    print('*'*10 + '\n')
+    test(test_set)
