@@ -28,7 +28,7 @@
 	<model_units/>
 	<model>
 		<variables>
-			<aux name="abc">
+			<aux name="a">
 				<dimensions>
 					<dim name="Dimension_1"/>
 					<dim name="Dimension_2"/>
@@ -46,11 +46,39 @@
 					<eqn>9</eqn>
 				</element>
 			</aux>
-			<aux name="def">
-				<eqn>abc[1, Element_1]+abc[1,Element_2]</eqn>
+			<aux name="b">
+				<eqn>a[1, Element_1]+a[1,Element_2]</eqn>
 			</aux>
-			<aux name="ghi">
-				<eqn>abc[2,Element_1]+abc[2,Element_2]</eqn>
+			<aux name="c">
+				<eqn>a[2,Element_1]+a[2,Element_2]</eqn>
+			</aux>
+			<aux name="d">
+				<dimensions>
+					<dim name="Dimension_1"/>
+					<dim name="Dimension_2"/>
+				</dimensions>
+				<eqn>a[Dimension_1,Dimension_2]</eqn>
+			</aux>
+			<aux name="e">
+				<dimensions>
+					<dim name="Dimension_1"/>
+					<dim name="Dimension_2"/>
+				</dimensions>
+				<eqn>a[Dimension_1,Element_1]</eqn>
+			</aux>
+			<aux name="g">
+				<eqn>10</eqn>
+			</aux>
+			<aux name="f">
+				<dimensions>
+					<dim name="Dimension_1"/>
+				</dimensions>
+				<element subscript="1">
+					<eqn>g</eqn>
+				</element>
+				<element subscript="2">
+					<eqn>g</eqn>
+				</element>
 			</aux>
 		</variables>
 		<views>
@@ -135,16 +163,32 @@
 					</graph>
 					<table color="black" background="#E0E0E0" text_align="right" font_size="12pt" orientation="vertical" wrap_text="false" isee:auto_fit="true" isee:use_alternate_row_colors="false" isee:unlimited_table_length="false" blank_column_width="80" column_width="160" interval="1" report_balances="beginning" report_flows="instantaneous" header_font_style="normal" header_font_weight="normal" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="12pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 				</style>
-				<aux x="347" y="250" name="abc"/>
-				<aux x="258" y="372" name="def"/>
-				<aux x="431" y="372" name="ghi"/>
+				<aux x="347" y="250" name="a"/>
+				<aux x="258" y="372" name="b"/>
+				<aux x="431" y="372" name="c"/>
 				<connector uid="1" angle="237.529">
-					<from>abc</from>
-					<to>def</to>
+					<from>a</from>
+					<to>b</to>
 				</connector>
 				<connector uid="2" angle="304.548">
-					<from>abc</from>
-					<to>ghi</to>
+					<from>a</from>
+					<to>c</to>
+				</connector>
+				<aux x="528" y="220" name="d"/>
+				<connector uid="3" angle="12.7244">
+					<from>a</from>
+					<to>d</to>
+				</connector>
+				<aux x="513" y="133" name="e"/>
+				<connector uid="4" angle="26.5651">
+					<from>a</from>
+					<to>e</to>
+				</connector>
+				<aux x="635" y="301" name="g"/>
+				<aux x="635" y="383" name="f"/>
+				<connector uid="5" angle="278.13">
+					<from>g</from>
+					<to>f</to>
 				</connector>
 			</view>
 		</views>
