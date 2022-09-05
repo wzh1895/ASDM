@@ -1,8 +1,6 @@
-from ast import Expression
-from distutils.debug import DEBUG
-from multiprocessing.sharedctypes import Value
 from scipy import stats
 from copy import deepcopy
+from itertools import product
 import networkx as nx
 import pandas as pd
 import numpy as np
@@ -46,32 +44,6 @@ class NameManager(object):
         elif element_type == 'parameter':
             self.parameter_id += 1
             return 'parameter_' + str(self.parameter_id)
-
-
-class SubscriptIndexer(object):
-    def __init__(self, subscripts):
-        self.subscript_names = list()
-        self.subscript_elements = list()
-
-        if type(subscripts) is not None:
-            if type(subscripts) is not dict:
-                raise TypeError("Subscripts should be described using a dictionary.")
-        for name, elements in subscripts.items():
-            if type(elements) is not list:
-                raise TypeError("Subscript elements should be described using a list.")
-            self.subscript_names.append(name)
-            self.subscript_elements.append(elements)
-
-        # create a plain list of flattened dim_ele tuples
-        self.sub_index = pd.MultiIndex.from_product(self.subscript_elements, names=self.subscript_names)
-        # use the plain list to create subscripted eqn/values
-        self.sub_contents = dict()
-        for ix in self.sub_index:
-            self.sub_contents[ix] = None
-
-    def clear_data(self):
-        for ix in self.sub_index:
-            self.sub_contents[ix] = None
 
 class Data(object):
     def __init__(self, data_source):
@@ -270,6 +242,7 @@ class Structure(object):
         
         # Specify if subscript is used
         self.subscripts = subscripts
+        self.var_dimensions = dict()
 
         # Define cumulative registers for time-related functions, such as delays
         self.delay_registers = dict()
@@ -279,6 +252,7 @@ class Structure(object):
         self.current_step = 1 # object-wise global indicator for current simulation step. start from 1 (values after the 1st step)
         self.dt = 0.25
         self.simulation_time = 25
+        self.time_units = 'Weeks'
 
         # Initialisation indicator
         self.is_initialised = False
@@ -295,6 +269,7 @@ class Structure(object):
 
                 # read sim_specs
                 sim_specs_root = BeautifulSoup(xmile_content, 'xml').find('sim_specs')
+                time_units = sim_specs_root.get('time_units')
                 sim_start = float(sim_specs_root.find('start').text)
                 sim_stop = float(sim_specs_root.find('stop').text)
                 sim_duration = sim_stop - sim_start
@@ -307,6 +282,7 @@ class Structure(object):
                 self.current_time = self.initial_time
                 self.dt = sim_dt
                 self.simulation_time = sim_duration
+                self.time_units = time_units
 
                 # read subscritps
                 try:
@@ -358,25 +334,28 @@ class Structure(object):
                 def subscripted_equation(var):
                     # print('Reading variable from XMILE: {}'.format(var.get('name')))
                     if var.find('dimensions'):
-                        print('Processing XMILE definition for:', var.get('name'))
+                        self.var_dimensions[var.get('name')] = list()
+                        # print('Processing XMILE subscripted definition for:', var.get('name'))
                         var_dimensions = var.find('dimensions').findAll('dim')
-                        # print(var_dimensions)
+                        # print('Found dimensions {}:'.format(var), var_dimensions)
 
                         var_dims = dict()
                         for dimension in var_dimensions:
                             name = dimension.get('name')
+                            self.var_dimensions[var.get('name')].append(name)
                             # print(dimension)
                             # print(name)
                             var_dims[name] = dims[name]
-                        var_subscripted_eqn = SubscriptIndexer(var_dims)
+                        var_subscripted_eqn = dict()
 
                         var_elements = var.findAll('element')
                         if len(var_elements) != 0:
                             for var_element in var_elements:
 
-                                list_of_elements_text = var_element.get('subscript') # something like "1, First"
-                                list_of_elements = list_of_elements_text.split(', ')
-                                tuple_of_elements = tuple(list_of_elements)
+                                element_combination_text = var_element.get('subscript') # something like "1, First"
+                                element_combination_text = self.process_subscript(element_combination_text) # "1, First" -> 1__cmm__First
+                                # list_of_elements = list_of_elements_text.split(', ')
+                                # tuple_of_elements = tuple(list_of_elements)
                                 if var.find('conveyor'):
                                     equation = var_element.find('eqn').text
                                     length = var.find('len').text
@@ -387,7 +366,7 @@ class Structure(object):
                                 elif var_element.find('eqn'): # eqn is per element
                                     element_equation = var_element.find('eqn').text
                                     equation = element_equation
-                                var_subscripted_eqn.sub_contents[tuple_of_elements] = equation
+                                var_subscripted_eqn[element_combination_text] = equation
 
                         else: # all elements share the same equation
                             if var.find('conveyor'):
@@ -402,10 +381,19 @@ class Structure(object):
                                 equation = var_equation
                             else:
                                 raise Exception('No meaningful definition found for variable {}'.format(var.get('name')))
-                            for ixx in var_subscripted_eqn.sub_index:
-                                var_subscripted_eqn.sub_contents[ixx] =equation
+                            
+                            # fetch lists of elements and generate elements trings
+                            element_combinations = product(*list(var_dims.values()))
+                            element_combination_texts = ['__cmm__'.join(cmb) for cmb in element_combinations]
+                            # print('ec', element_combination_texts)
+
+                            for ect in element_combination_texts:
+                                var_subscripted_eqn[ect] =equation
                         return(var_subscripted_eqn)
                     else:
+                        self.var_dimensions[var.get('name')] = ['nodimension']
+                        # print('Processing XMILE definition for:', var.get('name'))
+                        var_subscripted_eqn = dict()
                         if var.find('conveyor'):
                             equation = var.find('eqn').text
                             length = var.find('len').text
@@ -416,7 +404,8 @@ class Structure(object):
                         elif var.find('eqn'):
                             var_equation = var.find('eqn').text
                             equation = var_equation
-                        return(equation)
+                        var_subscripted_eqn['nosubscript'] = equation
+                        return(var_subscripted_eqn)
                         
 
                 # create stocks
@@ -502,7 +491,7 @@ class Structure(object):
     def delay(self, subscript, input, delay_time, initial_value=None):
         delay_time = float(delay_time)
         try:
-            output = self.__name_values[self.current_time-delay_time][input].sub_contents[subscript]
+            output = self.__name_values[self.current_time-delay_time][input][subscript]
             # print(input, 'aa')
         except KeyError: # current time < delay time
             if initial_value is not None: # initial value is supplied
@@ -510,7 +499,7 @@ class Structure(object):
                 # print(input, 'bb')
             else: # initial values is not supplied
                 try:
-                    output = self.__name_values[self.initial_time][input].sub_contents[subscript]
+                    output = self.__name_values[self.initial_time][input][subscript]
                     # print(input, 'cc')
                 except KeyError: # the delayed variable has not been calculated for once
                     output = self.calculate_experiment(input, subscript)
@@ -541,10 +530,17 @@ class Structure(object):
         return output
 
     def init(self, subscript, var):
-        # print('calculating init', var)
+        print('calculating init', var)
         # case 1: var is a variable in the model
         if var in self.sfd.nodes:
-            v = self.__name_values[self.initial_time][var].sub_contents[subscript]
+            v = self.__name_values[self.initial_time][var][subscript]
+        elif '__ele1__' in var and var.split('__ele1__')[0] in self.sfd.nodes:
+            print('init case1.2')
+            var_name = var.split('__ele1__')[0]
+            var_subscript = var.split('__ele1__')[1].split('__ele2__')[0]
+            v = self.__name_values[self.initial_time][var_name][var_subscript]
+            if v is None:
+                v = self.calculate_experiment(var_name, var_subscript)
         # case 2: var is an expression
         else:
             if var in self.__expression_values.keys():
@@ -676,22 +672,12 @@ class Structure(object):
         # the 1st column stores the equation{function or initial value}, indexed by subscripts
         if type(equation) is Data:  # wrap external data into DataFeeder
             equation = DataFeeder(equation)
-        
-        # construct subscripted equation
-        subscripted_equation=SubscriptIndexer(self.subscripts)
-        if type(equation) is SubscriptIndexer:
-            # here we need to carefully check on which dimension(s) is the equation subscripted.
-            for ix in subscripted_equation.sub_index:
-                for ixx in equation.sub_index:
-                    if set(ixx).issubset(ix):
-                        subscripted_equation.sub_contents[ix] = equation.sub_contents[ixx]
-        else:
-            for ix in subscripted_equation.sub_index:
-                subscripted_equation.sub_contents[ix] = equation  # use the default equation for this subscript index
-
 
         # create a name_values binding for its simulation data
-        self.__time_slice_values[element_name] = SubscriptIndexer(self.subscripts)
+        v_dict = dict()
+        for k in equation.keys():
+            v_dict[k] = None
+        self.__time_slice_values[element_name] = v_dict
 
         # create a node in the SFD graph
         self.sfd.add_node(element_name,
@@ -700,7 +686,7 @@ class Structure(object):
                         flow_from=flow_from,
                         flow_to=flow_to,
                         pos=[x, y],
-                        equation=subscripted_equation,
+                        equation=equation,
                         points=points,
                         external=external,
                         non_negative=non_negative,
@@ -709,35 +695,39 @@ class Structure(object):
 
         return uid
 
-    def __add_function_dependencies(self, element_name, function, subscript):  # confirm bunch of dependency found in a function
+    # def __add_function_dependencies(self, element_name, function, subscript):  # confirm bunch of dependency found in a function
+    def __add_function_dependencies(self, element_name, function):  # confirm bunch of dependency found in a function
         for i in range(len(function[1:])):
             from_variable = function[1:][i]
             if type(from_variable) == str:
-                print('Engine: adding causal link, from {} to {}, at subscript {}'.format(from_variable, element_name, subscript))
+                # print('Engine: adding causal link, from {} to {}, at subscript {}'.format(from_variable, element_name, subscript))
+                print('Engine: adding causal link, from {} to {}, at subscript {}'.format(from_variable, element_name))
                 self.__add_dependency(
                     from_element=from_variable,
                     to_element=element_name,
-                    subscript=subscript,
+                    # subscript=subscript,
                     uid=self.__uid_manager.get_new_uid(),
                     polarity=self.get_function_polarity(function[0], i)
                     )
 
-    def __add_dependency(self, from_element, to_element, subscript, uid=0, angle=None, polarity=None, display=True):
+    # def __add_dependency(self, from_element, to_element, subscript, uid=0, angle=None, polarity=None, display=True):
+    def __add_dependency(self, from_element, to_element, uid=0, angle=None, polarity=None, display=True):
         if not self.sfd.has_edge(from_element, to_element):
-            self.sfd.add_edge(from_element,
-                              to_element,
-                              subscripts=[subscript],
-                              uid=uid,
-                              angle=angle,
-                              length=0,  # for automated generation of CLD
-                              trend=1,  # for automated generation of CLD
-                              polarity=polarity,
-                              rad=0,  # for automated generation of CLD
-                              display=display)  # display as a flag for to or not to display
+            self.sfd.add_edge(
+                from_element,
+                to_element,
+                # subscripts=[subscript],
+                uid=uid,
+                angle=angle,
+                length=0,  # for automated generation of CLD
+                trend=1,  # for automated generation of CLD
+                polarity=polarity,
+                rad=0,  # for automated generation of CLD
+                display=display)  # display as a flag for to or not to display
         
-        else:
-            if subscript not in self.sfd.edges[from_element, to_element]['subscripts']:
-                self.sfd.edges[from_element, to_element]['subscripts'].append(subscript)
+        # else:
+        #     if subscript not in self.sfd.edges[from_element, to_element]['subscripts']:
+        #         self.sfd.edges[from_element, to_element]['subscripts'].append(subscript)
 
     def __get_element_by_uid(self, uid):
         # print("Uid_Element_Name, ", self.uid_element_name)
@@ -799,6 +789,9 @@ class Structure(object):
             self.dt = dt
         total_steps = int(self.simulation_time / self.dt)
         
+        # have a dict for all visited (calculated) variables (F/V/P) in this model
+        # this is also a buffer to store calculated value for variables, to avoid calculating the same variable multiple times.
+        # ususally this is not a problem, but when random process is included, values from multiple calculations can be different.
         self.visited = dict()
 
         # Setp 1 initialise the state of the stocks if this is the first run
@@ -830,8 +823,9 @@ class Structure(object):
         self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
         for element in self.get_all_certain_type(['stock']):
             print('Initializing stock: {}'.format(element))
-            for ix in self.sfd.nodes[element]['equation'].sub_index:
-                equation = self.sfd.nodes[element]['equation'].sub_contents[ix]
+            # for ix in self.sfd.nodes[element]['equation'].sub_index:
+            for ix in self.sfd.nodes[element]['equation'].keys():
+                equation = self.sfd.nodes[element]['equation'][ix]
                 # print('EQU', equation)
 
                 # if the stock is a conveyor, extract its equation
@@ -843,7 +837,7 @@ class Structure(object):
 
                 value = self.calculate_experiment(equation, ix)
                 
-                self.__name_values[self.current_time][element].sub_contents[ix] = value
+                self.__name_values[self.current_time][element][ix] = value
 
                 if is_conveyor:
                     length = int(self.calculate_experiment(conveyor.length_time_units, ix) / self.dt)
@@ -853,7 +847,7 @@ class Structure(object):
                         if self.sfd.nodes[e]['element_type'] == 'flow':
                             if self.sfd.nodes[e]['leak']:
                                 if self.sfd.nodes[e]['flow_from'] == element:
-                                    leak_fraction_eqn = self.sfd.nodes[e]['equation'].sub_contents[ix]
+                                    leak_fraction_eqn = self.sfd.nodes[e]['equation'][ix]
                                     leak_fraction = self.calculate_experiment(leak_fraction_eqn, ix)
                     conveyor.initialize(length, value, leak_fraction)
 
@@ -869,13 +863,11 @@ class Structure(object):
         for element in self.get_all_certain_type('flow'):  # loop through all flows in this SFD,
             flows_dt[element] = dict()  # make a position for it in the dict of flows_dt, initializing it with 0
 
-        # # have a list for all visited (calculated) variables (F/V/P) in this model
-        # self.visited = list()
 
         # calculate flows
         for flow in flows_dt.keys():
-            for ix in self.sfd.nodes[flow]['equation'].sub_index:
-                flows_dt[flow][ix] = dt * self.__name_values[self.current_time-self.dt][flow].sub_contents[ix]
+            for ix in self.sfd.nodes[flow]['equation'].keys():
+                flows_dt[flow][ix] = dt * self.__name_values[self.current_time-self.dt][flow][ix]
 
         # calculating changes in stocks
         # have a dictionary of affected stocks and their changes, since one flow could affect 2 stocks.
@@ -899,8 +891,8 @@ class Structure(object):
                         print("Engine: Strange! {} seems to influence {} but not found in graph's attributes.".format(flow, successor))
                     
                     # because the connection between a flow and a stock does not vary across subscripts, we only consider indexer from here
-                    for ix in self.sfd.nodes[flow]['equation'].sub_index:
-                        if self.sfd.nodes[flow]['flow_from'] == successor and type(self.sfd.nodes[successor]['equation'].sub_contents[ix]) is Conveyor:
+                    for ix in self.sfd.nodes[flow]['equation'].keys():
+                        if self.sfd.nodes[flow]['flow_from'] == successor and type(self.sfd.nodes[successor]['equation'][ix]) is Conveyor:
                             pass
                         elif ix in affected_stocks[successor].keys():  # this stock may have been added by other flows
                             affected_stocks[successor][ix] += flows_dt[flow][ix] * in_out_factor
@@ -909,31 +901,32 @@ class Structure(object):
 
         # updating affected stocks values
         for stock, subscripted_delta_values in affected_stocks.items():
-            for ix in self.__name_values[self.current_time][stock].sub_index:
+            for ix in self.__name_values[self.current_time][stock].keys():
                 delta_value = subscripted_delta_values[ix]
-                if type(self.sfd.nodes[stock]['equation'].sub_contents[ix]) is Conveyor:
-                    self.sfd.nodes[stock]['equation'].sub_contents[ix].inflow(delta_value)
-                    new_value = self.sfd.nodes[stock]['equation'].sub_contents[ix].level()
+                if type(self.sfd.nodes[stock]['equation'][ix]) is Conveyor:
+                    self.sfd.nodes[stock]['equation'][ix].inflow(delta_value)
+                    new_value = self.sfd.nodes[stock]['equation'][ix].level()
                 else:
-                    current_value = self.__name_values[self.current_time-self.dt][stock].sub_contents[ix]
+                    current_value = self.__name_values[self.current_time-self.dt][stock][ix]
                     # print(delta_value, type(delta_value), current_value, type(current_value))
                     new_value = delta_value + current_value
                 if self.sfd.nodes[stock]['non_negative'] is True and new_value < 0:# if the stock in non-negative and the new value is below 0
-                    # raise ValueError("Stock {} is non-negative but its value is going below 0.".format(stock))
-                    # self.__name_values[stock].sub_contents[ix].append(self.__name_values[stock].sub_contents[ix][-1])
                     # print("Stock {} is non-negative but its value is going below 0.".format(stock))
-                    self.__name_values[self.current_time][stock].sub_contents[ix] = 0
+                    self.__name_values[self.current_time][stock][ix] = 0
+                    # outflows from this stock should also be 0
+                    
                 else:
-                    self.__name_values[self.current_time][stock].sub_contents[ix] = new_value
+                    self.__name_values[self.current_time][stock][ix] = new_value
 
         # for those stocks not affected, extend its 'values' by its current value
         for node in self.sfd.nodes:
             if self.sfd.nodes[node]['element_type'] == 'stock':
                 if node not in affected_stocks.keys():
-                    for ix in self.__name_values[self.current_time][node].sub_index:
-                        self.__name_values[self.current_time][node].sub_contents[ix] = self.__name_values[self.current_time-self.dt][node].sub_contents[ix]
+                    for ix in self.__name_values[self.current_time][node].keys():
+                        self.__name_values[self.current_time][node][ix] = self.__name_values[self.current_time-self.dt][node][ix]
     
     def update_states(self):
+        # print('us0')
         """
         Core function for simulation. Calculating all flows and adjust stocks accordingly based on recursion.
         """
@@ -944,11 +937,6 @@ class Structure(object):
         # find all flows in the model
         for element in self.get_all_certain_type('flow'):  # loop through all elements in this SFD,
             flows[element] = dict()  # make a position for it in the dict of flows, initializing it with 0
-
-        # have a dict for all visited (calculated) variables (F/V/P) in this model
-        # this is also a buffer to store calculated value for variables, to avoid calculating the same variable multiple times.
-        # ususally this is not a problem, but when random process is included, values from multiple calculations can be different.
-        # self.visited = dict()
 
         leaking_flows = list() # tier 1
         convey_outflows = list() # tier 2
@@ -962,8 +950,8 @@ class Structure(object):
             else:
                 flow_from = self.sfd.nodes[flow]['flow_from']
                 if flow_from is not None:
-                    for ix in self.sfd.nodes[flow_from]['equation'].sub_index:
-                        flow_from_equation = self.sfd.nodes[flow_from]['equation'].sub_contents[ix]
+                    for ix in self.sfd.nodes[flow_from]['equation'].keys():
+                        flow_from_equation = self.sfd.nodes[flow_from]['equation'][ix]
                         if type(flow_from_equation) is Conveyor:
                             convey_outflows.append(flow)
                         else:
@@ -974,39 +962,49 @@ class Structure(object):
 
         # tier 1
         for flow in leaking_flows:
-            for ix in self.sfd.nodes[flow]['equation'].sub_index:
+            for ix in self.sfd.nodes[flow]['equation'].keys():
                 
                 # print('f leak:', flow)
-                flow_leak_fraction_eqn = self.sfd.nodes[flow]['equation'].sub_contents[ix]
+                flow_leak_fraction_eqn = self.sfd.nodes[flow]['equation'][ix]
                 flow_leak_fraction = self.calculate_experiment(flow_leak_fraction_eqn, ix)
                 # print('f leak frac:', flow_leak_fraction)
-                v = self.sfd.nodes[self.sfd.nodes[flow]['flow_from']]['equation'].sub_contents[ix].leak_linear(flow_leak_fraction) / self.dt
+                v = self.sfd.nodes[self.sfd.nodes[flow]['flow_from']]['equation'][ix].leak_linear(flow_leak_fraction) / self.dt
                 # print('f leak v:', flow, v)
                 
                 flows[flow][ix] = v
                 # as this flow is not calculated through calculate(), we manually register its value to __name_values
-                self.__name_values[self.current_time][flow].sub_contents[ix] = v
+                self.__name_values[self.current_time][flow][ix] = v
             
             self.visited[flow] = flows[flow]  # save calculated flow to buffer
         
         # tier 2
         for flow in convey_outflows:
-            for ix in self.sfd.nodes[flow]['equation'].sub_index:
+            if type(self.sfd.nodes[flow]['equation']) is dict:
+                for ix in self.sfd.nodes[flow]['equation'].keys():
+                    flow_from = self.sfd.nodes[flow]['flow_from']
+                    # print('f out:', flow)
+                    v = self.sfd.nodes[flow_from]['equation'][ix].outflow() / self.dt # the conveyor outputs the value of this DT but we need a flow value for the whole time unit (DT = 1)
+                    # print('f out v:', v)
+                    flows[flow][ix] = v
+                    # as this flow is not calculated through calculate(), we manually register its value to __name_values
+                    self.__name_values[self.current_time][flow][ix] = v
+            else:
                 flow_from = self.sfd.nodes[flow]['flow_from']
                 # print('f out:', flow)
-                v = self.sfd.nodes[flow_from]['equation'].sub_contents[ix].outflow() / self.dt # the conveyor outputs the value of this DT but we need a flow value for the whole time unit (DT = 1)
+                v = self.sfd.nodes[flow_from]['equation'].outflow() / self.dt # the conveyor outputs the value of this DT but we need a flow value for the whole time unit (DT = 1)
                 # print('f out v:', v)
-                flows[flow][ix] = v
+                flows[flow] = v
                 # as this flow is not calculated through calculate(), we manually register its value to __name_values
-                self.__name_values[self.current_time][flow].sub_contents[ix] = v
-            
+                self.__name_values[self.current_time][flow] = v  
             self.visited[flow] = flows[flow]  # save calculated flow to buffer
 
         # tier 3
         for flow in non_leaking_flows:
-            for ix in self.sfd.nodes[flow]['equation'].sub_index:
+            # print('fff3', flow, self.sfd.nodes[flow])
+            for ix in self.sfd.nodes[flow]['equation'].keys():
                 v = self.calculate_experiment(flow, ix)
-                flows[flow][ix] = v
+                # print('fff3.1', flow, ix, v)
+                flows[flow][ix] = v # TODO: Flow behaviour needs more attention. (1) flow value should not exceed the amount remaining in the stock/dt (2) when multiple flows compete for one stock, the early-added gets higher priority
         
             self.visited[flow] = flows[flow]  # save calculated flow to buffer
 
@@ -1015,23 +1013,58 @@ class Structure(object):
         # calculate all not visited variables and parameters in this model, in order to update their value list
         # because all flows and stocks should be visited sooner or later, only V and P are considered.
         
-        # for element in self.get_all_certain_type(['auxiliary']):
-        #     for ix in self.sfd.nodes[element]['equation'].sub_index:    
-        #         if (element, ix) not in self.visited:
-        #             self.calculate_experiment(element, ix)
-        #             self.visited.append((element, ix))  # mark it as visited
-        
         for element in self.get_all_certain_type(['auxiliary']):
             if element not in self.visited.keys():
-                # self.visited[element] = dict()
-                for ix in self.sfd.nodes[element]['equation'].sub_index:
+                for ix in self.sfd.nodes[element]['equation'].keys():
                     # if ix not in self.visited[element].keys():
                     self.calculate_experiment(element, ix)
-                        # self.visited[element][ix] = v  # mark it as visited and store calculated value
 
+    def process_expression(self, expression, intended_subscripts=None):
+        # print(self.n_indentation*'\t' + 'PE0 processING expression:', expression, 'with intended subs:', intended_subscripts)
+        # print(self.n_indentation*'\t' + 'split', intended_subscripts)
+        if intended_subscripts is not None:
+            intended_subscripts = intended_subscripts.split('__cmm__')
+        
+        expression_1 = expression
+        while '[' in expression_1:
+            expression_1_a, expression_1_b = expression_1.split('[', 1)
+            expression_1_b, expression_1_c = expression_1_b.split(']', 1)
+            expression_1_b = expression_1_b.replace(' ', '').replace(',', '__cmm__')
+            
+            # Dynamically resolve collective reference such as a[Dimension1]
+            if intended_subscripts is not None:
+                subscripts = expression_1_b.split('__cmm__')
+                for i in range(len(subscripts)):
+                    if subscripts[i] in self.subscripts.keys(): # a[Dimension1] instead of a[Element1]
+                        subscripts[i] = intended_subscripts[i] # dynamically replace Dimension1 by Element1
+                expression_1_b = '__cmm__'.join(subscripts)
+
+            expression_1 = expression_1_a + '__ele1__' + expression_1_b + '__ele2__' + expression_1_c
+        expression = expression_1
+        # print(self.n_indentation*'\t' + 'PE1 processED equation:', expression)
+        return expression
+    
+    @staticmethod
+    def process_subscript(subscript):
+        subscript = subscript.replace(',', '__cmm__').replace(' ', '')
+        return subscript
+
+    
     def calculate_experiment(self, expression, subscript):
         self.n_indentation += 1
-        # print(self.n_indentation*'\t' + 'expression:', expression)
+        # print(self.n_indentation*'\t' + 'processing expression of {} on subscript {}:'.format(expression, subscript))
+
+        # check if the expression contains '[]' - cross reference of arrays
+        if type(expression) is str and '[' in expression:
+            print('process a')
+            expression = self.process_expression(expression)
+            print('process expression with subscripts:', expression)
+        
+        elif type(expression) is str and '__ele1__' in expression:
+            # print('process b')
+            expression, subscript = expression.split('__ele1__')
+            subscript = subscript.split('__ele2__')[0]
+            # print('process b:', expression, subscript)
 
         # check if this value has been calculated and stored in buffer
         # when initialising stock values, there's no 'self.visited' yet
@@ -1058,102 +1091,65 @@ class Structure(object):
             
         # check if this value has been calculated
         # if expression in self.__name_values[self.current_time].keys(): # name might be equation such as 'a > b'
-        if expression in self.sfd.nodes and self.__name_values[self.current_time][expression].sub_contents[subscript] is not None:
-            # print('calc c')
-            self.n_indentation -= 1
-            return self.__name_values[self.current_time][expression].sub_contents[subscript]
+        # if expression in self.sfd.nodes and self.__name_values[self.current_time][expression][subscript] is not None:
+        if expression in self.sfd.nodes and subscript in self.__name_values[self.current_time][expression].keys() and self.__name_values[self.current_time][expression][subscript] is not None:
+            #  and self.__name_values[self.current_time][expression][subscript] is not None: # case 1: subscripted var
+                # print('calc c', expression, subscript)
+                # print('calc c', self.__name_values[self.current_time][expression])
+                self.n_indentation -= 1
+                return self.__name_values[self.current_time][expression][subscript]
 
-        # elif expression in self.sfd.nodes and type(self.sfd.nodes[expression]['equation'].sub_contents[subscript]) is DataFeeder:
-        #     print('calc e')
-        #     if expression not in self.visited.keys():
-        #         value = self.sfd.nodes[expression]['equation'].sub_contents[subscript](self.current_step)
-        #         self.__name_values[self.current_time][expression].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
-        #         self.visited[expression] = dict()
-        #         self.visited[expression][subscript] = value  # mark it as visited and store the value
-        #     elif subscript not in self.visited[expression].keys():
-        #         value = self.sfd.nodes[expression]['equation'].sub_contents[subscript](self.current_step)
-        #         self.__name_values[expression].sub_contents[subscript] = value  # bugfix: we still need to take the external data to __name_values, because this var might be a flow and needed in update_stocks 
-        #         self.visited[expression][subscript] = value  # mark it as visited and store the value
-        #     else:
-        #         # value = self.__name_values[name].sub_contents[subscript][-1]
-        #         value = self.visited[expression][subscript]
-        #     return value
-        
-        # elif expression in self.sfd.nodes and type(self.sfd.nodes[expression]['equation'].sub_contents[subscript]) is ExtFunc:
-        #     print('calc f')
-        #     if expression not in self.visited.keys():
-        #         arg_values = list()
-        #         for arg in self.sfd.nodes[expression]['equation'].sub_contents[subscript].args:
-        #             arg_values.append(self.calculate_experiment(arg, subscript))
-        #         value = self.sfd.nodes[expression]['equation'].sub_contents[subscript].evaluate(arg_values)  
-        #         self.__name_values[expression].sub_contents[subscript] = value
-        #         self.visited[expression] = dict()
-        #         self.visited[expression][subscript] = value  # mark it as visited and store the value
-        #     elif subscript not in self.visited[expression].keys():
-        #         arg_values = list()
-        #         for arg in self.sfd.nodes[expression]['equation'].sub_contents[subscript].args:
-        #             arg_values.append(self.calculate_experiment(arg, subscript))
-        #         value = self.sfd.nodes[expression]['equation'].sub_contents[subscript].evaluate(arg_values)  
-        #         self.__name_values[self.current_time][expression].sub_contents[subscript] = value
-        #         self.visited[expression][subscript] = value  # mark it as visited and store the value
-        #     else:
-        #         value = self.visited[expression][subscript]
-        #     return value
+        # Goal --> Gap, gap is subscripted but goal is not; access to goal's value through gap's subscript (calc c) fails
+        if  expression in self.sfd.nodes and 'nosubscript' in self.__name_values[self.current_time][expression].keys() and self.__name_values[self.current_time][expression]['nosubscript'] is not None:
+                # print('calc e', expression, subscript)
+                # print('calc e', self.__name_values[self.current_time][expression])
+                self.n_indentation -= 1
+                return self.__name_values[self.current_time][expression]['nosubscript']
 
         elif expression in self.sfd.nodes and self.sfd.nodes[expression]['element_type'] == 'stock':
             # print('calc g')
             # print(self.__name_values.keys())
             if not self.is_initialised:
-                stock_eqn = self.sfd.nodes[expression]['equation'].sub_contents[subscript]
+                stock_eqn = self.sfd.nodes[expression]['equation'][subscript]
                 if type(stock_eqn) is Conveyor:
                     value = self.calculate_experiment(stock_eqn.equation, subscript)
                 else:
                     value = self.calculate_experiment(stock_eqn, subscript)
             else:
-                value = self.__name_values[self.current_time][expression].sub_contents[subscript]
+                value = self.__name_values[self.current_time][expression][subscript]
             self.n_indentation -= 1
             return value
         
         # expression is the name of a leaking flow
         elif expression in self.sfd.nodes and self.sfd.nodes[expression]['leak']:
-             if not self.is_initialised: # it's currently in the process of init_stocks, no leaks have been calculated
+            if not self.is_initialised: # it's currently in the process of init_stocks, no leaks have been calculated
                 self.n_indentation -= 1
                 return 0 # leaks are currently all 0
 
         else:  # calculation is needed
-            # print('calc h:', expression)
+            # print(self.n_indentation*'\t' + 'calc h:', expression, 'SUB:', subscript)
             if expression in self.sfd.nodes: # careful - outflows from conveyors have eqn 0 but should not be dealt with here
-                equation = self.sfd.nodes[expression]['equation'].sub_contents[subscript]
+                # print(self.n_indentation*'\t' + 'calc h1:', self.sfd.nodes[expression]['equation'])
+                # print(self.n_indentation*'\t' + 'retriving:', list(self.sfd.nodes[expression]['equation'].keys()))
+                if subscript in self.sfd.nodes[expression]['equation'].keys():
+                    # print(self.n_indentation*'\t' + 'calc h1.1')
+                    equation = self.sfd.nodes[expression]['equation'][subscript]
+                else:
+                    # print(self.n_indentation*'\t' + 'calc h1.2')
+                    equation = self.sfd.nodes[expression]['equation']['nosubscript']
             else:
                 equation = expression
+
+            # replace abc[subscript] -> abc__ele1__subscript__ele2__
+            if type(equation) is str:
+                equation = self.process_expression(equation, intended_subscripts=subscript)
             
             # pre-process expression to match Python syntax
             # replace '=' with '=='
             if type(equation) is str:
                 reg = "(?<!(<|>|=))=(?!(<|>|=))"
                 equation = re.sub(reg, "==", equation)
-
-            # chech if there is any cross-reference arrays - if so, calculate the leftmost one.
-            while type(equation) is str and '[' in equation:
-                cr_0 = equation.split('[')[0]
-                # match leftward to get the subscripted variable's name
-                leftward_stoppers = [' ', '(', '+', '-', '*', '/', '=', ] # upon meeting these characters, stop the matching
-                cr_variable = []
-                for char in reversed(list(cr_0)): # +xyz[s] -> +zyx -> loop z, y, x, + -> [z,y,x] -> [x, y, z] -> xyz
-                    if char not in leftward_stoppers:
-                        cr_variable.append(char)
-                    else:
-                        break
-                cr_variable = ''.join(reversed(cr_variable))
-                cr_subscript_text = equation.split('[')[1].split(']')[0]
-                cr_subscript = re.sub(' ', '', cr_subscript_text) # remove all ' ' to align ', ' and ','
-                cr_subscript = tuple(cr_subscript.split(','))
-                # calculate the cross-reference value
-                cr_value = self.calculate_experiment(cr_variable, cr_subscript)
-                cr_variable_subscript = cr_variable+'['+cr_subscript_text+']'
-                equation = equation.replace(cr_variable_subscript, str(cr_value)) # re.sub has problem with [], we use str.replace
             
-            # print('EQU', equation)
             value = None
 
             while type(value) not in [int, float, np.int64, bool]: # if value has not become a number (taking care of the numpy data types)
@@ -1163,7 +1159,7 @@ class Structure(object):
                     # print('calc h0')
                     input = self.calculate_experiment(equation.eqn, subscript)
                     equation = equation(input)
-              
+                
                 # check if this is a conditional statement
                 elif type(equation) is str and len(equation) > 2 and equation[:2] == 'IF':
                     # print('calc h1')
@@ -1230,15 +1226,14 @@ class Structure(object):
                 # check if there are time-related functions in the equation
                 elif type(equation) is str and re.findall(r"(\w+)[(].+[)]", str(equation)):
                     func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
-                    # print('calc h3')
+                    # print(self.n_indentation*'\t'+'calc h3')
                     for func_name in func_names:
-                        # print(0, equation)
-                        # print('calc h3 0', func_name)
+                        # print(self.n_indentation*'\t'+'calc h3.0', func_name)
                         if func_name in self.time_related_functions.keys():
                             func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
-                            # print('1',func_args)
+                            # print(self.n_indentation*'\t'+'calc h3.0.0',func_args)
                             func_args_split = func_args[0].split(",")
-                            # print('2',func_names[0], func_args_split)
+                            # print(self.n_indentation*'\t'+'calc h3.0.1',func_names[0], func_args_split)
 
                             # pass args to the corresponding time-related function
                             func_args_full = [subscript] + func_args_split
@@ -1248,13 +1243,24 @@ class Structure(object):
                             func_value_str = str(func_value)
                             func_str = func_name+'('+func_args[0]+')'
                             equation = equation.replace(func_str, func_value_str) # in case init() is a part of an equation, substitue init() with its value
-                            # print('3', equation)
+                            # print(self.n_indentation*'\t'+'calc h3.0.2', equation)
+
+                # # check if the expression is abc__ele1__subscript__ele2__
+                # elif type(expression) is str and '__ele1__' in expression:
+                #     print('process b')
+                #     expression, subscript = expression.split('__ele1__', 1)
+                #     subscript, remaining = subscript.split('__ele2__', 1)
+                #     print('process b', expression, subscript, remaining)
+
+                # if type(equation) is str and '[' in equation:
+                #     equation = self.process_expression(equation)
 
                 '''
                 Until here, all we want to have is an modified equation suitable for evaluation.
                 '''
 
                 try:
+                    # print(self.n_indentation*'\t' + 'eval:', equation)
                     value = eval(str(equation), self.custom_functions)
                     # print(self.n_indentation*'\t'+'Evaluated {} = {}'.format(equation, value))
 
@@ -1269,31 +1275,11 @@ class Structure(object):
                     equation = re.sub(reg, val_str, equation)
                 
                 except ZeroDivisionError as e:
-                    # print(e)
-                    # print(self.n_indentation*'\t'+'ZeroDivisionError for equation:', equation, ' of expression', expression)
-                    # print('\n\n')
-                    # for k, v in self.__name_values[self.current_time].items():
-                    #     print(k)
-                    #     print(v.sub_contents)
-                    # print('\n\n')
                     raise e
-
-                
-                # if value is None:
-                #     print('aaa', self.__name_values[self.current_time]['Stock'].sub_contents[subscript])
-                #     raise ValueError("Value cannot be None for equation:\n{}, of expression:\n{}".format(equation, expression))
             
             if expression in self.sfd.nodes:
 
                 # Noted 21/8/2022: This is not OK. Positive check of non-negative stocks should be performed when updating the stock, not calculating flows. -10->[0]-10-> is legitimate but not pass here.
-                # if self.sfd.nodes[expression]['element_type'] == 'flow': # if a flow is overdrafting from a non-negative stock, its value should be the remainder (current value) of the stock
-                #     flow_from_stock = self.sfd.nodes[expression]['flow_from']
-                #     if flow_from_stock is not None:
-                #         if self.sfd.nodes[flow_from_stock]['non_negative']:
-                #             remainder_of_stock = self.__name_values[self.current_time][flow_from_stock].sub_contents[subscript]
-                #             if remainder_of_stock < value:
-                #                 value = remainder_of_stock
-
                 # non-negative control of flows
                 if self.sfd.nodes[expression]['element_type'] == 'flow':
                     if self.sfd.nodes[expression]['non_negative']:
@@ -1305,7 +1291,10 @@ class Structure(object):
                 if self.sfd.nodes[expression]['leak']:
                     pass
                 else:
-                    self.__name_values[self.current_time][expression].sub_contents[subscript] = value
+                    if 'nosubscript' in self.sfd.nodes[expression]['equation'].keys(): # A variable is not subscripted but is used to calculate a subscripted variable
+                        self.__name_values[self.current_time][expression]['nosubscript'] = value
+                    else:
+                        self.__name_values[self.current_time][expression][subscript] = value
 
                 try:  # when initialising stock values, there's no 'self.visited' yet
                     # print('calc updating vidited', expression, subscript, value)
@@ -1354,7 +1343,7 @@ class Structure(object):
             uid = self.__add_element(name, element_type='stock', x=x, y=y, equation=equation, non_negative=non_negative)
             # # the initial value of a stock should be added to its simulation value DataFrame
             # for ix in self.__name_values[name].sub_index:
-            #     self.__name_values[name].sub_contents[ix].append(equation)
+            #     self.__name_values[name][ix].append(equation)
         else:
             raise TypeError("Equation should not be None.")
         # print('Engine: added stock:', name, 'to graph.')
@@ -1389,13 +1378,15 @@ class Structure(object):
         """
         # If the flow influences a stock, create the causal link
         # we assume the connection between a flow and stock holds across all subscripts
-        for ix in self.sfd.nodes[flow_name]['equation'].sub_index:
-            if flow_from is not None:  # Just set up
-                self.sfd.nodes[flow_name]['flow_from'] = flow_from
-                self.__add_dependency(flow_name, flow_from, subscript=ix, display=False, polarity='negative')
-            if flow_to is not None:  # Just set up
-                self.sfd.nodes[flow_name]['flow_to'] = flow_to
-                self.__add_dependency(flow_name, flow_to, subscript=ix, display=False, polarity='positive')
+        # for ix in self.sfd.nodes[flow_name]['equation'].sub_index:
+        if flow_from is not None:  # Just set up
+            self.sfd.nodes[flow_name]['flow_from'] = flow_from
+            # self.__add_dependency(flow_name, flow_from, subscript=ix, display=False, polarity='negative')
+            self.__add_dependency(flow_name, flow_from, display=False, polarity='negative')
+        if flow_to is not None:  # Just set up
+            self.sfd.nodes[flow_name]['flow_to'] = flow_to
+            # self.__add_dependency(flow_name, flow_to, subscript=ix, display=False, polarity='positive')
+            self.__add_dependency(flow_name, flow_to, display=False, polarity='positive')
 
     def disconnect_stock_flow(self, flow_name, stock_name):
         """
@@ -1468,7 +1459,7 @@ class Structure(object):
         # step 2:
         # retrieve or generate indexer
         if subscripts is None:
-            subscripts = self.sfd.nodes[name]['equation'].sub_index
+            subscripts = self.sfd.nodes[name]['equation'].keys()
         else:
             if type(subscripts) is not dict:
                 raise TypeError("Subscripts should be described using a dictironary.")
@@ -1482,7 +1473,7 @@ class Structure(object):
             subscripts = pd.MultiIndex.from_product(subscript_elements, subscript_names)
         
         for ix in subscripts:
-            self.sfd.nodes[name]['equation'].sub_contents[ix] = new_equation
+            self.sfd.nodes[name]['equation'][ix] = new_equation
         
             # step 3:
             if type(new_equation_parsed[0]) not in [int, float]:
@@ -1511,8 +1502,8 @@ class Structure(object):
     # Return a behavior
     def get_element_simulation_result(self, name, subscripts=None):
         if subscripts is None:
-            subscripts = self.__name_values[name].sub_index
-        result = self.__name_values[name].sub_contents
+            subscripts = self.__name_values[name].keys()
+        result = self.__name_values[name]
         result_dict = dict()
         for ix in subscripts:
             result_dict[ix] = result[ix]  # return a list of values; not a pandas DataFrame
@@ -1522,37 +1513,44 @@ class Structure(object):
 
     # Return all simulation results as a pandas DataFrame
     def export_simulation_result(self):
-        full_result = pd.DataFrame()
+        full_result = dict()
         for time, values in self.__name_values.items():
-            time_result = pd.DataFrame(index=None)
-            time_result['TIME'] = [time]
+            # time_result = pd.DataFrame(index=None)
+            time_result = dict()
+            time_result[self.time_units] = time
             for node in self.sfd.nodes:
-                index = self.__name_values[time][node].sub_index.to_flat_index().to_list()
-                if len(index) != 1:
-                    df = pd.DataFrame(index=None)
-                    for ix in index:
-                        df[(node, ix)] = [values[node].sub_contents[ix]]
-                    time_result = pd.concat([time_result, df], axis=1)
-                else:
-                    df = pd.DataFrame(index=None)
-                    df[node] = [values[node].sub_contents[index[0]]]
-                    time_result = pd.concat([time_result, df], axis=1)
-            full_result = pd.concat([full_result, time_result], ignore_index=True)
-        return full_result
+                
+                # process variable name to match Stella standard
+                node_output = node.replace('_', ' ')
+                if node_output[0].isdigit():
+                    node_output = '"{}"'.format(node_output)
+                
+                for ix in self.__name_values[time][node].keys():
+                    if ix == 'nosubscript':
+                        time_result[node_output] = values[node]['nosubscript']
+                    else:
+                        time_result[node_output+'[{}]'.format(ix.replace('__cmm__', ', ').replace('_', ' '))] = values[node][ix]
+            full_result[time] = time_result
+        df_full_result = pd.DataFrame.from_dict(full_result).transpose()
+        df_full_result.set_index(self.time_units, inplace=True)
+        return df_full_result
 
     # Draw results
     def display_results(self, variables=None, dpi=100, rtn=False):
         if variables is None:
             variables = list(self.sfd.nodes)
 
-        figure_0 = plt.figure(figsize=(8, 6),
-                              facecolor='whitesmoke',
-                              edgecolor='grey',
-                              dpi=dpi)
+        figure_0 = plt.figure(
+            figsize=(8, 6),
+            facecolor='whitesmoke',
+            edgecolor='grey',
+            dpi=dpi
+        )
 
-        plt.xlabel('Steps {} (Time: {} / Dt: {})'.format(int(self.simulation_time / self.dt),
-                                                         self.simulation_time,
-                                                         self.dt))
+        plt.xlabel('Steps {} (Time: {} / Dt: {})'.format(
+            int(self.simulation_time / self.dt),
+            self.simulation_time,
+            self.dt))
         plt.ylabel('Behavior')
         y_axis_minimum = 0
         y_axis_maximum = 0
@@ -1628,13 +1626,17 @@ class Structure(object):
                 longest_loop = loop_n
                 longest_length = loop_length
 
-            loops[loop_n] = {'variables': loop,
-                             'length': loop_length,
-                             }
+            loops[loop_n] = {
+                'variables': loop,
+                'length': loop_length,
+            }
             loop_n += 1
 
-        print("Longest loop is {},length: {}, vars: {}".format(longest_loop, longest_length,
-                                                               str(loops[longest_loop]['variables'])))
+        print("Longest loop is {},length: {}, vars: {}".format(
+            longest_loop, longest_length,
+            str(loops[longest_loop]['variables'])
+            )
+        )
 
         # get positions for all nodes
         pos = nx.get_node_attributes(self.sfd, 'pos')
@@ -1686,8 +1688,10 @@ class Structure(object):
                     # print("    for Edge ", edge)
 
                     direction = np.array(
-                        [pos[edge[0]][0] - pos[edge[1]][0],
-                         pos[edge[0]][1] - pos[edge[1]][1]]
+                        [
+                            pos[edge[0]][0] - pos[edge[1]][0],
+                            pos[edge[0]][1] - pos[edge[1]][1]
+                        ]
                     ) * self.sfd[edge[0]][edge[1]]['trend']
 
                     distance = direction * calculate_edge_move(edge)
@@ -1752,15 +1756,16 @@ class Structure(object):
                 print("Iteration step:", i, "/1000")
                 if i % 500 == 0:
 
-                    nx.draw_networkx(self.sfd,
-                                     pos=pos,
-                                     connectionstyle='arc3, rad=-0.3',
-                                     # connectionstyle=custom_edge_connectionstyle,
-                                     node_color='gold',
-                                     edge_color=custom_edge_colors,
-                                     arrowsize=20,
-                                     font_size=9
-                                     )
+                    nx.draw_networkx(
+                        self.sfd,
+                        pos=pos,
+                        connectionstyle='arc3, rad=-0.3',
+                        # connectionstyle=custom_edge_connectionstyle,
+                        node_color='gold',
+                        edge_color=custom_edge_colors,
+                        arrowsize=20,
+                        font_size=9
+                    )
                     plt.axis('off')  # turn off axis for structure display
                     plt.show()
 
@@ -1794,13 +1799,15 @@ class Structure(object):
         # generate node positions
         pos = nx.get_node_attributes(self.sfd, 'pos')
 
-        nx.draw_networkx(G=self.sfd,
-                         labels=custom_node_labels,
-                         font_size=10,
-                         node_color='skyblue',
-                         edge_color=custom_edge_colors,
-                         pos=pos,
-                         ax=plt.gca())
+        nx.draw_networkx(
+            G=self.sfd,
+            labels=custom_node_labels,
+            font_size=10,
+            node_color='skyblue',
+            edge_color=custom_edge_colors,
+            pos=pos,
+            ax=plt.gca()
+        )
 
         plt.gca().invert_yaxis()
         plt.axis('off')  # turn off axis for structure display
