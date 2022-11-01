@@ -671,8 +671,12 @@ class Structure(object):
         # construct subscripted equation indexer
         # the 1st column stores the equation{function or initial value}, indexed by subscripts
         if type(equation) is Data:  # wrap external data into DataFeeder
-            equation = DataFeeder(equation)
+            equation = {'nosubscript': DataFeeder(equation)}
 
+        # when equation is manually specified without explicit subscript, e.g., 1, 2+1, etc.
+        if type(equation) is not dict:
+            equation = {'nosubscript': equation}
+        
         # create a name_values binding for its simulation data
         v_dict = dict()
         for k in equation.keys():
