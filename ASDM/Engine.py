@@ -786,7 +786,7 @@ class Structure(object):
         return self.sfd.nodes[name]['pos']
 
     # Simulate a structure based on a certain set of parameters
-    def simulate(self, simulation_time=None, dt=None):
+    def simulate(self, simulation_time=None, dt=None, progress_bar=False):
         if simulation_time is not None:
             self.simulation_time = simulation_time
         if dt is not None:
@@ -808,7 +808,7 @@ class Structure(object):
         
         # Step 2
         from tqdm import tnrange
-        for _ in tnrange(total_steps):
+        for _ in tnrange(total_steps, disable=not progress_bar):
             self.update_states()
             self.current_step += 1  # update current_step counter
             self.current_time += self.dt
@@ -826,7 +826,7 @@ class Structure(object):
     def init_stocks(self):
         self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
         for element in self.get_all_certain_type(['stock']):
-            print('Initializing stock: {}'.format(element))
+            # print('Initializing stock: {}'.format(element))
             # for ix in self.sfd.nodes[element]['equation'].sub_index:
             for ix in self.sfd.nodes[element]['equation'].keys():
                 equation = self.sfd.nodes[element]['equation'][ix]
@@ -856,7 +856,7 @@ class Structure(object):
                     conveyor.initialize(length, value, leak_fraction)
 
         # set is_initialised flag to True
-        print('All stocks initialised.')
+        # print('All stocks initialised.')
         self.is_initialised = True
 
     def update_stocks(self, dt):
@@ -1286,11 +1286,17 @@ class Structure(object):
                 # Noted 21/8/2022: This is not OK. Positive check of non-negative stocks should be performed when updating the stock, not calculating flows. -10->[0]-10-> is legitimate but not pass here.
                 # non-negative control of flows
                 if self.sfd.nodes[expression]['element_type'] == 'flow':
+                    # when flow is not bi-flow, i.e., cannot go negative
                     if self.sfd.nodes[expression]['non_negative']:
                         if value < 0:
                             # print('Flow {} is non-negative but is going under 0 to {}.'.format(expression, value))
                             value = 0
-                
+                    # check if flow is constrained by the stock it is drawing from; this is not perfect - if 2 flows f1, f2 are drawing from the same stock, f2 is constrained by s-f1, not just s
+                    if self.sfd.nodes[expression]['flow_from'] is not None:
+                        stock_flow_from_level = self.__name_values[self.current_time][self.sfd.nodes[expression]['flow_from']][subscript]
+                        if value > stock_flow_from_level:
+                            value = stock_flow_from_level
+
                 # leak flows have eqn but it's not for value, but for leak fraction. Check before register
                 if self.sfd.nodes[expression]['leak']:
                     pass
@@ -1444,9 +1450,9 @@ class Structure(object):
         # step 3: confirm connectors based on the new equation (only when the new equation is a function not a number
         # print("Engine: Replacing equation of {}".format(name))
         
-        if new_equation is not None:
-            new_equation_parsed = self.text_to_equation(new_equation)
-        else:
+        if new_equation is None:
+        #     new_equation_parsed = self.text_to_equation(new_equation)
+        # else:
             raise Exception("New equation for replacing could not be None.")
         
         # step 1:
@@ -1480,12 +1486,12 @@ class Structure(object):
             self.sfd.nodes[name]['equation'][ix] = new_equation
         
             # step 3:
-            if type(new_equation_parsed[0]) not in [int, float]:
-                # If new equation (parsed list) does not starts with a number, 
-                # it's not a constant value, but a function
-                if type(new_equation_parsed) is not str:
-                    self.__add_function_dependencies(name, new_equation_parsed, ix)
-                    # print("Engine: New edges created.")
+            # if type(new_equation) not in [int, float]:
+            #     # If new equation (parsed list) does not starts with a number, 
+            #     # it's not a constant value, but a function
+            #     if type(new_equation) is not str:
+            #         self.__add_function_dependencies(name, new_equation, ix)
+            #         # print("Engine: New edges created.")
 
     def remove_element(self, name):
         """
