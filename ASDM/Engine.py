@@ -1510,16 +1510,25 @@ class Structure(object):
         self.sfd.clear()
 
     # Return a behavior
-    def get_element_simulation_result(self, name, subscripts=None):
-        if subscripts is None:
-            subscripts = self.__name_values[name].keys()
-        result = self.__name_values[name]
-        result_dict = dict()
-        for ix in subscripts:
-            result_dict[ix] = result[ix]  # return a list of values; not a pandas DataFrame
-        if len(result_dict) == 1:
-            result_dict = next(iter(result_dict.values()))
-        return result_dict
+    def get_element_simulation_result(self, name):
+        full_result = dict()
+        for time, values in self.__name_values.items():
+            time_result = dict()
+            time_result[self.time_units] = time
+            name_output = name.replace('_', ' ')
+            if name_output[0].isdigit():
+                name_output = '"{}"'.format(name_output)
+            
+            for ix in self.__name_values[time][name].keys():
+                if ix == 'nosubscript':
+                    time_result[name_output] = values[name]['nosubscript']
+                else:
+                    time_result[name_output+'[{}]'.format(ix.replace('__cmm__', ', ').replace('_', ' '))] = values[name][ix]
+            full_result[time] = time_result
+        # return full_result
+        df_full_result = pd.DataFrame.from_dict(full_result).transpose()
+        df_full_result.set_index(self.time_units, inplace=True)
+        return df_full_result[name]
 
     # Return all simulation results as a pandas DataFrame
     def export_simulation_result(self):
