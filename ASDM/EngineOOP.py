@@ -672,8 +672,9 @@ class Structure(object):
         for var, _ in self.flow_equations.items():
             self.backward_calculate(var, self.variables_runtime)
 
-    def calculate_isolated_vars(sefl):
-        pass
+    def calculate_isolated_vars(self):
+        for var in ((self.flow_equations.keys() | self.aux_equations.keys()) - self.variables_runtime.keys()):
+            self.backward_calculate(var, self.variables_runtime)
     
     # update stocks
     def update_stocks(self):
@@ -689,6 +690,23 @@ class Structure(object):
                 else:
                     raise Exception("Invalid flow direction: {}".format(direction))
             self.variables[stock].set(self.variables[stock]+total_flow_effect * self.sim_specs['dt'])
+
+    def simulate(self, t=None, dt=None):
+        if t is None:
+            t = self.sim_specs['simulation_time']
+        if dt is None:
+            dt = self.sim_specs['dt']
+        steps = t/dt
+
+        self.init_stocks()
+        for s in range(int(steps)):
+            self.sim_specs['current_time'] = s/dt
+            # print('--step {}--'.format(s))
+            self.calculate_flows()
+            self.calculate_isolated_vars()
+            self.update_stocks()
+        self.calculate_flows()
+        self.calculate_isolated_vars()
 
     def summary(self):
         print('\nSummary:\n')
@@ -713,21 +731,6 @@ class Structure(object):
             print('')
         print('')
         print
-    
-    def simulate(self, t=None, dt=None):
-        if t is None:
-            t = self.sim_specs['simulation_time']
-        if dt is None:
-            dt = self.sim_specs['dt']
-        steps = t/dt
-
-        self.init_stocks()
-        for s in range(int(steps)):
-            self.sim_specs['current_time'] = s/dt
-            # print('--step {}--'.format(s))
-            self.calculate_flows()
-            self.update_stocks()
-        self.calculate_flows()
 
 
 # test 1
@@ -749,8 +752,8 @@ class Structure(object):
 
 # test 3
 # model = Structure(from_xmile='BuiltinTestModels/Goal_gap.stmx')
-model = Structure(from_xmile='BuiltinTestModels/Goal_gap_array.stmx')
-# model = Structure(from_xmile='BuiltinTestModels/Array_parallel_reference.stmx')
+# model = Structure(from_xmile='BuiltinTestModels/Goal_gap_array.stmx')
+model = Structure(from_xmile='BuiltinTestModels/Array_parallel_reference.stmx')
 
 model.simulate()
 model.summary()
@@ -760,11 +763,12 @@ fig, ax = plt.subplots()
 
 for name, var in model.variables.items():
     for k, v in var.get_history().items():
-        ax.plot(v, label=name+' '+k)
+        ax.plot(v, label='{}[{}]'.format(name,k))
 
 ax.legend()
 plt.show()
 
 
-# TODO: isolated structures (not connected to a flow) (Created Tue 8 November 2022)
-# 
+
+# TODO: isolated structures (not connected to a flow) (Created 8 November 2022) (Done 9 November 2022)
+# TODO: 
