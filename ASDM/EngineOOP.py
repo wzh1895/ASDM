@@ -752,8 +752,8 @@ class Structure(object):
 
 # test 3
 # model = Structure(from_xmile='BuiltinTestModels/Goal_gap.stmx')
-# model = Structure(from_xmile='BuiltinTestModels/Goal_gap_array.stmx')
-model = Structure(from_xmile='BuiltinTestModels/Array_parallel_reference.stmx')
+model = Structure(from_xmile='BuiltinTestModels/Goal_gap_array.stmx')
+# model = Structure(from_xmile='BuiltinTestModels/Array_parallel_reference.stmx')
 
 model.simulate()
 model.summary()
@@ -767,7 +767,6 @@ for name, var in model.variables.items():
 
 ax.legend()
 plt.show()
-
 
 
 # TODO: isolated structures (not connected to a flow) (Created 8 November 2022) (Done 9 November 2022)
