@@ -128,9 +128,17 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# OS
+.DS_Store
+
 # Customised
 TestModels/
 BuiltInTestModels/*.isdb
 Smoking_Cessation_Model.png
 Smoking_Cessation_ASDM_model.ipynb
 Fix_Smoking_Cessation_ASDM_model.ipynb
+ASDM/ValidationOutcomeSmokingCessation.ipynb
+3-From_XMILE_ERM.ipynb
+ply/
+sly/
+Notes/
