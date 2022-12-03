@@ -45,32 +45,42 @@ class NameManager(object):
             self.parameter_id += 1
             return 'parameter_' + str(self.parameter_id)
 
-class Data(object):
-    def __init__(self, data_source):
-        """
-        data_source: a DataFrame structure
+# class Data(object):
+#     def __init__(self, data_source):
+#         """
+#         data_source: a DataFrame structure
 
-        """
-        self.ts = data_source # we plan to convert more types of data_source to time_series
+#         """
+#         self.ts = data_source # we plan to convert more types of data_source to time_series
 
 
 class DataFeeder(object):
-    def __init__(self, data, from_step=1):
+    def __init__(self, data, from_time=0, data_dt=1):
         """
-        data: a Data object
+        data: a list
 
         """
-        self.ts_enumerator = enumerate(data.ts.values)
-        self.from_step = from_step
-        # self.n = 1
+        self.from_time =from_time
+        self.time_data = dict()
+        time = self.from_time
+        for d in data:
+            self.time_data[time] = d
+            time += data_dt
+        # print(self.time_data)
+        self.last_success_time = None
 
-    def __call__(self, current_step): # make a datafeeder callable
-        if current_step >= self.from_step:
-            ix, dp = next(self.ts_enumerator)
-
-            return(float(dp))
-        else:
-            return None
+    def __call__(self, current_time): # make a datafeeder callable
+        try:
+            d = self.time_data[current_time]
+            self.last_success_time = current_time
+        except KeyError:
+            if current_time < self.from_time:
+                raise Exception("Current time < external data starting time.")
+            elif current_time > list(self.time_data.keys())[-1]:
+                raise Exception("Current time > external data ending time.")
+            else:
+                d = self.time_data[self.last_success_time]
+        return(float(d))
 
 
 class ExtFunc(object):
@@ -105,6 +115,12 @@ class GraphFunc(object):
         self.interp_func = interp1d(self.xpts, self.ypts, kind='linear')
 
     def __call__(self, input):
+        # TODO implement other out-of-bounds contingencies
+        if input < self.xscale[0]:
+            input = self.xscale[0]
+        if input > self.xscale[1]:
+            input = self.xscale[1]
+        
         return self.interp_func(input)
 
 
@@ -201,10 +217,13 @@ class Structure(object):
         ]
 
         self.custom_functions = {
+            'MAX': max,
+            'MIN': min,
             'rbinom': self.rbinom,
             'delay1': self.delay1,
             'delay': self.delay,
-            'DELAY': self.delay
+            'DELAY': self.delay,
+            'STEP': self.step
             # 'init': self.init
         }
 
@@ -236,9 +255,9 @@ class Structure(object):
         self.__uid_element_name = dict()
         self.__time_slice_values = dict() # a time-slice of name values
         self.__name_values = dict() # centralised simulation data manager
-        self.__built_in_variables = dict()
+        self.__built_in_variables = {'TIME':list()}
         self.__expression_values = dict() # centralised data manager for init(expression)
-        self.__name_external_data = dict() # centralised external data manager
+        # self.__name_external_data = dict() # centralised external data manager
         
         # Specify if subscript is used
         self.subscripts = subscripts
@@ -253,6 +272,8 @@ class Structure(object):
         self.dt = 0.25
         self.simulation_time = 25
         self.time_units = 'Weeks'
+
+        self.verbose = False
 
         # Initialisation indicator
         self.is_initialised = False
@@ -488,6 +509,15 @@ class Structure(object):
     def rbinom(self, n, p):
         return stats.binom.rvs(int(n), p, size=1)[0]
     
+    def step(self, stp, time):
+        # print('step:', stp, time)
+        if self.current_time >= time:
+            # print('step out:', stp)
+            return stp
+        else:
+            # print('step out:', 0)
+            return 0
+
     def delay(self, subscript, input, delay_time, initial_value=None):
         delay_time = float(delay_time)
         try:
@@ -530,7 +560,7 @@ class Structure(object):
         return output
 
     def init(self, subscript, var):
-        print('calculating init', var)
+        # print('calculating init', var)
         # case 1: var is a variable in the model
         if var in self.sfd.nodes:
             v = self.__name_values[self.initial_time][var][subscript]
@@ -670,8 +700,9 @@ class Structure(object):
 
         # construct subscripted equation indexer
         # the 1st column stores the equation{function or initial value}, indexed by subscripts
-        if type(equation) is Data:  # wrap external data into DataFeeder
-            equation = {'nosubscript': DataFeeder(equation)}
+        if type(equation) is DataFeeder:  # wrap external data into DataFeeder
+            equation = {'nosubscript': equation}
+            external = True
 
         # when equation is manually specified without explicit subscript, e.g., 1, 2+1, etc.
         if type(equation) is not dict:
@@ -786,7 +817,10 @@ class Structure(object):
         return self.sfd.nodes[name]['pos']
 
     # Simulate a structure based on a certain set of parameters
-    def simulate(self, simulation_time=None, dt=None, progress_bar=False):
+    def simulate(self, simulation_time=None, dt=None, progress_bar=False, verbose=False):
+        self.verbose = verbose
+        if self.verbose:
+            print('Starting simulation...')
         if simulation_time is not None:
             self.simulation_time = simulation_time
         if dt is not None:
@@ -826,7 +860,8 @@ class Structure(object):
     def init_stocks(self):
         self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
         for element in self.get_all_certain_type(['stock']):
-            # print('Initializing stock: {}'.format(element))
+            if self.verbose:
+                print('Initializing stock: {}'.format(element))
             # for ix in self.sfd.nodes[element]['equation'].sub_index:
             for ix in self.sfd.nodes[element]['equation'].keys():
                 equation = self.sfd.nodes[element]['equation'][ix]
@@ -856,7 +891,8 @@ class Structure(object):
                     conveyor.initialize(length, value, leak_fraction)
 
         # set is_initialised flag to True
-        # print('All stocks initialised.')
+        if self.verbose:
+            print('All stocks initialised.')
         self.is_initialised = True
 
     def update_stocks(self, dt):
@@ -867,8 +903,7 @@ class Structure(object):
         for element in self.get_all_certain_type('flow'):  # loop through all flows in this SFD,
             flows_dt[element] = dict()  # make a position for it in the dict of flows_dt, initializing it with 0
 
-
-        # calculate flows
+        # calculate flow values for this dt
         for flow in flows_dt.keys():
             for ix in self.sfd.nodes[flow]['equation'].keys():
                 flows_dt[flow][ix] = dt * self.__name_values[self.current_time-self.dt][flow][ix]
@@ -1056,13 +1091,14 @@ class Structure(object):
     
     def calculate_experiment(self, expression, subscript):
         self.n_indentation += 1
-        # print(self.n_indentation*'\t' + 'processing expression of {} on subscript {}:'.format(expression, subscript))
+        if self.verbose:
+            print(self.n_indentation*'\t' + 'processing expression of {} on subscript {}:'.format(expression, subscript))
 
         # check if the expression contains '[]' - cross reference of arrays
         if type(expression) is str and '[' in expression:
-            print('process a')
+            # print('process a')
             expression = self.process_expression(expression)
-            print('process expression with subscripts:', expression)
+            # print('process expression with subscripts:', expression)
         
         elif type(expression) is str and '__ele1__' in expression:
             # print('process b')
@@ -1158,6 +1194,11 @@ class Structure(object):
 
             while type(value) not in [int, float, np.int64, bool]: # if value has not become a number (taking care of the numpy data types)
                 
+                # check if the expression is an external DataFeeder
+                if type(equation) is DataFeeder:
+                    # print('calc df')
+                    equation = equation(self.current_time)
+
                 # check if the variable is a graph function which has an additonal layer that transforms the equation outcome
                 if type(equation) is GraphFunc:
                     # print('calc h0')
@@ -1265,7 +1306,7 @@ class Structure(object):
 
                 try:
                     # print(self.n_indentation*'\t' + 'eval:', equation)
-                    value = eval(str(equation), self.custom_functions)
+                    value = eval(str(equation), self.custom_functions) # TODO: 'Beds' in 'TimeToAddBeds' got replaced by the value of var 'Beds'. Fix needed
                     # print(self.n_indentation*'\t'+'Evaluated {} = {}'.format(equation, value))
 
                 except NameError as e:
@@ -1300,6 +1341,7 @@ class Structure(object):
                 # leak flows have eqn but it's not for value, but for leak fraction. Check before register
                 if self.sfd.nodes[expression]['leak']:
                     pass
+                # register calculated values to __name_values
                 else:
                     if 'nosubscript' in self.sfd.nodes[expression]['equation'].keys(): # A variable is not subscripted but is used to calculate a subscripted variable
                         self.__name_values[self.current_time][expression]['nosubscript'] = value
@@ -1316,6 +1358,9 @@ class Structure(object):
                 except AttributeError:
                     pass
             
+            if self.verbose:
+                print(self.n_indentation*'\t'+'calc-ed value:'+str(value))
+            
             self.n_indentation -= 1
             return value
 
@@ -1328,8 +1373,10 @@ class Structure(object):
         self.current_step = 1
         self.current_time = self.initial_time
 
-        for name in self.__name_values.keys():
-            self.__name_values[name] = dict()
+        # for name in self.__name_values.keys():
+        #     self.__name_values[name] = dict()
+
+        self.__name_values = dict()
         
         self.__built_in_variables['TIME'] = list()
         
@@ -1455,6 +1502,12 @@ class Structure(object):
         # else:
             raise Exception("New equation for replacing could not be None.")
         
+        # step 0: consider DataFeeder
+        if type(new_equation) is DataFeeder:
+            self.sfd.nodes[name]['equation']['nosubscript'] = new_equation
+            self.sfd.nodes[name]['external'] = True
+            return
+
         # step 1:
         if self.sfd.nodes[name]['element_type'] != 'stock':
             to_remove = list()
