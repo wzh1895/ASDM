@@ -1,11 +1,13 @@
 import copy
+import numpy as np
+import matplotlib.pyplot as plt
 from itertools import product
 from pprint import pprint
 
 class Var(object):
     """
-    The 'value' data structure for SD variables, like Int of Float.
-    It does not have a name, but can be linked to a name in namespace.
+    The 'value' data structure for SD variables, like Int or Float.
+    It does not have a name, but can be linked to a name in the namespace.
     """
     def __init__(self, value=None, copy=None, dims=None):
         
@@ -44,6 +46,8 @@ class Var(object):
 
     def set(self, new_value):
         '''
+        N.B. SVar = SubscriptedVar
+
         Var <- int/float OK
         SVar <- int/float NO
         Var <- Var OK
@@ -758,7 +762,6 @@ model = Structure(from_xmile='BuiltinTestModels/Goal_gap_array.stmx')
 model.simulate()
 model.summary()
 
-import matplotlib.pyplot as plt
 fig, ax = plt.subplots()
 
 for name, var in model.variables.items():
