@@ -322,7 +322,7 @@ class Structure(object):
                             for elem in elems:
                                 elem_names.append(elem.get('name'))
                             dims[name] = elem_names
-                    print(dims)
+                    # print(dims)
                     self.subscripts = dims
                 except AttributeError:
                     pass
