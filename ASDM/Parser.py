@@ -51,6 +51,7 @@ class Parser(object):
             'MAX': r'MAX',
             'INIT': r'INIT',
             'DELAY': r'DELAY',
+            'STEP': r'STEP',
             'HISTORY': r'HISTORY'
         }
 
@@ -164,6 +165,11 @@ class Parser(object):
                 'operator':['HISTORY'],
                 'operand':['FUNC']
             },
+            'STEP__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'STEP'],
+                'operator':['STEP'],
+                'operand':['FUNC']
+            }
         }
         
         self.patterns_logic = {

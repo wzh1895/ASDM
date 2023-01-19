@@ -143,8 +143,14 @@ class Solver(object):
             else:
                 return c
 
-        def func_delay(*args):
-            pass
+        def step(stp, time):
+            # print('step:', stp, time)
+            if sim_specs['current_time'] >= time:
+                # print('step out:', stp)
+                return stp
+            else:
+                # print('step out:', 0)
+                return 0
         
         ### Function mapping ###
 
@@ -164,6 +170,7 @@ class Solver(object):
             'MIN':      min,
             'MAX':      max,
             'CON':      con,
+            'STEP':     step,
         }
 
         self.time_related_functions = [
