@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <xmile version="1.0" xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0" xmlns:isee="http://iseesystems.com/XMILE">
 	<header>
-		<smile version="1.0" namespace="std, isee" uses_conveyor=""/>
-		<name>Conveyor</name>
-		<uuid>d3f11430-2483-4912-9db4-e462f7beb286</uuid>
+		<smile version="1.0" namespace="std, isee"/>
+		<name>Non-negative_stocks</name>
+		<uuid>39f62f55-44ee-4a01-bfd0-b83cd9607464</uuid>
 		<vendor>isee systems, inc.</vendor>
 		<product version="2.0" isee:build_number="2176" isee:saved_by_v1="true" lang="en">Stella Professional</product>
 	</header>
-	<sim_specs isee:sim_duration="0.5" isee:simulation_delay="0.1" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="true" isee:loop_exhaustive_allowed="1000">
+	<sim_specs isee:sim_duration="1.5" isee:simulation_delay="0.5" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="true" isee:loop_exhaustive_allowed="1000">
 		<start>0</start>
-		<stop>5</stop>
-		<dt reciprocal="true">4</dt>
+		<stop>3</stop>
+		<dt reciprocal="true">2</dt>
 	</sim_specs>
 	<isee:prefs show_module_prefix="true" live_update_on_drag="true" show_restore_buttons="false" layer="model" interface_scale_ui="true" interface_max_page_width="10000" interface_max_page_height="10000" interface_min_page_width="0" interface_min_page_height="0" rerun_on_structure_change="false" saved_runs="1" keep="false" rifp="true"/>
 	<isee:multiplayer_settings include_chat="true" allow_observers="false" advance_time_increment="1" observer_start_page="home_page" enabled="false"/>
@@ -18,39 +18,25 @@
 		<isee:time_format name="Builtin" type="adaptive"/>
 	</isee:time_formats>
 	<default_format/>
-	<model_units>
-		<unit name="Months">
-			<eqn/>
-			<alias>mo</alias>
-			<alias>month</alias>
-		</unit>
-		<unit name="Per Month">
-			<eqn>1/Months</eqn>
-		</unit>
-	</model_units>
+	<model_units/>
 	<model>
 		<variables>
-			<stock name="Conveyor 1">
-				<eqn>12</eqn>
-				<inflow>Flow_In</inflow>
-				<outflow>Flow_Out</outflow>
-				<conveyor>
-					<len>TransitTime</len>
-				</conveyor>
+			<stock name="Stock 1">
+				<eqn>10</eqn>
+				<outflow>Flow_1</outflow>
+				<non_negative/>
 			</stock>
-			<flow name="Flow Out">
-				<eqn>0</eqn>
+			<flow name="Flow 1">
+				<eqn>5</eqn>
 				<non_negative/>
-				<units>Per Month</units>
 			</flow>
-			<flow name="Flow In">
-				<eqn>1</eqn>
-				<non_negative/>
-				<units>Per Month</units>
-			</flow>
-			<aux name="TransitTime">
-				<eqn>4</eqn>
+			<aux name="Converter 1">
+				<eqn>-6</eqn>
 			</aux>
+			<flow name="Flow 2">
+				<eqn>Converter_1</eqn>
+				<non_negative/>
+			</flow>
 		</variables>
 		<views>
 			<style color="black" background="white" font_style="normal" font_weight="normal" text_decoration="none" text_align="center" vertical_text_align="center" font_color="black" font_family="Arial" font_size="10pt" padding="2" border_color="black" border_width="thin" border_style="none">
@@ -134,36 +120,34 @@
 					</graph>
 					<table color="black" background="#E0E0E0" text_align="right" font_size="12pt" orientation="vertical" wrap_text="false" isee:auto_fit="true" isee:use_alternate_row_colors="false" isee:unlimited_table_length="false" blank_column_width="80" column_width="160" interval="1" report_balances="beginning" report_flows="instantaneous" header_font_style="normal" header_font_weight="normal" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="12pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 				</style>
-				<stock x="470" y="116" name="Conveyor 1"/>
-				<flow x="582.75" y="118" name="Flow Out">
-					<pts>
-						<pt x="492.5" y="118"/>
-						<pt x="697" y="118"/>
-					</pts>
-				</flow>
-				<flow x="352.75" y="118" name="Flow In">
-					<pts>
-						<pt x="258" y="118"/>
-						<pt x="447.5" y="118"/>
-					</pts>
-				</flow>
-				<stacked_container uid="1" x="228" y="181" width="514" height="344">
-					<graph width="514" height="344" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="6" num_y_labels="21" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
-						<plot color="blue" isee:keep_zero_visible="false" pen_width="1" index="0" show_y_axis="true">
-							<entity name="Flow_In"/>
+				<stacked_container uid="1" x="528" y="287">
+					<graph width="350" height="250" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Stock_1"/>
 						</plot>
 						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
-							<entity name="Conveyor_1"/>
-						</plot>
-						<plot color="fuchsia" pen_style="dotted" isee:keep_zero_visible="true" pen_width="1" index="2" show_y_axis="true">
-							<entity name="Flow_Out"/>
-						</plot>
-						<plot color="#008F44" pen_style="dashed" isee:keep_zero_visible="true" pen_width="1" index="3" show_y_axis="true">
-							<entity name="TransitTime"/>
+							<entity name="Flow_1"/>
 						</plot>
 					</graph>
 				</stacked_container>
-				<aux x="367" y="30" name="TransitTime"/>
+				<stock x="105" y="250" name="Stock 1"/>
+				<flow x="181.25" y="250" name="Flow 1">
+					<pts>
+						<pt x="127.5" y="250"/>
+						<pt x="259" y="250"/>
+					</pts>
+				</flow>
+				<aux x="191.25" y="81" name="Converter 1"/>
+				<flow x="199.25" y="153" name="Flow 2">
+					<pts>
+						<pt x="108.75" y="153"/>
+						<pt x="301.75" y="153"/>
+					</pts>
+				</flow>
+				<connector uid="2" angle="276.34">
+					<from>Converter_1</from>
+					<to>Flow_2</to>
+				</connector>
 			</view>
 		</views>
 	</model>

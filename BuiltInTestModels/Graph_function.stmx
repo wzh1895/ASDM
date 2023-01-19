@@ -5,9 +5,9 @@
 		<name>Graph_function</name>
 		<uuid>ecb33b4f-262c-4a03-ba2b-95c270fe56e9</uuid>
 		<vendor>isee systems, inc.</vendor>
-		<product version="2.0" isee:build_number="2190" isee:saved_by_v1="true" lang="en">Stella Professional</product>
+		<product version="2.0" isee:build_number="2176" isee:saved_by_v1="true" lang="en">Stella Professional</product>
 	</header>
-	<sim_specs isee:sim_duration="1.5" isee:simulation_delay="0.166667" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="true" isee:loop_exhaustive_allowed="1000">
+	<sim_specs isee:sim_duration="0.5" isee:simulation_delay="0.0555556" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="true" isee:loop_exhaustive_allowed="1000">
 		<start>1</start>
 		<stop>10</stop>
 		<dt reciprocal="true">4</dt>
@@ -21,11 +21,11 @@
 	<model_units/>
 	<model>
 		<variables>
-			<aux name="a">
+			<aux name="a a">
 				<eqn>TIME</eqn>
 			</aux>
-			<aux name="b">
-				<eqn>a</eqn>
+			<aux name="b b">
+				<eqn>a_a+1</eqn>
 				<gf>
 					<xscale min="0" max="10"/>
 					<yscale min="0" max="2"/>
@@ -78,7 +78,7 @@
 				<isee:iframe color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt" border_width="thin" border_style="solid"/>
 				<isee:financial_table color="black" background="#E0E0E0" text_align="right" font_size="12pt" auto_fit="true" first_column_width="250" other_column_width="100" header_font_style="normal" header_font_weight="bold" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="14pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 			</style>
-			<view isee:show_pages="false" background="white" page_width="1053" page_height="813" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
+			<view isee:show_pages="false" background="white" page_width="818" page_height="571" isee:page_cols="2" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
 				<style color="black" background="white" font_style="normal" font_weight="normal" text_decoration="none" text_align="center" vertical_text_align="center" font_color="black" font_family="Arial" font_size="10pt" padding="2" border_color="black" border_width="thin" border_style="none">
 					<stock color="blue" background="white" font_color="blue" font_size="9pt" label_side="top">
 						<shape type="rectangle" width="45" height="35"/>
@@ -115,12 +115,22 @@
 					</graph>
 					<table color="black" background="#E0E0E0" text_align="right" font_size="12pt" orientation="vertical" wrap_text="false" isee:auto_fit="true" isee:use_alternate_row_colors="false" isee:unlimited_table_length="false" blank_column_width="80" column_width="160" interval="1" report_balances="beginning" report_flows="instantaneous" header_font_style="normal" header_font_weight="normal" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="12pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 				</style>
-				<aux x="222" y="236" name="a"/>
-				<aux x="360" y="236" name="b"/>
-				<connector uid="1" angle="7.90716">
-					<from>a</from>
-					<to>b</to>
+				<aux x="222" y="236" name="a a"/>
+				<aux x="360" y="236" name="b b"/>
+				<connector uid="1" angle="0">
+					<from>a_a</from>
+					<to>b_b</to>
 				</connector>
+				<stacked_container uid="2" x="656" y="311">
+					<graph width="350" height="250" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="a_a"/>
+						</plot>
+						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="b_b"/>
+						</plot>
+					</graph>
+				</stacked_container>
 			</view>
 		</views>
 	</model>
