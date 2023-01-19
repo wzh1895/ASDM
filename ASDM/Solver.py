@@ -1,17 +1,57 @@
 class Solver(object):
-    def __init__(self, dimension_elements=None, name_space=None, var_history=None):
+    def __init__(self, sim_specs=None, dimension_elements=None, name_space=None):
+        
+        self.sim_specs = sim_specs
+        self.dimension_elements = dimension_elements
+        self.name_space = name_space
+        
+        ### Functions ###
+
+        def logic_and(a, b):
+            return (a and b)
+        
+        def logic_or(a, b):
+            return (a or b)
+        
+        def logic_not(a):
+            return (not a)
+        
         def greater_than(a, b):
             if a > b:
                 return True
             elif a <= b:
                 return False
             else:
-                raise Exception
+                raise Exception()
 
         def less_than(a, b):
             if a < b:
                 return True
             elif a >= b:
+                return False
+            else:
+                raise Exception()
+
+        def no_greater_than(a, b):
+            if a <= b:
+                return True
+            elif a > b:
+                return False
+            else:
+                raise Exception()
+
+        def no_less_than(a, b):
+            if a >= b:
+                return True
+            elif a < b:
+                return False
+            else:
+                raise Exception()
+
+        def equals(a, b):
+            if a == b:
+                return True
+            elif a != b:
                 return False
             else:
                 raise Exception
@@ -102,27 +142,45 @@ class Solver(object):
                 return b
             else:
                 return c
-        
-        self.dimension_elements = dimension_elements
-        self.name_space = name_space
-        self.var_history = var_history
 
-        self.functions = {
-                'GT': greater_than,
-                'LT': less_than,
-                'PLUS': plus,
-                'MINUS': minus,
-                'TIMES': times,
-                'DIVIDE': divide,
-                'CON': con,
-            }
+        def func_delay(*args):
+            pass
         
-        # self.id_level = 0
+        ### Function mapping ###
+
+        self.built_in_functions = {
+            'AND':      logic_and,
+            'OR':       logic_or,
+            'NOT':      logic_not,
+            'GT':       greater_than,
+            'LT':       less_than,
+            'NGT':      no_greater_than,
+            'NLT':      no_less_than,
+            'EQS':      equals,
+            'PLUS':     plus,
+            'MINUS':    minus,
+            'TIMES':    times,
+            'DIVIDE':   divide,
+            'MIN':      min,
+            'MAX':      max,
+            'CON':      con,
+        }
+
+        self.time_related_functions = [
+            'INIT',
+            'DELAY',
+            'HISTORY',
+        ]
+
+        self.custom_functions = {}
+        self.time_expr_register = {}
+        
+        self.id_level = 1
 
         self.HEAD = "SOLVER"
 
     def calculate_node(self, parsed_equation, node_id='root', subscript=None):
-        # self.id_level += 1
+        self.id_level += 1
 
         # print(self.HEAD, 'processing node {} on subscript {}:'.format(node_id, subscript))
         # if type(parsed_equation) is dict:
@@ -137,6 +195,7 @@ class Solver(object):
             for sub, sub_equaton in parsed_equation.items():
                 # print(self.HEAD, 'sub', sub)
                 value[sub] = self.calculate_node(parsed_equation=sub_equaton, node_id='root', subscript=sub)
+            # print(self.HEAD, 'v1', value)
         else:
             # print(self.HEAD, 'type of parsed_equation: graph')
             if node_id == 'root':
@@ -149,21 +208,31 @@ class Solver(object):
                 # print(self.HEAD, 'oprt1')
                 # print(self.HEAD, 'o1')
                 value = operands[0][1]
+                # print(self.HEAD, 'v2', value)
             elif operator[0] == 'EQUALS':
+                # print(self.HEAD*self.id_level, 'operator v3', operator)
+                # print(self.HEAD*self.id_level, 'operands v3', operands)
                 if operands[0][0] == 'NAME':
                     if subscript:
                         try:
                             value = self.name_space[operands[0][1]][subscript]
+                            # print(self.HEAD*self.id_level, 'v3.1.1', value)
                         except TypeError:
                             value = self.name_space[operands[0][1]]
+                            # print(self.HEAD*self.id_level, 'v3.1.2', value)
                     else:
+                        # print(self.HEAD*self.id_level, 'v3.1.3.0', self.name_space)
                         value = self.name_space[operands[0][1]]
+                        # print(self.HEAD*self.id_level, 'v3.1.3', value, operands)
+                    # print(self.HEAD*self.id_level, 'v3.1', value)
                 elif operands[0][0] == 'FUNC':
                     # print(self.HEAD, 'o3')
                     value = self.calculate_node(parsed_equation, node_id, subscript)
+                    # print(self.HEAD*self.id_level, 'v3.2', value)
                 else:
                     # print(self.HEAD, 'o4')
                     raise Exception()
+                # print(self.HEAD*self.id_level, 'v3', value)
             
             elif operator[0] == 'SPAREN': # TODO this part is too dynamic, therefore can be slow. Need to resolve this when compiling.
                 var_name = operands[0][1]
@@ -179,6 +248,7 @@ class Solver(object):
                     else:
                         # print('a1.1.2')
                         value = self.name_space[var_name]
+                    # print(self.HEAD, 'v4', value)
                 else: # there are explicitly specified subscripts in oprands
                     # print('a1.2')
                     if subscript: # subscript is explicitly specified; like a[Element_1] or a[Dimension_1]
@@ -204,15 +274,16 @@ class Solver(object):
                         subscript = tuple(operand[1] for operand in operands[1:]) # use tuple to make it hashable
                         # print(self.HEAD, 'subscripts', subscripts, 'subscript of interest', subscript)
                         value = self.name_space[var_name][subscript]
-
+                    # print(self.HEAD, 'v5', value)
             
             elif operator[0] == 'PAREN':
                 value = self.calculate_node(parsed_equation, operands[0][2])
-            
-            elif operator[0] in self.functions.keys():
-                # print(self.HEAD, 'operator', operator)
+                # print(self.HEAD, 'v6', value)
+
+            elif operator[0] in self.built_in_functions.keys(): # plus, minus, con, etc.
+                # print(self.HEAD*self.id_level, 'operator v7', operator, operands)
                 func_name = operator[0]
-                function = self.functions[func_name]
+                function = self.built_in_functions[func_name]
                 oprds = []
                 for operand in operands:
                     # print(self.HEAD, 'oprd', operand)
@@ -221,11 +292,77 @@ class Solver(object):
                     oprds.append(v)
                 # print(self.HEAD, 'oprds', oprds)
                 value = function(*oprds)
+                # print(self.HEAD*self.id_level, 'v7', value)
+            
+            elif operator[0] in self.custom_functions.keys(): # graph functions
+                # print(self.HEAD, 'custom func operator', operator)
+                func_name = operator[0]
+                function = self.custom_functions[func_name]
+                oprds = []
+                for operand in operands:
+                    # print(self.HEAD, 'oprd', operand)
+                    v = self.calculate_node(parsed_equation, operand[2])
+                    # print(self.HEAD, 'value', v)
+                    oprds.append(v)
+                # print(self.HEAD, 'oprds', oprds)
+                value = function(*oprds)
+                # print(self.HEAD, 'v8', value)
+
+            elif operator[0] in self.time_related_functions: # init, delay, etc
+                # print(self.HEAD, 'time-related func. operator:', operator, 'operands:', operands)
+                func_name = operator[0]
+                if func_name == 'INIT':
+                    if tuple(operands[0]) in self.time_expr_register.keys():
+                        value = self.time_expr_register[tuple(operands[0])]
+                    else:
+                        value = self.calculate_node(parsed_equation, operands[0][2])
+                        self.time_expr_register[tuple(operands[0])] = value
+                elif func_name == 'DELAY':
+                    # expr value
+                    expr_value = self.calculate_node(parsed_equation, operands[0][2])
+                    if tuple(operands[0]) in self.time_expr_register.keys():
+                        self.time_expr_register[tuple(operands[0])].append(expr_value)
+                    else:
+                        self.time_expr_register[tuple(operands[0])] = [expr_value]
+                    
+                    # init value
+                    if len(operands) == 2: # there's no initial value specified -> use the delyed expr's initial value
+                        init_value = self.time_expr_register[tuple(operands[0])][0]
+                    elif len(operands) == 3: # there's an initial value specified
+                        init_value = self.calculate_node(parsed_equation, operands[2][2])
+                    else:
+                        raise Exception("Invalid initial value for DELAY in operands {}".format(operands))
+
+                    # delay time
+                    delay_time = self.calculate_node(parsed_equation, operands[1][2])
+                    if delay_time > (self.sim_specs['current_time'] - self.sim_specs['initial_time']): # (- initial_time) because simulation might not start from time 0
+                        value = init_value
+                    else:
+                        delay_steps = delay_time / self.sim_specs['dt']
+                        value = self.time_expr_register[tuple(operands[0])][-int(delay_steps+1)]
+                elif func_name == 'HISTORY':
+                    # expr value
+                    expr_value = self.calculate_node(parsed_equation, operands[0][2])
+                    if tuple(operands[0]) in self.time_expr_register.keys():
+                        self.time_expr_register[tuple(operands[0])].append(expr_value)
+                    else:
+                        self.time_expr_register[tuple(operands[0])] = [expr_value]
+                    
+                    # historical time
+                    historical_time = self.calculate_node(parsed_equation, operands[1][2])
+                    if historical_time > self.sim_specs['current_time']:
+                        value = 0
+                    else:
+                        historical_steps = (historical_time - self.sim_specs['initial_time']) / self.sim_specs['dt']
+                        value = self.time_expr_register[tuple(operands[0])][int(historical_steps)]
+                else:
+                    raise Exception('Unknown time-related operator {}'.format(operator[0]))
+                # print(self.HEAD, 'v9', value)
             else:
                 raise Exception('Unknown operator {}'.format(operator[0]))
         
         # print(self.HEAD, 'value for {} {}'.format(node_id, subscript), value)
-        # self.id_level -= 1
+        self.id_level -= 1
         try:
             return value[subscript]
         except KeyError as e: # due to dict[None]
@@ -270,7 +407,8 @@ if __name__ == '__main__':
         (12, 'IF aa THEN IF ba THEN bb ELSE bc ELSE ac', 1),
         (13, 'h[ele1]', 8),
         (14, 'IF (a + h[ele1]) > (c * 10) THEN INIT(d / e) ELSE f - g', None),
-        (15, 'h+i-i', {('ele1',): 8})
+        (15, 'h+i-i', {('ele1',): 8}),
+        (16, '10-4-3-2-1', 0)
     ]
 
     # for test in tests[12:13]:
