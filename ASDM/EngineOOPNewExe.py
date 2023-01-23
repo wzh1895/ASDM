@@ -35,19 +35,22 @@ class Structure(object):
 
         # connections
         self.stock_flows = dict()
+        self.leak_conveyors = dict()
+        self.outflow_conveyors = dict()
         
         # flow
+        self.flow_positivity = dict()
         self.flow_equations = dict()
         self.flow_equations_parsed = dict()
-        self.flow_positivity = dict()
-        self.flow_leak = dict()
         
         # aux
         self.aux_equations = dict()
         self.aux_equations_parsed = dict()
 
+        # graph_functions
+        self.graph_functions = dict()
+
         # variable_values
-        self.var_history = {'TIME':[]}
         self.name_space = dict()
         self.time_slice = dict()
 
@@ -226,6 +229,10 @@ class Structure(object):
                     if stock.find('non_negative'):
                         # print('nonnegstock', stock)
                         non_negative = True
+                    
+                    is_conveyor = False
+                    if stock.find('conveyor'):
+                        is_conveyor = True
 
                     inflows = stock.findAll('inflow')
                     outflows = stock.findAll('outflow')
@@ -233,8 +240,9 @@ class Structure(object):
                         self.name_handler(stock.get('name')), 
                         equation=subscripted_equation(stock), 
                         non_negative=non_negative,
+                        is_conveyor=is_conveyor,
                         in_flows=[f.text for f in inflows],
-                        out_flows=[f.text for f in outflows]
+                        out_flows=[f.text for f in outflows],
                         )
                     
                 # create auxiliaries
@@ -271,7 +279,7 @@ class Structure(object):
         return subscript
 
     # model building
-    def add_stock(self, name, equation, non_negative=True, in_flows=[], out_flows=[]):
+    def add_stock(self, name, equation, non_negative=True, is_conveyor=False, in_flows=[], out_flows=[]):
         self.stock_equations[name] = equation
         self.stock_non_negative[name] = non_negative
         connections = dict()
@@ -282,12 +290,10 @@ class Structure(object):
         self.stock_flows[name] = connections
     
     def add_flow(self, name, equation, leak=None, non_negative=False):
-        self.flow_equations[name] = equation
         self.flow_positivity[name] = non_negative
         if leak:
-            self.flow_leak[name] = True
-        else:
-            self.flow_leak[name] = False
+            self.leak_conveyors[name] = None # to be filled when parsing the conveyor
+        self.flow_equations[name] = equation
     
     def add_aux(self, name, equation):
         self.aux_equations[name] = equation
@@ -295,18 +301,20 @@ class Structure(object):
     def parse_0(self, equations, parsed_equations):
         for var, equation in equations.items():
             if type(equation) is GraphFunc:
-                self.parser.functions.update({var:var}) # make name var also a function name and add it to the parser
+                gfunc_name = 'GFUNC{}'.format(len(self.graph_functions))
+                self.graph_functions[gfunc_name] = equation # just for length ... for now
+                self.parser.functions.update({gfunc_name:gfunc_name}) # make name var also a function name and add it to the parser
                 self.parser.patterns_custom_func.update(
                     {
-                        var+'__LPAREN__FUNC__RPAREN':{ # GraphFunc(var, expr, etc.)
-                            'token':['FUNC',var],
-                            'operator':[var],
+                        gfunc_name+'__LPAREN__FUNC__RPAREN':{ # GraphFunc(var, expr, etc.)
+                            'token':['FUNC', gfunc_name],
+                            'operator':[gfunc_name],
                             'operand':['FUNC']
                         },
                     }
                 )
-                self.solver.custom_functions.update({var:equation})
-                equation = var+'('+ equation.eqn + ')'  # make equation into form like var(eqn), 
+                self.solver.custom_functions.update({gfunc_name:equation})
+                equation = gfunc_name+'('+ equation.eqn + ')'  # make equation into form like var(eqn), 
                                                 # where eqn is the euqaiton whose outcome is the input to GraphFunc var()
                                                 # this is also how Vensim handles GraphFunc
                 parsed_equation = self.parser.parse(equation)
@@ -323,10 +331,12 @@ class Structure(object):
                     'leakflow': {},
                 }
                 for flow in self.stock_flows[var]['out']:
-                    if self.flow_leak[flow]:
+                    if flow in self.leak_conveyors:
                         self.conveyors[var]['leakflow'][flow] = 0
+                        self.leak_conveyors[flow] = var
                     else:
                         self.conveyors[var]['outputflow'].append(flow)
+                        self.outflow_conveyors[flow] = var
                 equation_length = equation.length_time_units # this is the equation for its length
                 parsed_equation_len = self.parser.parse(equation_length)
 
@@ -349,17 +359,65 @@ class Structure(object):
 
         self.parse_0(self.stock_equations, self.stock_equations_parsed)
         self.parse_0(self.flow_equations, self.flow_equations_parsed)
+        # self.parse_0(self.flow_leak_equations, self.flow_leak_equations_parsed)
         self.parse_0(self.aux_equations, self.aux_equations_parsed)
 
-    def iter_trace(self, seq, var, subscript=None):
-        # print('iter_tracing:', var)
+    def iter_trace(self, seq, var, subscript=None, mode=None):
+        # print('  Iter_tracing:', var)
         if var in self.env_variables: # var is a built-in variable like TIME
             pass # skip, as they will already be in name_space by the time of simulation
+
+        # var is a leakflow or an outflow from a conveyor. In this case the conveyor needs to be initialised
+        elif var in self.leak_conveyors:
+            # requiring a leakflow's value triggers the calculation of its connected conveyor
+
+            # if mode is not 'leak_frac', something other than the conveyor is requiring the leak_flow; then conveyor needs to be calculated. Otherwise it is the conveyor that requires it
+            if mode != 'leak_frac':  
+                if self.leak_conveyors[var] not in seq:
+                    self.iter_trace(seq=seq, var=self.leak_conveyors[var], subscript=subscript)
+                else:
+                    # the conveyor, which is pre-required for this leak_flow, needs to be move forward so that it is calculated before this leak_flow
+                    seq.remove(self.leak_conveyors[var])
+                    self.iter_trace(seq=seq, var=self.leak_conveyors[var], subscript=subscript)
+            # leakflow should not be added to seq, as
+            # (1) their equation yiels leakfraction, not the actualy flow value;
+            # (2) they are calculated when the conveyor is initialised or updated
+            # However, leak_fraction is calculated using leakflow's equation. 
+            leafs = [x for x in self.flow_equations_parsed[var].nodes() if self.flow_equations_parsed[var].out_degree(x)==0]
+            for leaf in leafs:
+                # print('i4.1')
+                if self.flow_equations_parsed[var].nodes[leaf]['operator'][0] in ['EQUALS', 'SPAREN']:
+                    operands = self.flow_equations_parsed[var].nodes[leaf]['operands']
+                    # print('i5', operands)
+                    if operands[0][0] == 'NUMBER': # if 'NUMBER' then pass, as numbers (e.g. 100) do not have a node
+                        # print('i5.0') 
+                        pass
+                    elif operands[0][0] == 'NAME': # this refers to a variable like 'a'
+                        # print('i5.1', operands[0][0])
+                        var_dependent = self.flow_equations_parsed[var].nodes[leaf]['operands'][0][1]
+                        # print('i5.2', var_dependent)
+                        self.iter_trace(seq=seq, var=var_dependent)
+                    elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
+                        # print('i5.3')
+                        # need to find that 'SPAREN' node
+                        var_dependent_node_id = self.flow_equations_parsed[var].nodes[leaf]['operands'][0][2]
+                        var_dependent = self.flow_equations_parsed[var].nodes[var_dependent_node_id]['operands'][0][1]
+                        # print('var_dependent2', var_dependent)
+                        self.iter_trace(seq=seq, var=var_dependent)
+
+        elif var in self.outflow_conveyors:
+            # requiring an outflow's value triggers the calculation of its connected conveyor
+            self.iter_trace(seq=seq, var=self.outflow_conveyors[var], subscript=subscript)
+            # convoutflows should not be added to seq, as they are calculated when the conveyor is initialised or updated
+        
         elif var in self.conveyors: # var is a conveyor (stock)
-            self.var_history[var] = list()
-            # parsed_equation_len = self.stock_equations_parsed[var]['len']
-            # parsed_equation_val = self.stock_equations_parsed[var]['val']
-            for eqn, parsed_eqn in self.stock_equations_parsed[var].items():
+            # self.var_history[var] = list()
+            # These two variables only need to be calculated once to initialise the conveyor 
+            if var in seq: # add conveyor to seq
+                seq.remove(var)
+            seq.append(var)
+            
+            for _, parsed_eqn in self.stock_equations_parsed[var].items(): # ['len', 'val']
                 leafs = [x for x in parsed_eqn.nodes() if parsed_eqn.out_degree(x)==0]
                 for leaf in leafs:
                     # print('i4.1')
@@ -373,17 +431,25 @@ class Structure(object):
                             # print('i5.1', operands[0][0])
                             var_dependent = parsed_eqn.nodes[leaf]['operands'][0][1]
                             # print('i5.2', var_dependent)
-                            self.iter_trace(seq=self.seq_init_conveyors, var=var_dependent)
+                            self.iter_trace(seq=seq, var=var_dependent)
                         elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
                             # print('i5.3')
                             # need to find that 'SPAREN' node
                             var_dependent_node_id = parsed_eqn.nodes[leaf]['operands'][0][2]
                             var_dependent = parsed_eqn.nodes[var_dependent_node_id]['operands'][0][1]
                             # print('var_dependent2', var_dependent)
-                            self.iter_trace(seq=self.seq_init_conveyors, var=var_dependent)
+                            self.iter_trace(seq=seq, var=var_dependent)
+            
+            # conveyor also requries leak_frac
+            for leak_flow in self.conveyors[var]['leakflow'].keys():
+                if leak_flow in seq:
+                    seq.remove(leak_flow)
+                seq.append(leak_flow)
+                self.iter_trace(seq=seq, var=leak_flow, mode='leak_frac')
+
 
         else: # var is a user-defined varialbe
-            self.var_history[var] = list()
+            # self.var_history[var] = list()
             if subscript is not None:
                 parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var][subscript]
                 # print('i1')
@@ -427,116 +493,61 @@ class Structure(object):
     
     # calculation tree -> sequence of variables to evaluate
     def compile(self):
-        # print('compiling stocks...')
-        # sequence 1: initialising stocks
-        for var, parsed_equation in self.stock_equations_parsed.items():
-            if type(parsed_equation) is dict():
-                for subscript in parsed_equation:
-                    self.iter_trace(seq=self.seq_init_stocks, var=var, subscript=subscript)
-            else:
-                self.iter_trace(seq=self.seq_init_stocks, var=var)
-        
-        self.seq_init_stocks.reverse()
-        # print('seq_init_stock', self.seq_init_stocks)
-        self.seq_init_conveyors.reverse()
-        # print('seq_init_conveyors', self.seq_init_conveyors)
-
-        # print('compiling flows...')
-        # sequence 2: evaluating flows and aux. this sequence should not include stocks because:
-        # (1) they are just inputs and already in name space 
-        # (2) they are updated later when all flows are calculated
-        for var in (self.flow_equations_parsed | self.aux_equations_parsed).keys(): # all flows & auxes, not just flows
-            # print('var3', var)
+        # print('Start compiling...')
+        for var in (self.stock_equations_parsed | self.aux_equations_parsed | self.flow_equations_parsed).keys():
+            # print('Compiling:', var)
             self.iter_trace(var=var, seq=self.seq_flow_aux)
         self.seq_flow_aux.reverse()
-        
-        # # remove stocks from seq_init_stocks
-        # for var in self.stock_equations_parsed.keys():
-        #     if var in self.seq_init_stocks:
-        #         self.seq_init_stocks.remove(var)
-        #         print('removed 1:', var)
-
-        # remove stocks from seq_flow_aux
-        for var in self.seq_flow_aux:
-            if var in self.stock_equations_parsed.keys():
-                self.seq_flow_aux.remove(var)
-        # print('seq_flow_aux', self.seq_flow_aux)
-
-        # remove outflows and leakflows that are connected to a conveyor from seq_flow_aux, 
-        # as they will be calculated separately
-        for c, con in self.conveyors.items():
-            for f in con['outflow']+list(con['leakflow'].keys()):
-                if f in self.seq_init_stocks:
-                    self.seq_init_stocks.remove(f)
-                if f in self.seq_flow_aux:
-                    self.seq_flow_aux.remove(f)
-        
-        # # remove variables used in init_stocks and init_conveyors from seq_flow_aux
-        # for var in self.seq_init_stocks + self.seq_init_conveyors:
-        #     if var in self.seq_flow_aux:
-        #         self.seq_flow_aux.remove(var)
-        #         print('removed 5', var)
-                
     
-    def init_stocks(self):
-        
-        # calculate the variables needed for initialising conveyors
-        for var in self.seq_init_conveyors:
-            value = self.solver.calculate_node((self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var]) # stock init might need flow or aux equations
-            self.name_space[var] = value
-            # self.var_history[var].append(value)
-
-        # initialise the Conveyors and calculate their outflows and leaks
-        for conveyor_name, conveyor in self.conveyors.items():
-            conveyor_length = self.solver.calculate_node(self.stock_equations_parsed[conveyor_name]['len'])
-            length_steps = int(conveyor_length/self.sim_specs['dt'])
-            conveyor_value = self.solver.calculate_node(self.stock_equations_parsed[conveyor_name]['val'])
-            leak_flows = conveyor['leakflow']
-            
-            if len(leak_flows) != 0:
-                for leak_flow in leak_flows.keys():
-                    leak_flows[leak_flow] = self.solver.calculate_node(self.flow_equations_parsed[leak_flow])
-                    leak_fraction = leak_flows[leak_flow]
-                    conveyor['conveyor'].initialize(length_steps, conveyor_value, leak_fraction)
-            else:
-                conveyor['conveyor'].initialize(length_steps, conveyor_value, leak_fraction=0)
-            # level
-            self.name_space[conveyor_name] = conveyor['conveyor'].level()
-            # self.var_history[conveyor_name].append(conveyor['conveyor'].level())
-            # leak
-            for leak_flow, leak_fraction in conveyor['leakflow'].items():
-                # leaked_value = conveyor['conveyor'].leak_linear_value(self.solver.calculate_node(self.flow_equations_parsed[flow]))
-                leaked_value = conveyor['conveyor'].leak_linear(leak_fraction)
-                self.name_space[leak_flow] = leaked_value / self.sim_specs['dt'] # TODO: we should also consider when leak flows are subscripted
-                # self.var_history[leak_flow].append(leaked_value)
-            # out
-            for flow in conveyor['outputflow']:
-                # outflow_value = conveyor['conveyor'].outflow_value()
-                outflow_value = conveyor['conveyor'].outflow()
-                self.name_space[flow] = outflow_value / self.sim_specs['dt']
-                # self.var_history[flow].append(outflow_value)
-
-        # initialise the 'SD' sort of stocks
-        for var in self.seq_init_stocks:
-            value = self.solver.calculate_node((self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var]) # stock init might need flow or aux equations
-            self.name_space[var] = value
-            # self.var_history[var].append(value)
-
-    def calculate_flow_auxes(self):
-        for var in self.seq_flow_aux:
-            # print('calculating var:', var)
-            value = self.solver.calculate_node((self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var])
-            if var in self.flow_equations:
-                if self.flow_positivity[var]:
-                    if type(value) is dict:
-                        for sub, subval in value.items():
-                            if subval < 0:
-                                value[sub] = 0
+    def calculate_variables(self):
+        for var in self.seq_flow_aux:    
+            # print('Engine Calculating:', var, 'current name space', self.name_space)
+            if var in self.conveyors:
+                if not self.conveyors[var]['conveyor'].is_initialized:
+                    conveyor_length = self.solver.calculate_node(self.stock_equations_parsed[var]['len'])
+                    length_steps = int(conveyor_length/self.sim_specs['dt'])
+                    conveyor_value = self.solver.calculate_node(self.stock_equations_parsed[var]['val'])
+                    leak_flows = self.conveyors[var]['leakflow']
+                    if len(leak_flows) == 0:
+                        leak_fraction = 0
                     else:
-                        if value < 0:
-                            value = 0            
-            self.name_space[var] = value
-            # self.var_history[var].append(value)
+                        for leak_flow in leak_flows.keys():
+                            # leak_flows[leak_flow] = self.solver.calculate_node(self.flow_equations_parsed[leak_flow])
+                            leak_fraction = leak_flows[leak_flow] # TODO multiple leakflows
+                    self.conveyors[var]['conveyor'].initialize(length_steps, conveyor_value, leak_fraction)
+                
+                # level
+                value = self.conveyors[var]['conveyor'].level()
+
+                self.name_space[var] = value
+                # leak
+                for leak_flow, leak_fraction in self.conveyors[var]['leakflow'].items():
+                    # leaked_value = conveyor['conveyor'].leak_linear_value(self.solver.calculate_node(self.flow_equations_parsed[flow]))
+                    leaked_value = self.conveyors[var]['conveyor'].leak_linear()
+                    self.name_space[leak_flow] = leaked_value / self.sim_specs['dt'] # TODO: we should also consider when leak flows are subscripted
+                    # self.var_history[leak_flow].append(leaked_value / self.sim_specs['dt'])
+                # out
+                for outputflow in self.conveyors[var]['outputflow']:
+                    # outflow_value = conveyor['conveyor'].outflow_value()
+                    outflow_value = self.conveyors[var]['conveyor'].outflow()
+                    self.name_space[outputflow] = outflow_value / self.sim_specs['dt']
+                    # self.var_history[outputflow].append(outflow_value / self.sim_specs['dt'])
+            else:
+                value = self.solver.calculate_node((self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var])
+                if var in self.leak_conveyors.keys():
+                    self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = value
+                else:
+                    if var in self.flow_equations:
+                        if self.flow_positivity[var]:
+                            if type(value) is dict:
+                                for sub, subval in value.items():
+                                    if subval < 0:
+                                        value[sub] = 0
+                            else:
+                                if value < 0:
+                                    value = 0            
+                    self.name_space[var] = value
+                    # self.var_history[var].append(value)
 
     def update_stocks(self):
         for stock, connections in self.stock_flows.items(): 
@@ -571,25 +582,17 @@ class Structure(object):
                     for fk, fv in total_flow_effect.items():
                         value[fk] = self.name_space[stock][fk] + fv * self.sim_specs['dt']
                 self.name_space[stock] = value
-                # self.var_history[stock].append(value)
+
+                # remove stock from seq
+                if stock in self.seq_flow_aux:
+                    self.seq_flow_aux.remove(stock)
 
         for conveyor_name, conveyor in self.conveyors.items(): # Stock is a Conveyor
-            # if type(self.stock_equations_parsed[stock]) is dict: # it must be dict {'len':xxx, 'val':xxx}
-            #     total_flow_effect = dict()
-            #     for kse in self.stock_equations_parsed[stock]:
-            #         total_flow_effect[kse] = 0
-            # else:
-            #     total_flow_effect = 0
             total_flow_effect = 0
             connections = self.stock_flows[conveyor_name]
             for direction, flows in connections.items():
                 if direction == 'in':
                     for flow in flows:
-                        # try:
-                        #     total_flow_effect += self.name_space[flow]
-                        # except TypeError:
-                        #     for kf, vf in self.name_space[flow].items():
-                        #         total_flow_effect[kf] += vf
                         total_flow_effect += self.name_space[flow]
 
             # in
@@ -598,25 +601,6 @@ class Structure(object):
             # level
             value = conveyor['conveyor'].level()
             self.name_space[conveyor_name] = value
-            # self.var_history[conveyor_name].append(value)
-            
-            # leak
-            for leak_flow, leak_fraction in conveyor['leakflow'].items(): # TODO: multiple leak flows
-                v_leak = conveyor['conveyor'].leak_linear(leak_fraction) #TODO we should support multiple leak flows
-                self.name_space[leak_flow] = v_leak / self.sim_specs['dt']
-                # self.var_history[leak_flow].append(v_leak)
-            
-            # out
-            v_out = conveyor['conveyor'].outflow()
-            self.name_space[conveyor['outputflow'][0]] = v_out / self.sim_specs['dt']
-            # self.var_history[conveyor['outputflow'][0]].append(v_out)
-            
-            # try:
-            #     value = self.name_space[stock] + total_flow_effect * self.sim_specs['dt']
-            # except TypeError:
-            #     value = dict()
-            #     for fk, fv in total_flow_effect.items():
-            #         value[fk] = self.name_space[stock][fk] + fv * self.sim_specs['dt']
                 
     def simulate(self, time=None, dt=None):
         if time is None:
@@ -625,27 +609,16 @@ class Structure(object):
             dt = self.sim_specs['dt']
         steps = time/dt
 
-        self.init_stocks()
-        # print('name space 1:', self.name_space)
-        for s in range(int(steps)):
+        for s in range(int(steps)+1):
             # print('--step {}--'.format(s))
-            self.calculate_flow_auxes()
+            self.calculate_variables()
 
             self.time_slice[self.sim_specs['current_time']] = deepcopy(self.name_space)
 
             self.sim_specs['current_time'] += dt
-            self.name_space ['TIME'] += dt
+            self.name_space['TIME'] += dt
             
             self.update_stocks()
-
-            # self.name_space = dict()
-            # self.name_space.update(self.env_variables)
-            
-            # print('name space 2:', self.name_space)
-        self.calculate_flow_auxes()
-        self.time_slice[self.sim_specs['current_time']] = deepcopy(self.name_space)
-
-        # print('name space 3:', self.name_space)
 
     def summary(self):
         print('\nSummary:\n')
@@ -658,18 +631,6 @@ class Structure(object):
         print('-------------   Runtime   -------------')
         pprint(self.name_space)
         print('')
-        print('-------------   History   -------------')
-        for k, v in self.name_space.items():
-            print(k)
-            print('Current:', k, v)
-            print('History:')
-            for var, history in self.var_history.items():
-                print(var)
-                print(history)
-                print('  Length:', len(history))
-            print('')
-        print('')
-        print
 
 
 if __name__ == '__main__':
@@ -701,15 +662,15 @@ if __name__ == '__main__':
     # model = Structure(from_xmile='BuiltInTestModels/Time_related_functions.stmx')
     
     # model = Structure(from_xmile='BuiltInTestModels/Conveyor.stmx')
-    # model = Structure(from_xmile='BuiltInTestModels/Conveyor_leakage.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/Conveyor_leakage1.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/Conveyor_leakage2.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/Conveyor_initialisation.stmx')
 
     ### Production Models ###
-    # model = Structure(from_xmile='TestModels/TempTest.stmx')
-    # model = Structure(from_xmile='TestModels/TempTest2.stmx')
-    # model = Structure(from_xmile='TestModels/TempTest3.stmx')
 
     # model = Structure(from_xmile='TestModels/Elective Recovery Model.stmx')
     model = Structure(from_xmile='TestModels/Elective Recovery Model_renamed.stmx')
+    # model = Structure(from_xmile='/Users/jonker/Library/CloudStorage/OneDrive-UniversityofStrathclyde/PhD_Progress/CaseStudies/CaseStudy1/CaseStudy1Codes/CaseStudy1Models/CS1SFD3.stmx')
 
     model.parse()
     model.compile()
@@ -719,8 +680,7 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots()
 
-    # pprint(model.var_history)
-
+    plot_history = dict()
     for time, slice in model.time_slice.items():
         # print('time:', time) 
         # print('slice:')
@@ -728,19 +688,20 @@ if __name__ == '__main__':
         for var, value in slice.items():
             if type(value) is dict:
                 for sub, subvalue in value.items():
-                    if var+'[{}]'.format(sub[0]) in model.var_history.keys():
-                        model.var_history[var+'[{}]'.format(sub[0])].append(subvalue)
+                    if var+'[{}]'.format(', '.join(sub)) in plot_history.keys():
+                        plot_history[var+'[{}]'.format(', '.join(sub))].append(subvalue)
                     else:
-                        model.var_history[var+'[{}]'.format(sub[0])] = [subvalue]
-                if var in model.var_history:
-                    del model.var_history[var]
+                        plot_history[var+'[{}]'.format(', '.join(sub))] = [subvalue]
+                # if var in model.var_history:
+                #     del model.var_history[var]
             else:
-                model.var_history[var].append(value)
-
-    ## ERM ###
+                if var in plot_history:
+                    plot_history[var].append(value)
+                else:
+                    plot_history[var] = [value]
 
     vars_to_view = [
-        'thirteen_wk_wait_for_urgent_treatment', 
+        # 'thirteen_wk_wait_for_urgent_treatment', 
         # 'Negative_test_results', 
         # 'COVID_modified_percent_urgent', 
         # 'Undergoing_diagnostic_tests',
@@ -750,43 +711,28 @@ if __name__ == '__main__':
         # 'Between_12_to_24mth_wait_to_urgent',
         # 'Urgent_treatment',
         # 'Total_treatment_capacity',
-        'Routine_treatment'
+        # 'Routine_treatment',
+        # 'Net_COVID_induced_changes_in_underlying_health_needs'
         ]
 
-    for var, history in model.var_history.items():
-        if var in vars_to_view:
-            # print(var, ':')
-            # print('   ', history)
-            pass
-        
-        if var in vars_to_view:
+    for var, history in plot_history.items():
+        # pprint(var)
+        if (len(vars_to_view)) == 0 or (len(vars_to_view) != 0 and var in vars_to_view):
+            # print('    ', var, ':', len(history))
             if type(history[0]) is dict:
                 hh = {}
                 for k in history[0].keys():
                     hh[k] = [h[k] for h in history]
                     ax.plot(hh[k], label='{}[{}]'.format(var, k))
+                # print(hh)
             else:
                 ax.plot(history, label='{}'.format(var))
-
-    ## OTHER ###
-
-    # for var, history in model.var_history.items():
-    #     print(var, ':')
-    #     print('   ', history)
-    
-    #     if type(history[0]) is dict:
-    #         hh = {}
-    #         for k in history[0].keys():
-    #             hh[k] = [h[k] for h in history]
-    #             ax.plot(hh[k], label='{}[{}]'.format(var, k))
-    #     else:
-    #         ax.plot(history, label='{}'.format(var))
+                # print(history)
 
     ax.legend()
     plt.show()
 
-    # pprint(model.var_history)
 
-    # import pandas as pd
-    # df_asdm = pd.DataFrame.from_dict(model.var_history)
-    # df_asdm.to_csv('erm_asdm.csv')
+    import pandas as pd
+    df_asdm = pd.DataFrame.from_dict(plot_history)
+    df_asdm.to_csv('asdm.csv')
