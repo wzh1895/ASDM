@@ -1,4 +1,3 @@
-import numpy as np
 import matplotlib.pyplot as plt
 from itertools import product
 from pprint import pprint
@@ -53,6 +52,8 @@ class Structure(object):
         # variable_values
         self.name_space = dict()
         self.time_slice = dict()
+        self.full_result = dict()
+        self.full_result_flattened = dict()
 
         # env variables
         self.env_variables = {
@@ -71,10 +72,7 @@ class Structure(object):
             )
 
         # sequences
-        self.seq_init_conveyors = list()
-        self.seq_init_stocks = list()
         self.seq_flow_aux = list()
-
 
         # custom functions
         self.custom_functions = {}
@@ -207,7 +205,7 @@ class Structure(object):
                                 var_subscripted_eqn[ect] =equation
                         return(var_subscripted_eqn)
                     else:
-                        self.var_dimensions[var.get('name')] = ['nosubscript']
+                        self.var_dimensions[var.get('name')] = None
                         # print('Processing XMILE definition for:', var.get('name'))
                         var_subscripted_eqn = dict()
                         if var.find('conveyor'):
@@ -297,6 +295,16 @@ class Structure(object):
     
     def add_aux(self, name, equation):
         self.aux_equations[name] = equation
+
+    def replace_element_equation(self, name, new_equation):
+        if name in self.stock_equations:
+            self.stock_equations[name] = new_equation
+        elif name in self.flow_equations:
+            self.flow_equations[name] = new_equation
+        elif name in self.aux_equations:
+            self.aux_equations[name] = new_equation
+        else:
+            raise Exception('Unable to find {} in the current model'.format(name))
 
     def parse_0(self, equations, parsed_equations):
         for var, equation in equations.items():
@@ -446,7 +454,6 @@ class Structure(object):
                     seq.remove(leak_flow)
                 seq.append(leak_flow)
                 self.iter_trace(seq=seq, var=leak_flow, mode='leak_frac')
-
 
         else: # var is a user-defined varialbe
             # self.var_history[var] = list()
@@ -603,6 +610,9 @@ class Structure(object):
             self.name_space[conveyor_name] = value
                 
     def simulate(self, time=None, dt=None):
+        self.parse()
+        self.compile()
+
         if time is None:
             time = self.sim_specs['simulation_time']
         if dt is None:
@@ -619,6 +629,15 @@ class Structure(object):
             self.name_space['TIME'] += dt
             
             self.update_stocks()
+        
+    def clear_last_run(self):
+        self.sim_specs['current_time'] = self.sim_specs['initial_time']
+        self.name_space = dict()
+        self.name_space.update(self.env_variables)
+        self.time_slice = dict()
+        self.seq_flow_aux = list()
+        self.full_result = dict()
+        self.full_result_flattened = dict()
 
     def summary(self):
         print('\nSummary:\n')
@@ -631,6 +650,89 @@ class Structure(object):
         print('-------------   Runtime   -------------')
         pprint(self.name_space)
         print('')
+    
+    def get_element_simulation_result(self, name, subscript=None):
+        if not subscript:
+            if type((self.stock_equations | self.flow_equations | self.aux_equations)[name]) is dict:
+                result = dict()
+                for sub in (self.stock_equations | self.flow_equations | self.aux_equations)[name].keys():
+                    result[sub] = list()
+                for time, slice in self.time_slice.items():
+                    for sub, subvalue in slice.items():
+                        result[sub].append(subvalue)
+                return result
+            else:
+                result = list()
+                for time, slice in self.time_slice.items():
+                    result.append(slice[name])
+                return result
+
+        else:
+            result= list()
+            for time, slice in self.time_slice.items():
+                result.append(slice[name][subscript])
+            return result
+            
+    def export_simulation_result(self, flatten=False, to_csv=False):
+        self.full_result = dict()
+        for time, slice in self.time_slice.items():
+            for var, value in slice.items():
+                if type(value) is dict:
+                    for sub, subvalue in value.items():
+                        try:
+                            # self.full_result[var+'[{}]'.format(', '.join(sub))].append(subvalue)
+                            self.full_result[var][sub].append(subvalue)
+                        except:
+                            try:
+                                self.full_result[var][sub] = [subvalue]
+                            except:
+                                self.full_result[var] = dict()
+                                self.full_result[var][sub] = [subvalue]
+                else:
+                    try:
+                        self.full_result[var].append(value)
+                    except:
+                        self.full_result[var] = [value]
+        if to_csv or flatten:
+            self.full_result_flattened = dict()
+            for var, result in self.full_result.items():
+                if type(result) is dict:
+                    for sub, subresult in result.items():
+                        self.full_result_flattened[var+'[{}]'.format(', '.join(sub))] = subresult
+                else:
+                    self.full_result_flattened[var] = result
+        if to_csv:
+            import pandas as pd
+            df_full_result = pd.DataFrame.from_dict(self.full_result_flattened)
+            if type(to_csv) is not str:
+                df_full_result.to_csv('asdm.csv')
+            else:
+                df_full_result.to_csv(to_csv)
+        if flatten:
+            return self.full_result_flattened
+        else:
+            return self.full_result
+    
+    def display_results(self, varaibles=None):
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+        
+        if type(varaibles) is str:
+            varaibles = [varaibles]
+        
+        if len(self.full_result) == 0:
+            self.full_result = self.export_simulation_result()
+
+        for var in varaibles:
+            result = self.full_result[var]
+            if type(result) is list:
+                ax.plot(result, label='{}'.format(var))
+            else:
+                for sub, subresult in self.full_result[var].items():
+                    ax.plot(subresult, label='{}[{}]'.format(var, ', '.join(sub)))
+        
+        ax.legend()
+        plt.show()                    
 
 
 if __name__ == '__main__':
@@ -643,7 +745,7 @@ if __name__ == '__main__':
 
     # model = Structure(from_xmile='BuiltinTestModels/Goal_gap.stmx')
 
-    # model = Structure(from_xmile='BuiltinTestModels/Goal_gap_array.stmx')
+    model = Structure(from_xmile='BuiltinTestModels/Goal_gap_array.stmx')
     # model = Structure(from_xmile='BuiltinTestModels/Array_parallel_reference.stmx')
     # model = Structure(from_xmile='BuiltinTestModels/Array_cross_reference.stmx')
     # model = Structure(from_xmile='BuiltinTestModels/Array_cross_reference_inference.stmx')
@@ -672,67 +774,24 @@ if __name__ == '__main__':
     model = Structure(from_xmile='TestModels/Elective Recovery Model_renamed.stmx')
     # model = Structure(from_xmile='/Users/jonker/Library/CloudStorage/OneDrive-UniversityofStrathclyde/PhD_Progress/CaseStudies/CaseStudy1/CaseStudy1Codes/CaseStudy1Models/CS1SFD3.stmx')
 
-    model.parse()
-    model.compile()
-    # model.simulate(time=1, dt=1)
     model.simulate()
-    # model.summary()
+    model.export_simulation_result(to_csv=True)
+    # model.display_results([
+    #     'thirteen_wk_wait_for_urgent_treatment',
+    #     'percent_becoming_urgent_by_waiting_time_pa'
+    #     ])
 
-    fig, ax = plt.subplots()
-
-    plot_history = dict()
-    for time, slice in model.time_slice.items():
-        # print('time:', time) 
-        # print('slice:')
-        # pprint(slice)
-        for var, value in slice.items():
-            if type(value) is dict:
-                for sub, subvalue in value.items():
-                    if var+'[{}]'.format(', '.join(sub)) in plot_history.keys():
-                        plot_history[var+'[{}]'.format(', '.join(sub))].append(subvalue)
-                    else:
-                        plot_history[var+'[{}]'.format(', '.join(sub))] = [subvalue]
-                # if var in model.var_history:
-                #     del model.var_history[var]
-            else:
-                if var in plot_history:
-                    plot_history[var].append(value)
-                else:
-                    plot_history[var] = [value]
-
-    vars_to_view = [
-        # 'thirteen_wk_wait_for_urgent_treatment', 
-        # 'Negative_test_results', 
-        # 'COVID_modified_percent_urgent', 
-        # 'Undergoing_diagnostic_tests',
-        # 'Positive_test_results_urgent',
-        # 'Less_than_6mth_to_urgent',
-        # 'Between_6_to_12mth_wait_to_urgent',
-        # 'Between_12_to_24mth_wait_to_urgent',
-        # 'Urgent_treatment',
-        # 'Total_treatment_capacity',
-        # 'Routine_treatment',
-        # 'Net_COVID_induced_changes_in_underlying_health_needs'
-        ]
-
-    for var, history in plot_history.items():
-        # pprint(var)
-        if (len(vars_to_view)) == 0 or (len(vars_to_view) != 0 and var in vars_to_view):
-            # print('    ', var, ':', len(history))
-            if type(history[0]) is dict:
-                hh = {}
-                for k in history[0].keys():
-                    hh[k] = [h[k] for h in history]
-                    ax.plot(hh[k], label='{}[{}]'.format(var, k))
-                # print(hh)
-            else:
-                ax.plot(history, label='{}'.format(var))
-                # print(history)
-
-    ax.legend()
-    plt.show()
-
-
-    import pandas as pd
-    df_asdm = pd.DataFrame.from_dict(plot_history)
-    df_asdm.to_csv('asdm.csv')
+    # vars_to_view = [
+    #     # 'thirteen_wk_wait_for_urgent_treatment', 
+    #     # 'Negative_test_results', 
+    #     # 'COVID_modified_percent_urgent', 
+    #     # 'Undergoing_diagnostic_tests',
+    #     # 'Positive_test_results_urgent',
+    #     # 'Less_than_6mth_to_urgent',
+    #     # 'Between_6_to_12mth_wait_to_urgent',
+    #     # 'Between_12_to_24mth_wait_to_urgent',
+    #     # 'Urgent_treatment',
+    #     # 'Total_treatment_capacity',
+    #     # 'Routine_treatment',
+    #     # 'Net_COVID_induced_changes_in_underlying_health_needs'
+    #     ]
