@@ -52,7 +52,7 @@ class Parser(object):
             'INIT': r'INIT',
             'DELAY': r'DELAY',
             'STEP': r'STEP',
-            'HISTORY': r'HISTORY'
+            'HISTORY': r'HISTORY',
         }
 
         self.names = {
@@ -271,6 +271,8 @@ class Parser(object):
             r = 100
             while len(items) > 1 and r > 0:
                 r -= 1 # use this line to put a stop by number of iterations
+                if r == 0:
+                    raise Exception('Parser timeout on String\n  {}, \nItems\n  {}'.format(string, items))
                 items_changed = False
                 # print(self.HEAD, '---Parsing---','\n')
                 # print(self.HEAD, 'items1', items)
@@ -393,7 +395,7 @@ if __name__ == '__main__':
     parser = Parser()
 
     ####
-    graph = parser.parse(string_3a)
+    graph = parser.parse(string_d)
     ####
 
     import matplotlib.pyplot as plt
