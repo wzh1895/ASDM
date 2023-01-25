@@ -46,26 +46,23 @@ class Parser(object):
             'DIVIDE': r'\/',
         }
 
-        self.functions = {
-            'MIN': r'MIN',
-            'MAX': r'MAX',
-            'INIT': r'INIT',
-            'DELAY': r'DELAY',
-            'STEP': r'STEP',
-            'HISTORY': r'HISTORY',
+        self.functions = { # use lookahead (?=\() to ensure only match INIT( not INITIAL
+            'MIN': r'MIN(?=\()',
+            'MAX': r'MAX(?=\()',
+            'INIT': r'INIT(?=\()',
+            'DELAY': r'DELAY(?=\()',
+            'DELAY3': r'DELAY3(?=\()',
+            'SMTH3': r'SMTH3(?=\()',
+            'STEP': r'STEP(?=\()',
+            'HISTORY': r'HISTORY(?=\()',
+            'LOOKUP': r'LOOKUP(?=\()',
         }
 
         self.names = {
-            'NAME': r'[a-zA-Z_\?][a-zA-Z0-9_\?]*'
+            'NAME': r'[a-zA-Z_"\?][a-zA-Z0-9_#"\(\)\?]*[a-zA-Z0-9_#"\?]'
         }
         self.numbers = {
             'NUMBER': r'(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?'
-            # 'NUMBER': r'[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?'
-            # 'NUMBER': r'((?<!\d)-\d+|\d+)'
-            # 'NUMBER': r'^-?\d+(\.\d+)?$'
-            # 'NUMBER': r'((?:^\-?\d+)|(?:(?<=[-+/*])(?:\-?\d+)))'
-            # 'NUMBER': r'^-?[0-9]\d*(\.\d+)?$'
-            # 'NUMBER': r'(-?\d+\.\d+)|(-?\d+)'
         }
 
         self.node_id = 0
@@ -160,6 +157,16 @@ class Parser(object):
                 'operator':['DELAY'],
                 'operand':['FUNC']
             },
+            'DELAY3__LPAREN__DOT+__RPAREN':{
+                'token':['FUNC', 'DELAY3'],
+                'operator':['DELAY3'],
+                'operand':['FUNC']
+            },
+            'SMTH3__LPAREN__DOT+__RPAREN':{
+                'token':['FUNC', 'SMTH3'],
+                'operator':['SMTH3'],
+                'operand':['FUNC']
+            },
             'HISTORY__LPAREN__DOT+__RPAREN':{
                 'token':['FUNC', 'DELAY'],
                 'operator':['HISTORY'],
@@ -169,7 +176,12 @@ class Parser(object):
                 'token':['FUNC', 'STEP'],
                 'operator':['STEP'],
                 'operand':['FUNC']
-            }
+            },
+            'LOOKUP__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'LOOKUP'],
+                'operator':['LOOKUP'],
+                'operand':['FUNC']
+            },
         }
         
         self.patterns_logic = {
@@ -234,26 +246,26 @@ class Parser(object):
             for type_name, type_regex in (self.numbers | self.special_symbols | self.logic_operators | self.arithmetic_operators | self.functions | self.names).items():
                 m = re.match(pattern=type_regex, string=s)
                 if m:
-                    # if type_name == 'NUMBER':
-                    #     item = float(m[0])
-                    # else:
-                    #     item = m[0]
                     item = m[0]
+                    if item[0] == "\"" and item[-1] == "\"": # strip quotation marks from matched string
+                        item = item[1:-1]
                     items.append([type_name, item])
                     s = s[m.span()[1]:].strip()
                     break
         return items
 
-    def parse(self, string):
+    def parse(self, string, verbose=False, max_iter=100):
         if type(string) is dict:
             parsed_equations = dict()
             for k, ks in string.items():
                 parsed_equations[k] = self.parse(ks)
             return parsed_equations
         else:
-            # print(self.HEAD, 'Parse string:', string)
+            if verbose:
+                print(self.HEAD, 'Parse string:', string)
             items = self.tokenisation(string)
-            # print(self.HEAD, 'Items:', items)
+            if verbose:
+                print(self.HEAD, 'Items:', items)
             graph = nx.DiGraph()
             if len(items) == 1:
                 if items[0][0] == 'NAME':
@@ -268,16 +280,19 @@ class Parser(object):
                     )
                 graph.add_edge('root', self.node_id)
                 return graph
-            r = 100
+            r = max_iter
             while len(items) > 1 and r > 0:
+                if verbose:
+                    print('\n'+self.HEAD, 'Iter:', r)
                 r -= 1 # use this line to put a stop by number of iterations
                 if r == 0:
                     raise Exception('Parser timeout on String\n  {}, \nItems\n  {}'.format(string, items))
                 items_changed = False
-                # print(self.HEAD, '---Parsing---','\n')
-                # print(self.HEAD, 'items1', items)
-                # print(self.HEAD, graph.nodes.data(True))
-                # print(self.HEAD, graph.edges.data(True))
+                if verbose:
+                    print(self.HEAD, '---Parsing---','\n')
+                    print(self.HEAD, 'Items', items)
+                    print(self.HEAD, 'Nodes', graph.nodes.data(True))
+                    print(self.HEAD, 'Edges', graph.edges.data(True))
                 for pattern, func in ( # the order of the following patterns is IMPORTANT
                     self.patterns_sub_var | \
                     self.patterns_num | \
@@ -291,10 +306,12 @@ class Parser(object):
                     self.patterns_conditional
                     ).items(): # loop over all patterns
                     pattern = pattern.split('__')
-                    # print(self.HEAD, "Searching for {} with operator {}".format(pattern, func['operator']))
+                    if verbose:
+                        print(self.HEAD, "Searching for {} with operator {}".format(pattern, func['operator']))
                     pattern_len = len(pattern)
                     for i in range(len(items)): # loop over all positions for this pattern
-                        # print(self.HEAD, 'Checking item:', i, items[i])
+                        # if verbose:
+                        #     print(self.HEAD, 'Checking item:', i, items[i])
                         if len(items) - i >= pattern_len:
                             matched = True
                             for j in range(pattern_len): # matching pattern at this position
