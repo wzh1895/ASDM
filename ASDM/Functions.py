@@ -1,21 +1,25 @@
 import numpy as np
 
 class GraphFunc(object):
-    def __init__(self, xscale, yscale, ypts):
-        self.xscale = xscale
+    def __init__(self, yscale, ypts, xscale=None, xpts=None):
         self.yscale = yscale
         self.ypts = ypts
         self.eqn = None
         
+        if xpts:
+            self.xpts = xpts
+        else:
+            self.xscale = xscale
+            self.xpts = np.linspace(self.xscale[0], self.xscale[1], num=len(self.ypts))
+        
         from scipy.interpolate import interp1d
 
-        self.xpts = np.linspace(self.xscale[0], self.xscale[1], num=len(self.ypts))
         self.interp_func = interp1d(self.xpts, self.ypts, kind='linear')
 
     def __call__(self, input):
         # input out of xscale treatment:
-        input = max(input, self.xscale[0])
-        input = min(input, self.xscale[-1])
+        input = max(input, self.xpts[0])
+        input = min(input, self.xpts[-1])
         output = float(self.interp_func(input)) # the output (like array([1.])) needs to be converted to float to avoid dimension explosion
         return output
 
