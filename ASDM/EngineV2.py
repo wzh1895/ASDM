@@ -11,6 +11,9 @@ from copy import deepcopy
 class Structure(object):
     # equations
     def __init__(self, from_xmile=None):
+        # Debug
+        self.HEAD = 'ENGINE'
+
         # sim_specs
         self.sim_specs = {
             'initial_time': 0,
@@ -79,6 +82,7 @@ class Structure(object):
 
         # If the model is based on an XMILE file
         if from_xmile is not None:
+            print(self.HEAD, 'Reading XMILE model from {}'.format(from_xmile))
             from pathlib import Path
             xmile_path = Path(from_xmile)
             if xmile_path.exists():
@@ -134,17 +138,30 @@ class Structure(object):
                 
                 # read graph functions
                 def read_graph_func(var):
-                    xscale = [
-                        float(var.find('gf').find('xscale').get('min')),
-                        float(var.find('gf').find('xscale').get('max'))
-                    ]
-                    yscale = [
-                        float(var.find('gf').find('yscale').get('min')),
-                        float(var.find('gf').find('yscale').get('max'))
-                    ]
-                    ypts = [float(t) for t in var.find('gf').find('ypts').text.split(',')]
+                    gf = var.find('gf')
+                    if gf.find('xscale'):
+                        xscale = [
+                            float(gf.find('xscale').get('min')),
+                            float(gf.find('xscale').get('max'))
+                        ]
+                    else:
+                        xscale = None
+                    
+                    if gf.find('xpts'):
+                        xpts = [float(t) for t in gf.find('xpts').text.split(',')]
+                    else:
+                        xpts = None
+                    
+                    if xscale is None and xpts is None:
+                        raise Exception("GraphFunc: xscale and xpts cannot both be None.")
 
-                    equation = GraphFunc(xscale, yscale, ypts)
+                    yscale = [
+                        float(gf.find('yscale').get('min')),
+                        float(gf.find('yscale').get('max'))
+                    ]
+                    ypts = [float(t) for t in gf.find('ypts').text.split(',')]
+
+                    equation = GraphFunc(yscale=yscale, ypts=ypts, xscale=xscale, xpts=xpts)
                     return equation
 
                 # create var subscripted equation
@@ -315,10 +332,11 @@ class Structure(object):
 
     def parse_0(self, equations, parsed_equations):
         for var, equation in equations.items():
+            # print(self.HEAD, "Parsing:", var)
             if type(equation) is GraphFunc:
                 gfunc_name = 'GFUNC{}'.format(len(self.graph_functions))
                 self.graph_functions[gfunc_name] = equation # just for length ... for now
-                self.parser.functions.update({gfunc_name:gfunc_name}) # make name var also a function name and add it to the parser
+                self.parser.functions.update({gfunc_name:gfunc_name+"(?=\()"}) # make name var also a function name and add it to the parser
                 self.parser.patterns_custom_func.update(
                     {
                         gfunc_name+'__LPAREN__FUNC__RPAREN':{ # GraphFunc(var, expr, etc.)
@@ -334,8 +352,6 @@ class Structure(object):
                                                 # this is also how Vensim handles GraphFunc
                 parsed_equation = self.parser.parse(equation)
                 parsed_equations[var] = parsed_equation
-                # print('{} equation: {}'.format(var, equation))
-                # print('{} parsed_e: {}'.format(var, parsed_equation.nodes(data=True)))
             
             elif type(equation) is Conveyor: # TODO we should also consider arrayed conveyors
                 self.conveyors[var] = {
@@ -366,15 +382,12 @@ class Structure(object):
             else:
                 parsed_equation = self.parser.parse(equation)
                 parsed_equations[var] = parsed_equation
-                # print('{} equation: {}'.format(var, equation))
-                # print('{} parsed_e: {}'.format(var, parsed_equation.nodes(data=True)))
 
     def parse(self):
         # string equation -> calculation tree
 
         self.parse_0(self.stock_equations, self.stock_equations_parsed)
         self.parse_0(self.flow_equations, self.flow_equations_parsed)
-        # self.parse_0(self.flow_leak_equations, self.flow_leak_equations_parsed)
         self.parse_0(self.aux_equations, self.aux_equations_parsed)
 
     def iter_trace(self, seq, var, subscript=None, mode=None):
@@ -426,7 +439,6 @@ class Structure(object):
             # convoutflows should not be added to seq, as they are calculated when the conveyor is initialised or updated
         
         elif var in self.conveyors: # var is a conveyor (stock)
-            # self.var_history[var] = list()
             # These two variables only need to be calculated once to initialise the conveyor 
             if var in seq: # add conveyor to seq
                 seq.remove(var)
@@ -463,7 +475,6 @@ class Structure(object):
                 self.iter_trace(seq=seq, var=leak_flow, mode='leak_frac')
 
         else: # var is a user-defined varialbe
-            # self.var_history[var] = list()
             if subscript is not None:
                 parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var][subscript]
                 # print('i1')
@@ -526,7 +537,6 @@ class Structure(object):
                         leak_fraction = 0
                     else:
                         for leak_flow in leak_flows.keys():
-                            # leak_flows[leak_flow] = self.solver.calculate_node(self.flow_equations_parsed[leak_flow])
                             leak_fraction = leak_flows[leak_flow] # TODO multiple leakflows
                     self.conveyors[var]['conveyor'].initialize(length_steps, conveyor_value, leak_fraction)
                 
@@ -536,16 +546,12 @@ class Structure(object):
                 self.name_space[var] = value
                 # leak
                 for leak_flow, leak_fraction in self.conveyors[var]['leakflow'].items():
-                    # leaked_value = conveyor['conveyor'].leak_linear_value(self.solver.calculate_node(self.flow_equations_parsed[flow]))
                     leaked_value = self.conveyors[var]['conveyor'].leak_linear()
                     self.name_space[leak_flow] = leaked_value / self.sim_specs['dt'] # TODO: we should also consider when leak flows are subscripted
-                    # self.var_history[leak_flow].append(leaked_value / self.sim_specs['dt'])
                 # out
                 for outputflow in self.conveyors[var]['outputflow']:
-                    # outflow_value = conveyor['conveyor'].outflow_value()
                     outflow_value = self.conveyors[var]['conveyor'].outflow()
                     self.name_space[outputflow] = outflow_value / self.sim_specs['dt']
-                    # self.var_history[outputflow].append(outflow_value / self.sim_specs['dt'])
             else:
                 value = self.solver.calculate_node((self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var])
                 if var in self.leak_conveyors.keys():
@@ -561,7 +567,6 @@ class Structure(object):
                                 if value < 0:
                                     value = 0            
                     self.name_space[var] = value
-                    # self.var_history[var].append(value)
 
     def update_stocks(self):
         for stock, connections in self.stock_flows.items(): 
@@ -732,17 +737,20 @@ class Structure(object):
         else:
             return self.full_result
     
-    def display_results(self, varaibles=None):
+    def display_results(self, variables=None):
+        if type(variables) is list and len(variables) == 0:
+            variables = list((self.stock_equations | self.flow_equations | self.aux_equations).keys())
+
+        if type(variables) is str:
+            variables = [variables]
+
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots()
-        
-        if type(varaibles) is str:
-            varaibles = [varaibles]
         
         if len(self.full_result) == 0:
             self.full_result = self.export_simulation_result()
 
-        for var in varaibles:
+        for var in variables:
             result = self.full_result[var]
             if type(result) is list:
                 ax.plot(result, label='{}'.format(var))
@@ -764,7 +772,7 @@ if __name__ == '__main__':
 
     # model = Structure(from_xmile='BuiltinTestModels/Goal_gap.stmx')
 
-    model = Structure(from_xmile='BuiltinTestModels/Goal_gap_array.stmx')
+    # model = Structure(from_xmile='BuiltinTestModels/Goal_gap_array.stmx')
     # model = Structure(from_xmile='BuiltinTestModels/Array_parallel_reference.stmx')
     # model = Structure(from_xmile='BuiltinTestModels/Array_cross_reference.stmx')
     # model = Structure(from_xmile='BuiltinTestModels/Array_cross_reference_inference.stmx')
@@ -790,15 +798,18 @@ if __name__ == '__main__':
     ### Production Models ###
 
     # model = Structure(from_xmile='TestModels/Elective Recovery Model.stmx')
-    model = Structure(from_xmile='TestModels/Elective Recovery Model_renamed.stmx')
-    # model = Structure(from_xmile='/Users/jonker/Library/CloudStorage/OneDrive-UniversityofStrathclyde/PhD_Progress/CaseStudies/CaseStudy1/CaseStudy1Codes/CaseStudy1Models/CS1SFD3.stmx')
+    # model = Structure(from_xmile='TestModels/Elective Recovery Model_renamed.stmx')
+    model = Structure(from_xmile='../PhD_Progress/CaseStudies/CaseStudy1/CaseStudy1Codes/CaseStudy1Models/CS1SFD3.stmx')
+    # model=Structure(from_xmile='TestModels/2022_07_14 no milk without meat.stmx')
+    # model=Structure(from_xmile='TestModels/TempTest1.stmx')
 
     model.simulate()
     model.export_simulation_result(to_csv=True)
-    # model.display_results([
-    #     'thirteen_wk_wait_for_urgent_treatment',
-    #     'percent_becoming_urgent_by_waiting_time_pa'
-    #     ])
+    model.display_results([
+        # 'thirteen_wk_wait_for_urgent_treatment',
+        # 'Routine_treatment',
+        # 'percent_becoming_urgent_by_waiting_time_pa'
+        ])
 
     # vars_to_view = [
     #     # 'thirteen_wk_wait_for_urgent_treatment', 
