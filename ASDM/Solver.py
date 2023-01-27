@@ -177,6 +177,8 @@ class Solver(object):
             'INIT',
             'DELAY',
             'HISTORY',
+            'SMTH1',
+            'SMTH3',
         ]
 
         self.custom_functions = {}
@@ -403,6 +405,63 @@ class Solver(object):
                     else:
                         historical_steps = (historical_time - self.sim_specs['initial_time']) / self.sim_specs['dt']
                         value = self.time_expr_register[tuple(operands[0])][int(historical_steps)]
+                elif func_name == 'SMTH1':
+                    # arg values
+                    order = 1
+                    expr_value = self.calculate_node(parsed_equation, operands[0][2], verbose=verbose)
+                    smth_time = self.calculate_node(parsed_equation, operands[1][2], verbose=verbose)
+                    if len(operands) == 3:
+                        init_value = self.calculate_node(parsed_equation, operands[2][2], verbose=verbose)
+                    elif len(operands) == 2:
+                        init_value = 0
+                    else:
+                        raise Exception('Invalid number of args for SMTH1.')
+                    
+                    # register
+                    if tuple(operands[0]) not in self.time_expr_register.keys():
+                        self.time_expr_register[tuple(operands[0])] = list()
+                        for i in range(order):
+                            self.time_expr_register[tuple(operands[0])].append(smth_time/order*init_value)
+                    # outflows
+                    outflows = list()
+                    for i in range(order):
+                        outflows.append(self.time_expr_register[tuple(operands[0])][i]/(smth_time/order) * self.sim_specs['dt'])
+                        self.time_expr_register[tuple(operands[0])][i] -= outflows[i]
+                    # inflows
+                    self.time_expr_register[tuple(operands[0])][0] += expr_value * self.sim_specs['dt']
+                    for i in range(1, order):
+                        self.time_expr_register[tuple(operands[0])][i] += outflows[i-1]
+
+                    return outflows[-1] / self.sim_specs['dt']
+
+                elif func_name == 'SMTH3':
+                    # arg values
+                    order = 3
+                    expr_value = self.calculate_node(parsed_equation, operands[0][2], verbose=verbose)
+                    smth_time = self.calculate_node(parsed_equation, operands[1][2], verbose=verbose)
+                    if len(operands) == 3:
+                        init_value = self.calculate_node(parsed_equation, operands[2][2], verbose=verbose)
+                    elif len(operands) == 2:
+                        init_value = 0
+                    else:
+                        raise Exception('Invalid number of args for SMTH3.')
+                    
+                    # register
+                    if tuple(operands[0]) not in self.time_expr_register.keys():
+                        self.time_expr_register[tuple(operands[0])] = list()
+                        for i in range(order):
+                            self.time_expr_register[tuple(operands[0])].append(smth_time/order*init_value)
+                    # outflows
+                    outflows = list()
+                    for i in range(order):
+                        outflows.append(self.time_expr_register[tuple(operands[0])][i]/(smth_time/order) * self.sim_specs['dt'])
+                        self.time_expr_register[tuple(operands[0])][i] -= outflows[i]
+                    # inflows
+                    self.time_expr_register[tuple(operands[0])][0] += expr_value * self.sim_specs['dt']
+                    for i in range(1, order):
+                        self.time_expr_register[tuple(operands[0])][i] += outflows[i-1]
+
+                    return outflows[-1] / self.sim_specs['dt']
                 else:
                     raise Exception('Unknown time-related operator {}'.format(operator[0]))
                 if verbose:
