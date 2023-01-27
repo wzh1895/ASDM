@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 from itertools import product
 from pprint import pprint
 
@@ -316,7 +317,7 @@ class Structure(object):
     def replace_element_equation(self, name, new_equation):
         if type(new_equation) is str:
             pass
-        elif type(new_equation) in [int, float]:
+        elif type(new_equation) in [int, float, np.float_]:
             new_equation = str(new_equation)
         else:
             raise Exception('Unsupported new equation type {}'.format(type(new_equation)))
@@ -788,6 +789,7 @@ if __name__ == '__main__':
     # model = Structure(from_xmile='BuiltInTestModels/Delays.stmx')
     # model = Structure(from_xmile='BuiltInTestModels/Delays2.stmx')
     # model = Structure(from_xmile='BuiltInTestModels/History.stmx')
+    model = Structure(from_xmile='BuiltInTestModels/Smooth.stmx')
     # model = Structure(from_xmile='BuiltInTestModels/Time_related_functions.stmx')
     
     # model = Structure(from_xmile='BuiltInTestModels/Conveyor.stmx')
@@ -799,7 +801,7 @@ if __name__ == '__main__':
 
     # model = Structure(from_xmile='TestModels/Elective Recovery Model.stmx')
     # model = Structure(from_xmile='TestModels/Elective Recovery Model_renamed.stmx')
-    model = Structure(from_xmile='../PhD_Progress/CaseStudies/CaseStudy1/CaseStudy1Codes/CaseStudy1Models/CS1SFD3.stmx')
+    # model = Structure(from_xmile='../PhD_Progress/CaseStudies/CaseStudy1/CaseStudy1Codes/CaseStudy1Models/CS1SFD3.stmx')
     # model=Structure(from_xmile='TestModels/2022_07_14 no milk without meat.stmx')
     # model=Structure(from_xmile='TestModels/TempTest1.stmx')
 
