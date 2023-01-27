@@ -52,6 +52,7 @@ class Parser(object):
             'INIT': r'INIT(?=\()',
             'DELAY': r'DELAY(?=\()',
             'DELAY3': r'DELAY3(?=\()',
+            'SMTH1': r'SMTH1(?=\()',
             'SMTH3': r'SMTH3(?=\()',
             'STEP': r'STEP(?=\()',
             'HISTORY': r'HISTORY(?=\()',
@@ -160,6 +161,11 @@ class Parser(object):
             'DELAY3__LPAREN__DOT+__RPAREN':{
                 'token':['FUNC', 'DELAY3'],
                 'operator':['DELAY3'],
+                'operand':['FUNC']
+            },
+            'SMTH1__LPAREN__DOT+__RPAREN':{
+                'token':['FUNC', 'SMTH3'],
+                'operator':['SMTH1'],
                 'operand':['FUNC']
             },
             'SMTH3__LPAREN__DOT+__RPAREN':{
