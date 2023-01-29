@@ -52,6 +52,7 @@ class Structure(object):
 
         # graph_functions
         self.graph_functions = dict()
+        self.graph_functions_renamed = dict()
 
         # variable_values
         self.name_space = dict()
@@ -63,7 +64,6 @@ class Structure(object):
         self.env_variables = {
             'TIME': 0
         }
-        self.name_space.update(self.env_variables)
 
         # parser
         self.parser = Parser()
@@ -73,6 +73,7 @@ class Structure(object):
             sim_specs=self.sim_specs,
             dimension_elements=self.dimension_elements,
             name_space=self.name_space,
+            graph_functions=self.graph_functions,
             )
 
         # sequences
@@ -283,7 +284,9 @@ class Structure(object):
 
             else:
                 raise Exception("Specified model file does not exist.")
-    
+
+            self.name_space.update(self.env_variables)
+
     # utilities
     def name_handler(self, name):
         return name.replace(' ', '_').replace('\\n', '_')
@@ -335,8 +338,9 @@ class Structure(object):
         for var, equation in equations.items():
             # print(self.HEAD, "Parsing:", var)
             if type(equation) is GraphFunc:
-                gfunc_name = 'GFUNC{}'.format(len(self.graph_functions))
-                self.graph_functions[gfunc_name] = equation # just for length ... for now
+                gfunc_name = 'GFUNC{}'.format(len(self.graph_functions_renamed))
+                self.graph_functions_renamed[gfunc_name] = equation # just for length ... for now
+                self.graph_functions[var] = equation
                 self.parser.functions.update({gfunc_name:gfunc_name+"(?=\()"}) # make name var also a function name and add it to the parser
                 self.parser.patterns_custom_func.update(
                     {
@@ -382,6 +386,7 @@ class Structure(object):
 
             else:
                 parsed_equation = self.parser.parse(equation)
+                # parsed_equation = self.parser.parse(equation, verbose=True)
                 parsed_equations[var] = parsed_equation
 
     def parse(self):
@@ -555,6 +560,7 @@ class Structure(object):
                     self.name_space[outputflow] = outflow_value / self.sim_specs['dt']
             else:
                 value = self.solver.calculate_node((self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var])
+                # value = self.solver.calculate_node((self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var], verbose=True, var_name=var)
                 if var in self.leak_conveyors.keys():
                     self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = value
                 else:
@@ -662,6 +668,7 @@ class Structure(object):
             sim_specs=self.sim_specs,
             dimension_elements=self.dimension_elements,
             name_space=self.name_space,
+            graph_functions=self.graph_functions,
             )
 
     def summary(self):
@@ -767,6 +774,8 @@ if __name__ == '__main__':
 
     #### Test Models ###
 
+    # model = Structure(from_xmile='BuiltinTestModels/MOD.stmx')
+    # model = Structure(from_xmile='BuiltinTestModels/MOD_arrayed.stmx')
     # model = Structure(from_xmile='BuiltinTestModels/Min_Max.stmx')
     # model = Structure(from_xmile='BuiltinTestModels/Non-negative_stocks.stmx')
     # model = Structure(from_xmile='BuiltinTestModels/Isolated_var.stmx')
@@ -784,12 +793,13 @@ if __name__ == '__main__':
     # model = Structure(from_xmile='BuiltInTestModels/IF_THEN_ELSE.stmx')
     
     # model = Structure(from_xmile='BuiltInTestModels/Graph_function.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/LOOKUP.stmx')
 
     # model = Structure(from_xmile='BuiltInTestModels/INIT.stmx')
     # model = Structure(from_xmile='BuiltInTestModels/Delays.stmx')
     # model = Structure(from_xmile='BuiltInTestModels/Delays2.stmx')
     # model = Structure(from_xmile='BuiltInTestModels/History.stmx')
-    model = Structure(from_xmile='BuiltInTestModels/Smooth.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/Smooth.stmx')
     # model = Structure(from_xmile='BuiltInTestModels/Time_related_functions.stmx')
     
     # model = Structure(from_xmile='BuiltInTestModels/Conveyor.stmx')
@@ -802,7 +812,7 @@ if __name__ == '__main__':
     # model = Structure(from_xmile='TestModels/Elective Recovery Model.stmx')
     # model = Structure(from_xmile='TestModels/Elective Recovery Model_renamed.stmx')
     # model = Structure(from_xmile='../PhD_Progress/CaseStudies/CaseStudy1/CaseStudy1Codes/CaseStudy1Models/CS1SFD3.stmx')
-    # model=Structure(from_xmile='TestModels/2022_07_14 no milk without meat.stmx')
+    model=Structure(from_xmile='TestModels/2022_07_14 no milk without meat.stmx')
     # model=Structure(from_xmile='TestModels/TempTest1.stmx')
 
     model.simulate()
