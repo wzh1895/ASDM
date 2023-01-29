@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <xmile version="1.0" xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0" xmlns:isee="http://iseesystems.com/XMILE">
 	<header>
-		<smile version="1.0" namespace="std, isee"/>
-		<name>Smooth</name>
+		<smile version="1.0" namespace="std, isee" uses_arrays="1"/>
+		<name>LOOKUP</name>
 		<uuid>39f62f55-44ee-4a01-bfd0-b83cd9607464</uuid>
 		<vendor>isee systems, inc.</vendor>
 		<product version="2.0" isee:build_number="2176" isee:saved_by_v1="true" lang="en">Stella Professional</product>
@@ -12,6 +12,12 @@
 		<stop>7</stop>
 		<dt reciprocal="true">4</dt>
 	</sim_specs>
+	<dimensions>
+		<dim name="Dimension_1">
+			<elem name="Element_1"/>
+			<elem name="Element_2"/>
+		</dim>
+	</dimensions>
 	<isee:prefs show_module_prefix="true" live_update_on_drag="true" show_restore_buttons="false" layer="model" interface_scale_ui="true" interface_max_page_width="10000" interface_max_page_height="10000" interface_min_page_width="0" interface_min_page_height="0" rerun_on_structure_change="false" saved_runs="1" keep="false" rifp="true"/>
 	<isee:multiplayer_settings include_chat="true" allow_observers="false" advance_time_increment="1" observer_start_page="home_page" enabled="false"/>
 	<isee:time_formats default_format="Builtin">
@@ -26,71 +32,19 @@
 	<model_units/>
 	<model>
 		<variables>
-			<aux name="Source">
-				<eqn>1+STEP(2, 2)</eqn>
+			<aux name="GF1">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="7"/>
+					<yscale min="0" max="100"/>
+					<ypts>27.9,29.4,27.5,23,46.6,43.6,49,47.5</ypts>
+				</gf>
 			</aux>
 			<aux name="a">
-				<eqn>SMTH1(Source,  smth_time,   init_val)</eqn>
+				<eqn>TIME</eqn>
 			</aux>
-			<aux name="b">
-				<eqn>SMTH3(Source,  smth_time,   init_val)</eqn>
-			</aux>
-			<aux name="smth time">
-				<eqn>5</eqn>
-			</aux>
-			<flow name="Flow 1">
-				<eqn>Source</eqn>
-				<non_negative/>
-			</flow>
-			<stock name="Stock 1">
-				<eqn>init_val*smth_time</eqn>
-				<inflow>Flow_1</inflow>
-				<outflow>Flow_a</outflow>
-				<non_negative/>
-			</stock>
-			<flow name="Flow a">
-				<eqn>Stock_1/smth_time</eqn>
-				<non_negative/>
-			</flow>
-			<aux name="init val">
-				<eqn>1</eqn>
-			</aux>
-			<flow name="Flow 2">
-				<eqn>Source</eqn>
-				<non_negative/>
-			</flow>
-			<stock name="Stock 2">
-				<eqn>smth_time/3*init_val</eqn>
-				<inflow>Flow_2</inflow>
-				<outflow>Flow_3</outflow>
-				<non_negative/>
-			</stock>
-			<stock name="Stock 3">
-				<eqn>smth_time/3*init_val</eqn>
-				<inflow>Flow_3</inflow>
-				<outflow>Flow_4</outflow>
-				<non_negative/>
-			</stock>
-			<stock name="Stock 4">
-				<eqn>smth_time/3*init_val</eqn>
-				<inflow>Flow_4</inflow>
-				<outflow>Flow_b</outflow>
-				<non_negative/>
-			</stock>
-			<flow name="Flow 3">
-				<eqn>Stock_2/(smth_time/3)</eqn>
-				<non_negative/>
-			</flow>
-			<flow name="Flow 4">
-				<eqn>Stock_3/(smth_time/3)</eqn>
-				<non_negative/>
-			</flow>
-			<flow name="Flow b">
-				<eqn>Stock_4/(smth_time/3)</eqn>
-				<non_negative/>
-			</flow>
-			<aux name="c">
-				<eqn>SMTH1(Source,  smth_time)</eqn>
+			<aux name="output">
+				<eqn>LOOKUP(GF1,  a)</eqn>
 			</aux>
 		</variables>
 		<views>
@@ -138,7 +92,7 @@
 				<isee:iframe color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt" border_width="thin" border_style="solid"/>
 				<isee:financial_table color="black" background="#E0E0E0" text_align="right" font_size="12pt" auto_fit="true" first_column_width="250" other_column_width="100" header_font_style="normal" header_font_weight="bold" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="14pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 			</style>
-			<view isee:show_pages="false" background="white" page_width="818" page_height="571" isee:page_cols="2" isee:page_rows="2" zoom="80" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
+			<view isee:show_pages="false" background="white" page_width="818" page_height="571" isee:page_cols="2" isee:page_rows="2" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
 				<style color="black" background="white" font_style="normal" font_weight="normal" text_decoration="none" text_align="center" vertical_text_align="center" font_color="black" font_family="Arial" font_size="10pt" padding="2" border_color="black" border_width="thin" border_style="none">
 					<stock color="blue" background="white" font_color="blue" font_size="9pt" label_side="top">
 						<shape type="rectangle" width="45" height="35"/>
@@ -175,155 +129,21 @@
 					</graph>
 					<table color="black" background="#E0E0E0" text_align="right" font_size="12pt" orientation="vertical" wrap_text="false" isee:auto_fit="true" isee:use_alternate_row_colors="false" isee:unlimited_table_length="false" blank_column_width="80" column_width="160" interval="1" report_balances="beginning" report_flows="instantaneous" header_font_style="normal" header_font_weight="normal" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="12pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 				</style>
-				<stacked_container uid="1" x="705.5" y="203.5" width="504" height="173">
-					<graph width="504" height="173" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="8" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+				<aux x="415" y="248" name="GF1"/>
+				<aux x="264" y="248" name="a"/>
+				<aux label_side="bottom" x="340" y="305" name="output"/>
+				<connector uid="1" angle="307.999">
+					<from>a</from>
+					<to>output</to>
+				</connector>
+				<connector uid="2" angle="227.203">
+					<from>GF1</from>
+					<to>output</to>
+				</connector>
+				<stacked_container uid="3" x="432" y="530">
+					<graph width="350" height="250" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
 						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
-							<entity name="Source"/>
-						</plot>
-					</graph>
-				</stacked_container>
-				<aux x="129" y="384.25" name="Source"/>
-				<aux x="303" y="298.25" name="a"/>
-				<aux x="303" y="384.25" name="b"/>
-				<connector uid="2" angle="38.4181">
-					<from>Source</from>
-					<to>a</to>
-				</connector>
-				<connector uid="3" angle="16.1892">
-					<from>Source</from>
-					<to>b</to>
-				</connector>
-				<aux x="212" y="450.25" name="smth time"/>
-				<connector uid="4" angle="77.6609">
-					<from>smth_time</from>
-					<to>a</to>
-				</connector>
-				<connector uid="5" angle="35.9524">
-					<from>smth_time</from>
-					<to>b</to>
-				</connector>
-				<flow x="130.75" y="552.25" name="Flow 1">
-					<pts>
-						<pt x="65" y="552.25"/>
-						<pt x="196.5" y="552.25"/>
-					</pts>
-				</flow>
-				<stock x="219" y="556.25" name="Stock 1"/>
-				<flow x="287.25" y="556.25" name="Flow a">
-					<pts>
-						<pt x="241.5" y="556.25"/>
-						<pt x="357" y="556.25"/>
-					</pts>
-				</flow>
-				<connector uid="6" angle="10.7843">
-					<from>smth_time</from>
-					<to>Flow_a</to>
-				</connector>
-				<connector uid="7" angle="270.597">
-					<from>Source</from>
-					<to>Flow_1</to>
-				</connector>
-				<connector uid="8" angle="45">
-					<from>Stock_1</from>
-					<to>Flow_a</to>
-				</connector>
-				<stacked_container uid="9" x="705.5" y="376.5" width="504" height="173">
-					<graph width="504" height="173" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="8" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
-						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
-							<entity name="a"/>
-						</plot>
-						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
-							<entity name="Flow_a"/>
-						</plot>
-					</graph>
-				</stacked_container>
-				<stacked_container uid="10" x="705.5" y="549.5" width="504" height="173">
-					<graph width="504" height="173" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="8" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
-						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
-							<entity name="b"/>
-						</plot>
-						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
-							<entity name="Flow_b"/>
-						</plot>
-					</graph>
-				</stacked_container>
-				<aux x="435" y="414.25" name="init val"/>
-				<connector uid="11" angle="138.691">
-					<from>init_val</from>
-					<to>a</to>
-				</connector>
-				<connector uid="12" angle="177.879">
-					<from>init_val</from>
-					<to>b</to>
-				</connector>
-				<flow x="210.75" y="701.25" name="Flow 2">
-					<pts>
-						<pt x="155" y="701.25"/>
-						<pt x="266.5" y="701.25"/>
-					</pts>
-				</flow>
-				<stock x="289" y="701.25" name="Stock 2"/>
-				<stock x="396.75" y="701.25" name="Stock 3"/>
-				<stock x="511" y="701.25" name="Stock 4"/>
-				<flow x="336.875" y="701.25" name="Flow 3">
-					<pts>
-						<pt x="311.5" y="701.25"/>
-						<pt x="374.25" y="701.25"/>
-					</pts>
-				</flow>
-				<flow x="447.875" y="701.25" name="Flow 4">
-					<pts>
-						<pt x="419.25" y="701.25"/>
-						<pt x="488.5" y="701.25"/>
-					</pts>
-				</flow>
-				<flow x="569.25" y="702.25" name="Flow b">
-					<pts>
-						<pt x="533.5" y="702.25"/>
-						<pt x="629" y="702.25"/>
-					</pts>
-				</flow>
-				<connector uid="13" angle="284.461">
-					<from>Source</from>
-					<to>Flow_2</to>
-				</connector>
-				<connector uid="14" angle="53.1301">
-					<from>Stock_2</from>
-					<to>Flow_3</to>
-				</connector>
-				<connector uid="15" angle="49.0078">
-					<from>Stock_3</from>
-					<to>Flow_4</to>
-				</connector>
-				<connector uid="16" angle="48.9909">
-					<from>Stock_4</from>
-					<to>Flow_b</to>
-				</connector>
-				<connector uid="17" angle="312.357">
-					<from>smth_time</from>
-					<to>Flow_3</to>
-				</connector>
-				<connector uid="18" angle="328.57">
-					<from>smth_time</from>
-					<to>Flow_4</to>
-				</connector>
-				<connector uid="19" angle="350.134">
-					<from>smth_time</from>
-					<to>Flow_b</to>
-				</connector>
-				<aux x="310" y="218.75" name="c"/>
-				<connector uid="20" angle="86.2414">
-					<from>Source</from>
-					<to>c</to>
-				</connector>
-				<connector uid="21" angle="82.606">
-					<from>smth_time</from>
-					<to>c</to>
-				</connector>
-				<stacked_container uid="22" x="456.875" y="17.25" width="504" height="173">
-					<graph width="504" height="173" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="8" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
-						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
-							<entity name="c"/>
+							<entity name="output"/>
 						</plot>
 					</graph>
 				</stacked_container>

@@ -18,6 +18,11 @@
 		<isee:time_format name="Builtin" type="adaptive"/>
 	</isee:time_formats>
 	<default_format/>
+	<data>
+		<export resource="/Users/jonker/Library/CloudStorage/OneDrive-UniversityofStrathclyde/ASDM/stella.csv" interval="DT" precomputed="false" isee:format="numbers">
+			<all/>
+		</export>
+	</data>
 	<model_units/>
 	<model>
 		<variables>
@@ -25,16 +30,20 @@
 				<eqn>TIME</eqn>
 				<non_negative/>
 			</flow>
-			<flow name="Flow 2">
+			<flow name="Flow 2 Delay with init val">
 				<eqn>DELAY(Flow_1,  2,  4)</eqn>
 				<non_negative/>
 			</flow>
-			<flow name="Flow 3">
+			<flow name="Flow 3 Delay without init val">
 				<eqn>DELAY(Flow_1,  2)</eqn>
 				<non_negative/>
 			</flow>
-			<flow name="Flow 4">
-				<eqn>DELAY(Flow_1+1,  2, 4)</eqn>
+			<flow name="Flow 4 Delay1">
+				<eqn>DELAY1(Flow_1,  2,  4)</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Flow 5 Delay3">
+				<eqn>DELAY3(Flow_1,  2,  4)</eqn>
 				<non_negative/>
 			</flow>
 		</variables>
@@ -126,7 +135,7 @@
 						<pt x="233" y="167"/>
 					</pts>
 				</flow>
-				<flow x="389" y="167" name="Flow 2">
+				<flow label_side="bottom" x="389" y="167" name="Flow 2 Delay with init val">
 					<pts>
 						<pt x="320" y="167"/>
 						<pt x="470" y="167"/>
@@ -134,9 +143,9 @@
 				</flow>
 				<connector uid="1" angle="313.315">
 					<from>Flow_1</from>
-					<to>Flow_2</to>
+					<to>Flow_2_Delay_with_init_val</to>
 				</connector>
-				<flow x="389" y="275" name="Flow 3">
+				<flow label_side="bottom" x="389" y="275" name="Flow 3 Delay without init val">
 					<pts>
 						<pt x="320" y="275"/>
 						<pt x="470" y="275"/>
@@ -144,9 +153,9 @@
 				</flow>
 				<connector uid="2" angle="292.38">
 					<from>Flow_1</from>
-					<to>Flow_3</to>
+					<to>Flow_3_Delay_without_init_val</to>
 				</connector>
-				<flow x="393" y="374" name="Flow 4">
+				<flow x="393" y="374" name="Flow 4 Delay1">
 					<pts>
 						<pt x="324" y="374"/>
 						<pt x="474" y="374"/>
@@ -154,25 +163,38 @@
 				</flow>
 				<connector uid="3" angle="265.03">
 					<from>Flow_1</from>
-					<to>Flow_4</to>
+					<to>Flow_4_Delay1</to>
 				</connector>
-				<stacked_container uid="4" x="774" y="275">
-					<graph width="350" height="250" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="8" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+				<stacked_container uid="4" x="599" y="150" width="350" height="354">
+					<graph width="350" height="354" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="8" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
 						<plot color="blue" isee:keep_zero_visible="false" pen_width="1" index="0" show_y_axis="true">
 							<entity name="Flow_1"/>
 							<scale min="0" max="7"/>
 						</plot>
 						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
-							<entity name="Flow_2"/>
+							<entity name="Flow_2_Delay_with_init_val"/>
 						</plot>
 						<plot color="fuchsia" pen_style="dotted" isee:keep_zero_visible="true" pen_width="1" index="2" show_y_axis="true">
-							<entity name="Flow_3"/>
+							<entity name="Flow_3_Delay_without_init_val"/>
 						</plot>
 						<plot color="#008F44" pen_style="dashed" isee:keep_zero_visible="true" pen_width="1" index="3" show_y_axis="true">
-							<entity name="Flow_4"/>
+							<entity name="Flow_4_Delay1"/>
+						</plot>
+						<plot color="#FF7F00" isee:keep_zero_visible="true" pen_width="1" index="4" show_y_axis="true">
+							<entity name="Flow_5_Delay3"/>
 						</plot>
 					</graph>
 				</stacked_container>
+				<flow x="393" y="442" name="Flow 5 Delay3">
+					<pts>
+						<pt x="324" y="442"/>
+						<pt x="474" y="442"/>
+					</pts>
+				</flow>
+				<connector uid="5" angle="239.534">
+					<from>Flow_1</from>
+					<to>Flow_5_Delay3</to>
+				</connector>
 			</view>
 		</views>
 	</model>
