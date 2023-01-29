@@ -17,6 +17,9 @@ Hierarchy in parsing
 
 class Parser(object):
     def __init__(self):
+        self.numbers = {
+            'NUMBER': r'(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?'
+        }
         self.special_symbols = {
             'COMMA': r',',
             'LPAREN': r'\(',
@@ -44,6 +47,7 @@ class Parser(object):
             'MINUS': r'\-',
             'TIMES': r'\*',
             'DIVIDE': r'\/',
+            'MOD': r'MOD(?=\s)', # there are spaces surronding MOD, but the front space is strip()-ed
         }
 
         self.functions = { # use lookahead (?=\() to ensure only match INIT( not INITIAL
@@ -51,6 +55,7 @@ class Parser(object):
             'MAX': r'MAX(?=\()',
             'INIT': r'INIT(?=\()',
             'DELAY': r'DELAY(?=\()',
+            'DELAY1': r'DELAY1(?=\()',
             'DELAY3': r'DELAY3(?=\()',
             'SMTH1': r'SMTH1(?=\()',
             'SMTH3': r'SMTH3(?=\()',
@@ -60,10 +65,8 @@ class Parser(object):
         }
 
         self.names = {
-            'NAME': r'[a-zA-Z_"\?][a-zA-Z0-9_#"\(\)\?]*[a-zA-Z0-9_#"\?]'
-        }
-        self.numbers = {
-            'NUMBER': r'(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?'
+            'ABSOLUTENAME': r'"[\s\S]*?"',
+            'NAME': r'[a-zA-Z0-9_\?]*',
         }
 
         self.node_id = 0
@@ -108,9 +111,8 @@ class Parser(object):
                 'operand':['FUNC']
             },
         }
+        ### Arithmetics ###
         self.patterns_arithmetic_1 = {
-            ### Arithmetic 1 ###
-
             'FUNC__TIMES__FUNC': {
                 'token':['FUNC', 'TIMES'],
                 'operator':['TIMES'],
@@ -123,7 +125,13 @@ class Parser(object):
                 },
         }
         self.patterns_arithmetic_2 = {
-            ### Arithmetic 2 ###
+            'FUNC__MOD__FUNC':{
+                'token':['FUNC', 'MOD'],
+                'operator':['MOD'],
+                'operand':['FUNC']
+            },
+        }
+        self.patterns_arithmetic_3 = {
 
             'FUNC__PLUS__FUNC': {
                 'token':['FUNC', 'PLUS'],
@@ -158,13 +166,18 @@ class Parser(object):
                 'operator':['DELAY'],
                 'operand':['FUNC']
             },
+            'DELAY1__LPAREN__DOT+__RPAREN':{
+                'token':['FUNC', 'DELAY1'],
+                'operator':['DELAY1'],
+                'operand':['FUNC']
+            },
             'DELAY3__LPAREN__DOT+__RPAREN':{
                 'token':['FUNC', 'DELAY3'],
                 'operator':['DELAY3'],
                 'operand':['FUNC']
             },
             'SMTH1__LPAREN__DOT+__RPAREN':{
-                'token':['FUNC', 'SMTH3'],
+                'token':['FUNC', 'SMTH1'],
                 'operator':['SMTH1'],
                 'operand':['FUNC']
             },
@@ -174,7 +187,7 @@ class Parser(object):
                 'operand':['FUNC']
             },
             'HISTORY__LPAREN__DOT+__RPAREN':{
-                'token':['FUNC', 'DELAY'],
+                'token':['FUNC', 'HISTORY'],
                 'operator':['HISTORY'],
                 'operand':['FUNC']
             },
@@ -249,15 +262,26 @@ class Parser(object):
     def tokenisation(self, s):
         items = []
         while len(s) > 0:
-            for type_name, type_regex in (self.numbers | self.special_symbols | self.logic_operators | self.arithmetic_operators | self.functions | self.names).items():
+            # print(self.HEAD, 'Tokenising:', s, 'len:', len(s))
+            for type_name, type_regex in (
+                self.numbers | \
+                self.special_symbols | \
+                self.logic_operators | \
+                self.arithmetic_operators | \
+                self.functions | \
+                self.names
+                ).items():
                 m = re.match(pattern=type_regex, string=s)
                 if m:
                     item = m[0]
                     if item[0] == "\"" and item[-1] == "\"": # strip quotation marks from matched string
                         item = item[1:-1]
+                    if type_name == 'ABSOLUTENAME':
+                        type_name = 'NAME'
                     items.append([type_name, item])
                     s = s[m.span()[1]:].strip()
                     break
+            # print(items)
         return items
 
     def parse(self, string, verbose=False, max_iter=100):
@@ -308,6 +332,7 @@ class Parser(object):
                     self.patterns_brackets | \
                     self.patterns_arithmetic_1 | \
                     self.patterns_arithmetic_2 | \
+                    self.patterns_arithmetic_3 | \
                     self.patterns_logic | \
                     self.patterns_conditional
                     ).items(): # loop over all patterns

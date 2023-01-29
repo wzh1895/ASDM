@@ -1,10 +1,11 @@
 class Solver(object):
-    def __init__(self, sim_specs=None, dimension_elements=None, name_space=None):
+    def __init__(self, sim_specs=None, dimension_elements=None, name_space=None, graph_functions=None):
         
         self.sim_specs = sim_specs
         self.dimension_elements = dimension_elements
         self.name_space = name_space
-        
+        self.graph_functions = graph_functions
+
         ### Functions ###
 
         def logic_and(a, b):
@@ -136,6 +137,29 @@ class Solver(object):
                     return o
                 else:
                     raise e
+                
+        def mod(a, b):
+            try:
+                return a % b
+            except TypeError as e:
+                if type(a) is dict and type(b) is dict:
+                    # print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a % b', a, b)
+                    o = dict()
+                    for k in a:
+                        o[k] = a[k] % b[k]
+                    return o
+                elif type(a) is dict and type(b) in [int, float]:
+                    o = dict()
+                    for k in a:
+                        o[k] = a[k] % b
+                    return o
+                elif type(a) in [int, float] and type(b) is dict:
+                    o = dict()
+                    for k in b:
+                        o[k] = a % b[k]
+                    return o
+                else:
+                    raise e
 
         def con(a, b, c):
             if a:
@@ -171,14 +195,21 @@ class Solver(object):
             'MAX':      max,
             'CON':      con,
             'STEP':     step,
+            'MOD':      mod,
         }
 
         self.time_related_functions = [
             'INIT',
             'DELAY',
+            'DELAY1',
+            'DELAY3',
             'HISTORY',
             'SMTH1',
             'SMTH3',
+        ]
+
+        self.lookup_functions = [
+            'LOOKUP'
         ]
 
         self.custom_functions = {}
@@ -208,7 +239,7 @@ class Solver(object):
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'sub', sub)
                 value[sub] = self.calculate_node(parsed_equation=sub_equaton, node_id='root', subscript=sub, verbose=verbose)
             if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v1', value)
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v1 Subscripted equation:', value)
         else:
             # if verbose:
             #     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'type of parsed_equation: graph')
@@ -225,7 +256,7 @@ class Solver(object):
                 #     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'o1')
                 value = operands[0][1]
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v2', value)
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v2 IS:', value)
             elif operator[0] == 'EQUALS':
                 if verbose:
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operator v3', operator)
@@ -245,19 +276,19 @@ class Solver(object):
                         # if verbose:
                         #     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.1.3', value, operands)
                     if verbose:
-                        print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.1', value)
+                        print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.1 Name:', value)
                 elif operands[0][0] == 'FUNC':
                     if verbose:
                         print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'o3')
                     value = self.calculate_node(parsed_equation, node_id, subscript, verbose=verbose)
                     if verbose:
-                        print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.2', value)
+                        print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.2 Func:', value)
                 else:
                     if verbose:
                         print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'o4')
                     raise Exception()
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3', value)
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3 Equals:', value)
             
             elif operator[0] == 'SPAREN': # TODO this part is too dynamic, therefore can be slow. Need to resolve this when compiling.
                 var_name = operands[0][1]
@@ -278,7 +309,7 @@ class Solver(object):
                             print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.1.2')
                         value = self.name_space[var_name]
                     if verbose:
-                        print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v4', value)
+                        print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v4.1 Sparen without sub:', value)
                 else: # there are explicitly specified subscripts in oprands
                     # if verbose:
                     #     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.2')
@@ -312,16 +343,16 @@ class Solver(object):
                             print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'subscript of interest', subscript)
                         value = self.name_space[var_name][subscript]
                     if verbose:
-                        print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v5', value)
+                        print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v4.2 Sparen with sub:', value)
             
             elif operator[0] == 'PAREN':
                 value = self.calculate_node(parsed_equation, operands[0][2], verbose=verbose)
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v6', value)
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v6 Paren:', value)
 
             elif operator[0] in self.built_in_functions.keys(): # plus, minus, con, etc.
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operator v7', operator, operands)
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operator v7 Built-in operator:', operator, operands)
                 func_name = operator[0]
                 function = self.built_in_functions[func_name]
                 oprds = []
@@ -336,7 +367,7 @@ class Solver(object):
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'oprds', oprds)
                 value = function(*oprds)
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7', value)
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7 Built-in operation:', value)
             
             elif operator[0] in self.custom_functions.keys(): # graph functions
                 if verbose:
@@ -355,7 +386,7 @@ class Solver(object):
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'oprds', oprds)
                 value = function(*oprds)
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v8', value)
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v8 GraphFunc:', value)
 
             elif operator[0] in self.time_related_functions: # init, delay, etc
                 if verbose:
@@ -390,6 +421,65 @@ class Solver(object):
                     else:
                         delay_steps = delay_time / self.sim_specs['dt']
                         value = self.time_expr_register[tuple(operands[0])][-int(delay_steps+1)]
+                elif func_name == 'DELAY1':
+                    # args values
+                    order = 1
+                    expr_value = self.calculate_node(parsed_equation, operands[0][2], verbose=verbose)
+                    delay_time = self.calculate_node(parsed_equation, operands[1][2], verbose=verbose)
+
+                    if len(operands) == 3:
+                        init_value = self.calculate_node(parsed_equation, operands[2][2], verbose=verbose)
+                    elif len(operands) == 2:
+                        init_value = expr_value
+                    else:
+                        raise Exception('Invalid number of args for DELAY1.')
+                    
+                    # register
+                    if tuple(operands[0]) not in self.time_expr_register.keys():
+                        self.time_expr_register[tuple(operands[0])] = list()
+                        for i in range(order):
+                            self.time_expr_register[tuple(operands[0])].append(delay_time/order*init_value)
+                    # outflows
+                    outflows = list()
+                    for i in range(order):
+                        outflows.append(self.time_expr_register[tuple(operands[0])][i]/(delay_time/order) * self.sim_specs['dt'])
+                        self.time_expr_register[tuple(operands[0])][i] -= outflows[i]
+                    # inflows
+                    self.time_expr_register[tuple(operands[0])][0] += expr_value * self.sim_specs['dt']
+                    for i in range(1, order):
+                        self.time_expr_register[tuple(operands[0])][i] += outflows[i-1]
+
+                    return outflows[-1] / self.sim_specs['dt']
+
+                elif func_name == 'DELAY3':
+                    # arg values
+                    order = 3
+                    expr_value = self.calculate_node(parsed_equation, operands[0][2], verbose=verbose)
+                    delay_time = self.calculate_node(parsed_equation, operands[1][2], verbose=verbose)
+                    if len(operands) == 3:
+                        init_value = self.calculate_node(parsed_equation, operands[2][2], verbose=verbose)
+                    elif len(operands) == 2:
+                        init_value = expr_value
+                    else:
+                        raise Exception('Invalid number of args for SMTH3.')
+                    
+                    # register
+                    if tuple(operands[0]) not in self.time_expr_register.keys():
+                        self.time_expr_register[tuple(operands[0])] = list()
+                        for i in range(order):
+                            self.time_expr_register[tuple(operands[0])].append(delay_time/order*init_value)
+                    # outflows
+                    outflows = list()
+                    for i in range(order):
+                        outflows.append(self.time_expr_register[tuple(operands[0])][i]/(delay_time/order) * self.sim_specs['dt'])
+                        self.time_expr_register[tuple(operands[0])][i] -= outflows[i]
+                    # inflows
+                    self.time_expr_register[tuple(operands[0])][0] += expr_value * self.sim_specs['dt']
+                    for i in range(1, order):
+                        self.time_expr_register[tuple(operands[0])][i] += outflows[i-1]
+
+                    return outflows[-1] / self.sim_specs['dt']
+
                 elif func_name == 'HISTORY':
                     # expr value
                     expr_value = self.calculate_node(parsed_equation, operands[0][2], verbose=verbose)
@@ -413,7 +503,7 @@ class Solver(object):
                     if len(operands) == 3:
                         init_value = self.calculate_node(parsed_equation, operands[2][2], verbose=verbose)
                     elif len(operands) == 2:
-                        init_value = 0
+                        init_value = expr_value
                     else:
                         raise Exception('Invalid number of args for SMTH1.')
                     
@@ -442,7 +532,7 @@ class Solver(object):
                     if len(operands) == 3:
                         init_value = self.calculate_node(parsed_equation, operands[2][2], verbose=verbose)
                     elif len(operands) == 2:
-                        init_value = 0
+                        init_value = expr_value
                     else:
                         raise Exception('Invalid number of args for SMTH3.')
                     
@@ -465,7 +555,19 @@ class Solver(object):
                 else:
                     raise Exception('Unknown time-related operator {}'.format(operator[0]))
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v9', value)
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v9 Time-related Func:', value)
+            elif operator[0] in self.lookup_functions: # LOOKUP
+                if verbose:
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'Lookup func. operator:', operator, 'operands:', operands)
+                func_name = operator[0]
+                if func_name == 'LOOKUP':
+                    look_up_func_node = operands[0][2]
+                    look_up_func_name = parsed_equation.nodes[look_up_func_node]['operands'][0][1]
+                    look_up_func = self.graph_functions[look_up_func_name]
+                    input_value = self.calculate_node(parsed_equation, operands[1][2], verbose=verbose)
+                    value = look_up_func(input_value)
+                else:
+                    raise Exception('Unknown Lookup function {}'.format(operator[0]))
             else:
                 raise Exception('Unknown operator {}'.format(operator[0]))
         
