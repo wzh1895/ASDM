@@ -161,27 +161,52 @@ class Parser(object):
                 'operator':['INIT'],
                 'operand':['FUNC']
             },
-            'DELAY__LPAREN__DOT+__RPAREN':{
+            'DELAY__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'DELAY'],
                 'operator':['DELAY'],
                 'operand':['FUNC']
             },
-            'DELAY1__LPAREN__DOT+__RPAREN':{
+            'DELAY__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'DELAY'],
+                'operator':['DELAY'],
+                'operand':['FUNC']
+            },
+            'DELAY1__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'DELAY1'],
                 'operator':['DELAY1'],
                 'operand':['FUNC']
             },
-            'DELAY3__LPAREN__DOT+__RPAREN':{
+            'DELAY1__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'DELAY1'],
+                'operator':['DELAY1'],
+                'operand':['FUNC']
+            },
+            'DELAY3__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'DELAY3'],
                 'operator':['DELAY3'],
                 'operand':['FUNC']
             },
-            'SMTH1__LPAREN__DOT+__RPAREN':{
+            'DELAY3__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'DELAY3'],
+                'operator':['DELAY3'],
+                'operand':['FUNC']
+            },
+            'SMTH1__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'SMTH1'],
                 'operator':['SMTH1'],
                 'operand':['FUNC']
             },
-            'SMTH3__LPAREN__DOT+__RPAREN':{
+            'SMTH1__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'SMTH1'],
+                'operator':['SMTH1'],
+                'operand':['FUNC']
+            },
+            'SMTH3__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'SMTH3'],
+                'operator':['SMTH3'],
+                'operand':['FUNC']
+            },
+            'SMTH3__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'SMTH3'],
                 'operator':['SMTH3'],
                 'operand':['FUNC']
@@ -323,78 +348,165 @@ class Parser(object):
                     print(self.HEAD, 'Items', items)
                     print(self.HEAD, 'Nodes', graph.nodes.data(True))
                     print(self.HEAD, 'Edges', graph.edges.data(True))
-                for pattern, func in ( # the order of the following patterns is IMPORTANT
-                    self.patterns_sub_var | \
-                    self.patterns_num | \
-                    self.patterns_var | \
-                    self.patterns_custom_func | \
-                    self.patterns_built_in_func | \
-                    self.patterns_brackets | \
-                    self.patterns_arithmetic_1 | \
-                    self.patterns_arithmetic_2 | \
-                    self.patterns_arithmetic_3 | \
-                    self.patterns_logic | \
-                    self.patterns_conditional
-                    ).items(): # loop over all patterns
-                    pattern = pattern.split('__')
-                    if verbose:
-                        print(self.HEAD, "Searching for {} with operator {}".format(pattern, func['operator']))
-                    pattern_len = len(pattern)
+                # for pattern, func in ( # the order of the following patterns is IMPORTANT
+                #     self.patterns_sub_var | \
+                #     self.patterns_num | \
+                #     self.patterns_var | \
+                #     self.patterns_custom_func | \
+                #     self.patterns_built_in_func | \
+                #     self.patterns_brackets | \
+                #     self.patterns_arithmetic_1 | \
+                #     self.patterns_arithmetic_2 | \
+                #     self.patterns_arithmetic_3 | \
+                #     self.patterns_logic | \
+                #     self.patterns_conditional
+                #     ).items(): # loop over all patterns
+                #     pattern = pattern.split('__')
+                #     if verbose:
+                #         print(self.HEAD, "Searching for {} with operator {}".format(pattern, func['operator']))
+                #     pattern_len = len(pattern)
+                #     for i in range(len(items)): # loop over all positions for this pattern
+                #         # if verbose:
+                #         #     print(self.HEAD, 'Checking item:', i, items[i])
+                #         if len(items) - i >= pattern_len:
+                #             matched = True
+                #             for j in range(pattern_len): # matching pattern at this position
+                #                 if pattern[j] == items[i+j][0]: # exact match
+                #                     pass
+                #                 else: # fuzzy match
+                #                     if pattern[j] == 'DOT+':
+                #                         dotplus_matched = False
+                #                         # print(self.HEAD, 'Matching DOT+')
+                #                         try:
+                #                             next_to_match = pattern[j+1] # it is pattern[j+1] that matters
+                #                             # print(self.HEAD, 'Next to match:', next_to_match)
+                #                             for k in range(i+j+1, len(items)):
+                #                                 if next_to_match == items[k][0]:
+                #                                     # print(self.HEAD, 'Found next to match:', next_to_match, 'at', k, items[k])
+                #                                     pattern_len = k - i + 1
+                #                                     dotplus_matched = True
+                #                                     break                 
+                #                         except IndexError: # 'DOT+' is the last in the pattern
+                #                             pass
+                #                         if dotplus_matched:
+                #                             break
+                #                     else:
+                #                         matched = False
+                #                         break
+                #             if matched:
+                #                 matched_items = items[i:i+pattern_len]
+                #                 print(self.HEAD, "Found {} at {}".format(pattern, matched_items))
+                #                 operands = []
+                #                 for item in matched_items:
+                #                     if item[0] in func['operand']:
+                #                         if item[0] in ['NAME', 'NUMBER']:
+                #                             if item[0] == 'NUMBER':
+                #                                 # if item is a part of a[1,ele1] then it should remain str
+                #                                 # otherwise it should be converted to float
+                #                                 # print(self.HEAD, 'found a number', item, 'func:', func['operator'])
+                #                                 if func['operator'][0] == 'IS':
+                #                                     item[1] = float(item[1])
+                #                         else:
+                #                             # print(self.HEAD, 'adding edge from {} to {}'.format(self.node_id, item[2]))
+                #                             graph.add_edge(self.node_id, item[2])
+                #                         operands.append(item)
+                #                 graph.add_node(
+                #                     self.node_id, 
+                #                     operator=func['operator'],
+                #                     operands=operands
+                #                     )
+                #                 items = items[0:i] + [func['token'][:] + [self.node_id]] + items[i+pattern_len:]
+                #                 items_changed = True
+                #                 self.node_id += 1
+                #                 break # items has been updated and got a new length, need to start the for loop over again
+                        
+                #     if items_changed:
+                #         break
+                # # print(self.HEAD, 'items2', items)
+                # # print(self.HEAD, 'graph:')
+                # # print(self.HEAD, graph.nodes.data(True))
+                # # print(self.HEAD, graph.edges.data(True))
+
+                for pattern_set in [ # the order of the following patterns is IMPORTANT
+                    self.patterns_sub_var,
+                    self.patterns_num,
+                    self.patterns_var,
+                    self.patterns_custom_func,
+                    self.patterns_built_in_func,
+                    self.patterns_brackets,
+                    self.patterns_arithmetic_1,
+                    self.patterns_arithmetic_2,
+                    self.patterns_arithmetic_3,
+                    self.patterns_logic,
+                    self.patterns_conditional,
+                    ]: # loop over all patterns
                     for i in range(len(items)): # loop over all positions for this pattern
-                        # if verbose:
-                        #     print(self.HEAD, 'Checking item:', i, items[i])
-                        if len(items) - i >= pattern_len:
-                            matched = True
-                            for j in range(pattern_len): # matching pattern at this position
-                                if pattern[j] == items[i+j][0]: # exact match
-                                    pass
-                                else: # fuzzy match
-                                    if pattern[j] == 'DOT+':
-                                        dotplus_matched = False
-                                        # print(self.HEAD, 'Matching DOT+')
-                                        try:
-                                            next_to_match = pattern[j+1] # it is pattern[j+1] that matters
-                                            # print(self.HEAD, 'Next to match:', next_to_match)
-                                            for k in range(i+j+1, len(items)):
-                                                if next_to_match == items[k][0]:
-                                                    # print(self.HEAD, 'Found next to match:', next_to_match, 'at', k, items[k])
-                                                    pattern_len = k - i + 1
-                                                    dotplus_matched = True
-                                                    break                 
-                                        except IndexError: # 'DOT+' is the last in the pattern
-                                            pass
-                                        if dotplus_matched:
-                                            break
-                                    else:
+                        if verbose:
+                            print(self.HEAD, 'Position:', i)
+                            print(self.HEAD, 'Checking item:', i, items[i])
+                        for pattern, func in pattern_set.items():
+                            pattern = pattern.split('__')
+                            if verbose:
+                                print(self.HEAD, "Searching for {} with operator {}".format(pattern, func['operator']))
+                            pattern_len = len(pattern)
+
+                            if len(items) - i >= pattern_len:
+                                matched = True
+                                for j in range(pattern_len): # matching pattern at this position
+                                    if pattern[j] == items[i+j][0]: # exact match
+                                        pass
+                                    else: 
+                                        # if pattern[j] == 'DOT+': # fuzzy match
+                                        #     dotplus_matched = False
+                                        #     # print(self.HEAD, 'Matching DOT+')
+                                        #     try:
+                                        #         next_to_match = pattern[j+1] # it is pattern[j+1] that matters
+                                        #         # print(self.HEAD, 'Next to match:', next_to_match)
+                                        #         for k in range(i+j+1, len(items)):
+                                        #             if next_to_match == items[k][0]:
+                                        #                 # print(self.HEAD, 'Found next to match:', next_to_match, 'at', k, items[k])
+                                        #                 pattern_len = k - i + 1
+                                        #                 dotplus_matched = True
+                                        #                 break                 
+                                        #     except IndexError: # 'DOT+' is the last in the pattern
+                                        #         pass
+                                        #     if dotplus_matched:
+                                        #         break
+                                        # else:
+                                        #     matched = False
+                                        #     break
                                         matched = False
                                         break
-                            if matched:
-                                matched_items = items[i:i+pattern_len]
-                                # print(self.HEAD, "Found {} at {}".format(pattern, matched_items))
-                                operands = []
-                                for item in matched_items:
-                                    if item[0] in func['operand']:
-                                        if item[0] in ['NAME', 'NUMBER']:
-                                            if item[0] == 'NUMBER':
-                                                # if item is a part of a[1,ele1] then it should remain str
-                                                # otherwise it should be converted to float
-                                                # print(self.HEAD, 'found a number', item, 'func:', func['operator'])
-                                                if func['operator'][0] == 'IS':
-                                                    item[1] = float(item[1])
-                                        else:
-                                            # print(self.HEAD, 'adding edge from {} to {}'.format(self.node_id, item[2]))
-                                            graph.add_edge(self.node_id, item[2])
-                                        operands.append(item)
-                                graph.add_node(
-                                    self.node_id, 
-                                    operator=func['operator'],
-                                    operands=operands
-                                    )
-                                items = items[0:i] + [func['token'][:] + [self.node_id]] + items[i+pattern_len:]
-                                items_changed = True
-                                self.node_id += 1
-                                break # items has been updated and got a new length, need to start the for loop over again
+                                if matched:
+                                    matched_items = items[i:i+pattern_len]
+                                    if verbose:
+                                        print(self.HEAD, "Found {} at {}".format(pattern, matched_items))
+                                    operands = []
+                                    for item in matched_items:
+                                        if item[0] in func['operand']:
+                                            if item[0] in ['NAME', 'NUMBER']:
+                                                if item[0] == 'NUMBER':
+                                                    # if item is a part of a[1,ele1] then it should remain str
+                                                    # otherwise it should be converted to float
+                                                    # print(self.HEAD, 'found a number', item, 'func:', func['operator'])
+                                                    if func['operator'][0] == 'IS':
+                                                        item[1] = float(item[1])
+                                            else:
+                                                # print(self.HEAD, 'adding edge from {} to {}'.format(self.node_id, item[2]))
+                                                graph.add_edge(self.node_id, item[2])
+                                            operands.append(item)
+                                    graph.add_node(
+                                        self.node_id, 
+                                        operator=func['operator'],
+                                        operands=operands
+                                        )
+                                    items = items[0:i] + [func['token'][:] + [self.node_id]] + items[i+pattern_len:]
+                                    items_changed = True
+                                    self.node_id += 1
+                                    break # items has been updated and got a new length, need to start the for loop over again
                         
+                        if items_changed:
+                            break
                     if items_changed:
                         break
                 # print(self.HEAD, 'items2', items)
@@ -411,6 +523,19 @@ class Parser(object):
             # print(self.HEAD, '  ', graph.edges.data(True))
             return graph
 
+    def plot_ast(self, graph):
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+        labels = {}
+        labels_operators = nx.get_node_attributes(graph, 'operator')
+        labels_operands = nx.get_node_attributes(graph, 'operands')
+        for id, label_operator in labels_operators.items():
+            labels[id] = str(id) + '\n' + 'operator:' + str(label_operator) + '\n' + 'operands:' + str(labels_operands[id])
+        labels['root'] = 'root'   
+        pos = nx.nx_agraph.graphviz_layout(graph, prog='dot')
+        nx.draw(graph, with_labels=True, labels=labels, node_color='C1', font_size=9, pos=pos)
+
+        plt.show()
 
 if __name__ == '__main__':
 
@@ -421,6 +546,7 @@ if __name__ == '__main__':
     string_2b = 'a/2'
     string_3a = 'INIT(a)'
     string_3b = 'DELAY(a, 1)'
+    string_3c = 'DELAY(a+1, 2, 3)'
     string_4a = 'a*((b+c)-d)'
     string_4b = '4*(1-(2*3))'
     string_4c = '10-4-3-2-1'
@@ -439,26 +565,9 @@ if __name__ == '__main__':
     string_d = '(a*(1-(b/100)*(c/100)*d))'
     string_e = 'DELAY(Waiting_more_than_12mths, 52)-Between_12_to_24mth_wait_to_urgent-Waiting_more_than_12mths-Routine_treatment_from_12_to_24mth_wait'
     string_f = 'DELAY(a, 52)-b-a-c'
+    string_g = '( IF TIME < DEMAND_CHANGE_START_YEAR THEN BASELINE_PC_CONSUMPTION_OF_BOVINE_MEAT ELSE (1-SWITCH_CONSUMPTION_RECOMMENDATIONS_0_off_1_on)*BASELINE_PC_CONSUMPTION_OF_BOVINE_MEAT+recommended_pc_consumption_of_bovine_meat*SWITCH_CONSUMPTION_RECOMMENDATIONS_0_off_1_on )'
+    string_h = '( IF a < b THEN c ELSE (1-d)*c+e*d )' # equivalent to string_g
 
     parser = Parser()
-
-    ####
-    graph = parser.parse(string_d)
-    ####
-
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots()
-    labels = {}
-    labels_operators = nx.get_node_attributes(graph, 'operator')
-    labels_operands = nx.get_node_attributes(graph, 'operands')
-    for id, label_operator in labels_operators.items():
-        labels[id] = str(id) + '\n' + 'operator:' + str(label_operator) + '\n' + 'operands:' + str(labels_operands[id])
-    labels['root'] = 'root'
-    
-    # nx.draw_shell(graph, with_labels=True, labels=labels, node_color='C1', font_size=9)
-    # nx.draw(graph, with_labels=True, labels=labels, node_color='C1', font_size=9)
-    
-    pos = nx.nx_agraph.graphviz_layout(graph, prog='dot')
-    nx.draw(graph, with_labels=True, labels=labels, node_color='C1', font_size=9, pos=pos)
-
-    plt.show()
+    graph = parser.parse(string_3c, verbose=True)
+    parser.plot_ast(graph=graph)
