@@ -530,14 +530,14 @@ class Structure(object):
             self.iter_trace(var=var, seq=self.seq_flow_aux)
         self.seq_flow_aux.reverse()
     
-    def calculate_variables(self):
+    def calculate_variables(self, verbose=False):
         for var in self.seq_flow_aux:    
             # print('Engine Calculating:', var, 'current name space', self.name_space)
             if var in self.conveyors:
                 if not self.conveyors[var]['conveyor'].is_initialized:
-                    conveyor_length = self.solver.calculate_node(self.stock_equations_parsed[var]['len'])
+                    conveyor_length = self.solver.calculate_node(self.stock_equations_parsed[var]['len'], verbose=verbose)
                     length_steps = int(conveyor_length/self.sim_specs['dt'])
-                    conveyor_value = self.solver.calculate_node(self.stock_equations_parsed[var]['val'])
+                    conveyor_value = self.solver.calculate_node(self.stock_equations_parsed[var]['val'], verbose=verbose)
                     leak_flows = self.conveyors[var]['leakflow']
                     if len(leak_flows) == 0:
                         leak_fraction = 0
@@ -559,8 +559,7 @@ class Structure(object):
                     outflow_value = self.conveyors[var]['conveyor'].outflow()
                     self.name_space[outputflow] = outflow_value / self.sim_specs['dt']
             else:
-                value = self.solver.calculate_node((self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var])
-                # value = self.solver.calculate_node((self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var], verbose=True, var_name=var)
+                value = self.solver.calculate_node((self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var], verbose=verbose, var_name=var)
                 if var in self.leak_conveyors.keys():
                     self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = value
                 else:
@@ -628,8 +627,9 @@ class Structure(object):
             value = conveyor['conveyor'].level()
             self.name_space[conveyor_name] = value
                 
-    def simulate(self, time=None, dt=None):
+    def simulate(self, time=None, dt=None, verbose=False):
         self.parse()
+
         self.compile()
 
         if time is None:
@@ -640,7 +640,7 @@ class Structure(object):
 
         for s in range(int(steps)+1):
             # print('--step {}--'.format(s))
-            self.calculate_variables()
+            self.calculate_variables(verbose=verbose)
 
             self.time_slice[self.sim_specs['current_time']] = deepcopy(self.name_space)
 
@@ -817,11 +817,11 @@ if __name__ == '__main__':
 
     model.simulate()
     model.export_simulation_result(to_csv=True)
-    model.display_results([
-        # 'thirteen_wk_wait_for_urgent_treatment',
-        # 'Routine_treatment',
-        # 'percent_becoming_urgent_by_waiting_time_pa'
-        ])
+    # model.display_results([
+    #     # 'thirteen_wk_wait_for_urgent_treatment',
+    #     # 'Routine_treatment',
+    #     # 'percent_becoming_urgent_by_waiting_time_pa'
+    #     ])
 
     # vars_to_view = [
     #     # 'thirteen_wk_wait_for_urgent_treatment', 
