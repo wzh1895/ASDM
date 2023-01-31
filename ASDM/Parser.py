@@ -348,84 +348,6 @@ class Parser(object):
                     print(self.HEAD, 'Items', items)
                     print(self.HEAD, 'Nodes', graph.nodes.data(True))
                     print(self.HEAD, 'Edges', graph.edges.data(True))
-                # for pattern, func in ( # the order of the following patterns is IMPORTANT
-                #     self.patterns_sub_var | \
-                #     self.patterns_num | \
-                #     self.patterns_var | \
-                #     self.patterns_custom_func | \
-                #     self.patterns_built_in_func | \
-                #     self.patterns_brackets | \
-                #     self.patterns_arithmetic_1 | \
-                #     self.patterns_arithmetic_2 | \
-                #     self.patterns_arithmetic_3 | \
-                #     self.patterns_logic | \
-                #     self.patterns_conditional
-                #     ).items(): # loop over all patterns
-                #     pattern = pattern.split('__')
-                #     if verbose:
-                #         print(self.HEAD, "Searching for {} with operator {}".format(pattern, func['operator']))
-                #     pattern_len = len(pattern)
-                #     for i in range(len(items)): # loop over all positions for this pattern
-                #         # if verbose:
-                #         #     print(self.HEAD, 'Checking item:', i, items[i])
-                #         if len(items) - i >= pattern_len:
-                #             matched = True
-                #             for j in range(pattern_len): # matching pattern at this position
-                #                 if pattern[j] == items[i+j][0]: # exact match
-                #                     pass
-                #                 else: # fuzzy match
-                #                     if pattern[j] == 'DOT+':
-                #                         dotplus_matched = False
-                #                         # print(self.HEAD, 'Matching DOT+')
-                #                         try:
-                #                             next_to_match = pattern[j+1] # it is pattern[j+1] that matters
-                #                             # print(self.HEAD, 'Next to match:', next_to_match)
-                #                             for k in range(i+j+1, len(items)):
-                #                                 if next_to_match == items[k][0]:
-                #                                     # print(self.HEAD, 'Found next to match:', next_to_match, 'at', k, items[k])
-                #                                     pattern_len = k - i + 1
-                #                                     dotplus_matched = True
-                #                                     break                 
-                #                         except IndexError: # 'DOT+' is the last in the pattern
-                #                             pass
-                #                         if dotplus_matched:
-                #                             break
-                #                     else:
-                #                         matched = False
-                #                         break
-                #             if matched:
-                #                 matched_items = items[i:i+pattern_len]
-                #                 print(self.HEAD, "Found {} at {}".format(pattern, matched_items))
-                #                 operands = []
-                #                 for item in matched_items:
-                #                     if item[0] in func['operand']:
-                #                         if item[0] in ['NAME', 'NUMBER']:
-                #                             if item[0] == 'NUMBER':
-                #                                 # if item is a part of a[1,ele1] then it should remain str
-                #                                 # otherwise it should be converted to float
-                #                                 # print(self.HEAD, 'found a number', item, 'func:', func['operator'])
-                #                                 if func['operator'][0] == 'IS':
-                #                                     item[1] = float(item[1])
-                #                         else:
-                #                             # print(self.HEAD, 'adding edge from {} to {}'.format(self.node_id, item[2]))
-                #                             graph.add_edge(self.node_id, item[2])
-                #                         operands.append(item)
-                #                 graph.add_node(
-                #                     self.node_id, 
-                #                     operator=func['operator'],
-                #                     operands=operands
-                #                     )
-                #                 items = items[0:i] + [func['token'][:] + [self.node_id]] + items[i+pattern_len:]
-                #                 items_changed = True
-                #                 self.node_id += 1
-                #                 break # items has been updated and got a new length, need to start the for loop over again
-                        
-                #     if items_changed:
-                #         break
-                # # print(self.HEAD, 'items2', items)
-                # # print(self.HEAD, 'graph:')
-                # # print(self.HEAD, graph.nodes.data(True))
-                # # print(self.HEAD, graph.edges.data(True))
 
                 for pattern_set in [ # the order of the following patterns is IMPORTANT
                     self.patterns_sub_var,
@@ -456,25 +378,6 @@ class Parser(object):
                                     if pattern[j] == items[i+j][0]: # exact match
                                         pass
                                     else: 
-                                        # if pattern[j] == 'DOT+': # fuzzy match
-                                        #     dotplus_matched = False
-                                        #     # print(self.HEAD, 'Matching DOT+')
-                                        #     try:
-                                        #         next_to_match = pattern[j+1] # it is pattern[j+1] that matters
-                                        #         # print(self.HEAD, 'Next to match:', next_to_match)
-                                        #         for k in range(i+j+1, len(items)):
-                                        #             if next_to_match == items[k][0]:
-                                        #                 # print(self.HEAD, 'Found next to match:', next_to_match, 'at', k, items[k])
-                                        #                 pattern_len = k - i + 1
-                                        #                 dotplus_matched = True
-                                        #                 break                 
-                                        #     except IndexError: # 'DOT+' is the last in the pattern
-                                        #         pass
-                                        #     if dotplus_matched:
-                                        #         break
-                                        # else:
-                                        #     matched = False
-                                        #     break
                                         matched = False
                                         break
                                 if matched:
@@ -509,18 +412,11 @@ class Parser(object):
                             break
                     if items_changed:
                         break
-                # print(self.HEAD, 'items2', items)
-                # print(self.HEAD, 'graph:')
-                # print(self.HEAD, graph.nodes.data(True))
-                # print(self.HEAD, graph.edges.data(True))
             
             # add root node as entry
             graph.add_node('root')
             graph.add_edge('root', items[0][2])
-            
-            # print(self.HEAD, 'Parse finished for:', string)
-            # print(self.HEAD, '  ', graph.nodes.data(True))
-            # print(self.HEAD, '  ', graph.edges.data(True))
+
             return graph
 
     def plot_ast(self, graph):
