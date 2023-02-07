@@ -1,3 +1,5 @@
+from scipy import stats
+
 class Solver(object):
     def __init__(self, sim_specs=None, dimension_elements=None, name_space=None, graph_functions=None):
         
@@ -175,6 +177,10 @@ class Solver(object):
             else:
                 # print('step out:', 0)
                 return 0
+            
+        def rbinom(n, p):
+            s = stats.binom.rvs(int(n), p, size=1)[0]
+            return float(s) # TODO: something is wrong here - the dimension of s goes high like [[[[30]]]] if not float()ed.
         
         ### Function mapping ###
 
@@ -196,6 +202,7 @@ class Solver(object):
             'CON':      con,
             'STEP':     step,
             'MOD':      mod,
+            'RBINOM':   rbinom,
         }
 
         self.time_related_functions = [
