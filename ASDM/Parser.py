@@ -369,13 +369,13 @@ class Parser(object):
                     self.patterns_conditional,
                     ]: # loop over all patterns
                     for i in range(len(items)): # loop over all positions for this pattern
-                        if verbose:
-                            print(self.HEAD, 'Position:', i)
-                            print(self.HEAD, 'Checking item:', i, items[i])
+                        # if verbose:
+                            # print(self.HEAD, 'Position:', i)
+                        #     print(self.HEAD, 'Checking item:', i, items[i])
                         for pattern, func in pattern_set.items():
                             pattern = pattern.split('__')
-                            if verbose:
-                                print(self.HEAD, "Searching for {} with operator {}".format(pattern, func['operator']))
+                            # if verbose:
+                                # print(self.HEAD, "Searching for {} with operator {}".format(pattern, func['operator']))
                             pattern_len = len(pattern)
 
                             if len(items) - i >= pattern_len:
@@ -384,8 +384,25 @@ class Parser(object):
                                     if pattern[j] == items[i+j][0]: # exact match
                                         pass
                                     else: 
-                                        matched = False
-                                        break
+                                        if pattern[j] == 'DOT+': # fuzzy match
+                                            dotplus_matched = False
+                                            # print(self.HEAD, 'Matching DOT+')
+                                            try:
+                                                next_to_match = pattern[j+1] # it is pattern[j+1] that matters
+                                                # print(self.HEAD, 'Next to match:', next_to_match)
+                                                for k in range(i+j+1, len(items)):
+                                                    if next_to_match == items[k][0]:
+                                                        # print(self.HEAD, 'Found next to match:', next_to_match, 'at', k, items[k])
+                                                        pattern_len = k - i + 1
+                                                        dotplus_matched = True
+                                                        break                 
+                                            except IndexError: # 'DOT+' is the last in the pattern
+                                                pass
+                                            if dotplus_matched:
+                                                break
+                                        else:
+                                            matched = False
+                                            break
                                 if matched:
                                     matched_items = items[i:i+pattern_len]
                                     if verbose:
@@ -469,7 +486,8 @@ if __name__ == '__main__':
     string_f = 'DELAY(a, 52)-b-a-c'
     string_g = '( IF TIME < DEMAND_CHANGE_START_YEAR THEN BASELINE_PC_CONSUMPTION_OF_BOVINE_MEAT ELSE (1-SWITCH_CONSUMPTION_RECOMMENDATIONS_0_off_1_on)*BASELINE_PC_CONSUMPTION_OF_BOVINE_MEAT+recommended_pc_consumption_of_bovine_meat*SWITCH_CONSUMPTION_RECOMMENDATIONS_0_off_1_on )'
     string_h = '( IF a < b THEN c ELSE (1-d)*c+e*d )' # equivalent to string_g
+    string_i = '(Waiting_6mths_for_treatment*(percent_becoming_urgent_by_waiting_time_pa[Less_than_6mths]/100))/52'
 
     parser = Parser()
-    graph = parser.parse(string_3c, verbose=True)
+    graph = parser.parse(string_i, verbose=True)
     parser.plot_ast(graph=graph)
