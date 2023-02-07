@@ -53,6 +53,7 @@ class Parser(object):
         self.functions = { # use lookahead (?=\() to ensure only match INIT( not INITIAL
             'MIN': r'MIN(?=\()',
             'MAX': r'MAX(?=\()',
+            'RBINOM': r'RBINOM(?=\()',
             'INIT': r'INIT(?=\()',
             'DELAY': r'DELAY(?=\()',
             'DELAY1': r'DELAY1(?=\()',
@@ -154,6 +155,11 @@ class Parser(object):
             'MAX__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'MAX'],
                 'operator':['MAX'],
+                'operand':['FUNC']
+            },
+            'RBINOM__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'RBINOM'],
+                'operator':['RBINOM'],
                 'operand':['FUNC']
             },
             'INIT__LPAREN__FUNC__RPAREN':{
