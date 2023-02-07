@@ -299,6 +299,8 @@ class Structure(object):
 
     # model building
     def add_stock(self, name, equation, non_negative=True, is_conveyor=False, in_flows=[], out_flows=[]):
+        if type(equation) in [int, float, np.int_, np.float_]:
+            equation = str(equation)
         self.stock_equations[name] = equation
         self.stock_non_negative[name] = non_negative
         connections = dict()
@@ -309,18 +311,20 @@ class Structure(object):
         self.stock_flows[name] = connections
     
     def add_flow(self, name, equation, leak=None, non_negative=False):
+        if type(equation) in [int, float, np.int_, np.float_]:
+            equation = str(equation)
         self.flow_positivity[name] = non_negative
         if leak:
             self.leak_conveyors[name] = None # to be filled when parsing the conveyor
         self.flow_equations[name] = equation
     
     def add_aux(self, name, equation):
+        if type(equation) in [int, float, np.int_, np.float_]:
+            equation = str(equation)
         self.aux_equations[name] = equation
 
     def replace_element_equation(self, name, new_equation):
-        if type(new_equation) is str:
-            pass
-        elif type(new_equation) in [int, float, np.float_]:
+        if type(new_equation) in [int, float, np.int_, np.float_]:
             new_equation = str(new_equation)
         else:
             raise Exception('Unsupported new equation type {}'.format(type(new_equation)))
