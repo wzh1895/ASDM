@@ -814,9 +814,9 @@ if __name__ == '__main__':
     ### Production Models ###
 
     # model = Structure(from_xmile='TestModels/Elective Recovery Model.stmx')
-    # model = Structure(from_xmile='TestModels/Elective Recovery Model_renamed.stmx')
+    model = Structure(from_xmile='TestModels/Elective Recovery Model_renamed.stmx')
     # model = Structure(from_xmile='../PhD_Progress/CaseStudies/CaseStudy1/CaseStudy1Codes/CaseStudy1Models/CS1SFD3.stmx')
-    model=Structure(from_xmile='TestModels/2022_07_14 no milk without meat.stmx')
+    # model=Structure(from_xmile='TestModels/2022_07_14 no milk without meat.stmx')
     # model=Structure(from_xmile='TestModels/TempTest1.stmx')
 
     model.simulate()
