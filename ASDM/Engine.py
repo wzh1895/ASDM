@@ -1,285 +1,90 @@
-from scipy import stats
-from copy import deepcopy
-from itertools import product
-import networkx as nx
-import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-import pprint
-import random
-import math
-import re
+import numpy as np
+from itertools import product
+from pprint import pprint
 
-# random.seed(1)
+from Parser import Parser
+from Solver import Solver
+from Functions import GraphFunc, Conveyor
 
-class UidManager(object):
-    def __init__(self):
-        self.uid = 0
-
-    def get_new_uid(self):
-        self.uid += 1
-        return self.uid
-
-    def current(self):
-        return self.uid
-
-
-class NameManager(object):
-    def __init__(self):
-        self.stock_id = 0
-        self.flow_id = 0
-        self.variable_id = 0
-        self.parameter_id = 0
-
-    def get_new_name(self, element_type):
-        if element_type == 'stock':
-            self.stock_id += 1
-            return 'stock_' + str(self.stock_id)
-        elif element_type == 'flow':
-            self.flow_id += 1
-            return 'flow_' + str(self.flow_id)
-        elif element_type == 'variable':
-            self.variable_id += 1
-            return 'variable_' + str(self.variable_id)
-        elif element_type == 'parameter':
-            self.parameter_id += 1
-            return 'parameter_' + str(self.parameter_id)
-
-# class Data(object):
-#     def __init__(self, data_source):
-#         """
-#         data_source: a DataFrame structure
-
-#         """
-#         self.ts = data_source # we plan to convert more types of data_source to time_series
-
-
-class DataFeeder(object):
-    def __init__(self, data, from_time=0, data_dt=1):
-        """
-        data: a list
-
-        """
-        self.from_time =from_time
-        self.time_data = dict()
-        time = self.from_time
-        for d in data:
-            self.time_data[time] = d
-            time += data_dt
-        # print(self.time_data)
-        self.last_success_time = None
-
-    def __call__(self, current_time): # make a datafeeder callable
-        try:
-            d = self.time_data[current_time]
-            self.last_success_time = current_time
-        except KeyError:
-            if current_time < self.from_time:
-                raise Exception("Current time < external data starting time.")
-            elif current_time > list(self.time_data.keys())[-1]:
-                raise Exception("Current time > external data ending time.")
-            else:
-                d = self.time_data[self.last_success_time]
-        return(float(d))
-
-
-class ExtFunc(object):
-    def __init__(self, external_function, arguments=None):
-        """
-        external_function: a function that takes an input and returns an output
-        *args: arguments from within the model for that external_function
-
-        """
-        self.external_function = external_function
-        self.args = list()
-        if type(arguments) is list:
-            self.args = arguments
-        else:
-            self.args.append(arguments)
-
-    def evaluate(self, args):
-        v = self.external_function(*args)
-        return v
-
-
-class GraphFunc(object):
-    def __init__(self, xscale, yscale, ypts):
-        self.xscale = xscale
-        self.yscale = yscale
-        self.ypts = ypts
-        self.eqn = None
-        
-        from scipy.interpolate import interp1d
-
-        self.xpts = np.linspace(self.xscale[0], self.xscale[1], num=len(self.ypts))
-        self.interp_func = interp1d(self.xpts, self.ypts, kind='linear')
-
-    def __call__(self, input):
-        # TODO implement other out-of-bounds contingencies
-        if input < self.xscale[0]:
-            input = self.xscale[0]
-        if input > self.xscale[1]:
-            input = self.xscale[1]
-        
-        return self.interp_func(input)
-
-
-class Conveyor(object):
-    def __init__(self, length, eqn):
-        self.length_time_units = length
-        self.equation = eqn
-        self.length_steps = None # to be decided at runtime
-        self.initial_total = None # to be decided when initialising stocks
-        self.conveyor = list()
-    
-    def initialize(self, length, value, leak_fraction=None):
-        self.initial_total = value
-        self.length_steps = length
-        if leak_fraction is None or leak_fraction == 0:
-            for _ in range(self.length_steps):
-                self.conveyor.append(self.initial_total/self.length_steps)
-        else:
-            # print('Conveyor Initial Total:', self.initial_total)
-            # print('Conveyor Leak fraction:', leak_fraction)
-            # length_steps * output + nleaks * leak = initial_total
-            # leak = output * (leak_fraction / length_in_steps)
-            # ==> length_steps * output + n(length) * (output * (leak_fraction/length_in_steps)) = initial_total
-            # print('Conveyor Length in steps:', self.length_steps)
-            n_leak = 0
-            for i in range(1, self.length_steps+1):
-                n_leak += i
-            # print('Conveyor Nleaks:', n_leak)
-            output = self.initial_total / (self.length_steps + n_leak * (leak_fraction / self.length_steps))
-            # print('Conveyor Output:', output)
-            leak = output * (leak_fraction/self.length_steps)
-            # print('Conveyor Leak:', leak)
-            # generate slats
-            for i in range(self.length_steps):
-                self.conveyor.append(output + (i+1)*leak)
-            self.conveyor.reverse()
-        # print('Conveyor Initialised:', self.conveyor)
-
-    def inflow(self, value):
-        self.conveyor = [value] + self.conveyor
-
-    def outflow(self):
-        output = self.conveyor.pop()
-        return output
-
-    def level(self):
-        return sum(self.conveyor)
-
-    def leak_linear(self, leak_fraction):
-        leaked = 0
-        for i in range(self.length_steps):
-            # keep slats non-negative
-            if self.conveyor[i] > 0:
-                already_leak_fraction = leak_fraction*((i+1)/self.length_steps) # 1+1: position indicator starting from 1
-                remaining_fraction = 1-already_leak_fraction
-                original = self.conveyor[i] / remaining_fraction
-                i_leaked = original * leak_fraction / self.length_steps
-                # print(i_leaked)
-                if self.conveyor[i] - i_leaked < 0:
-                    i_leaked = self.conveyor[i]
-                    self.conveyor[i] = 0
-                else:
-                    self.conveyor[i] = self.conveyor[i] - i_leaked
-                leaked = leaked + i_leaked
-        # print('Leaked conveyor:', self.conveyor)
-        # print('Leaked:', leaked)
-        return leaked
+from copy import deepcopy
 
 class Structure(object):
-    # def __init__(self, sfd=None, uid_manager=None, name_manager=None, subscripts=None, uid_element_name=None, subscript_manager=None):
-    def __init__(self, subscripts={'default_sub':['default_ele']}, from_xmile=None):
-        # debug functionalities
-        self.n_indentation = 0
-        
-        # Make alias for function names
-        self.LINEAR = self.linear
-        self.SUBTRACTION = self.subtraction
-        self.DIVISION = self.division
-        self.ADDITION = self.addition
-        self.MULTIPLICATION = self.multiplication
-        self.RBINOM = self.rbinom
-        self.DELAY1 = self.delay1
-        self.INIT = self.init
+    # equations
+    def __init__(self, from_xmile=None):
+        # Debug
+        self.HEAD = 'ENGINE'
 
-        self.function_names = [
-            self.LINEAR, 
-            self.SUBTRACTION, 
-            self.DIVISION, 
-            self.ADDITION, 
-            self.MULTIPLICATION,
-            self.RBINOM,
-            self.DELAY1,
-            self.INIT
-        ]
-
-        self.custom_functions = {
-            'MAX': max,
-            'MIN': min,
-            'rbinom': self.rbinom,
-            'delay1': self.delay1,
-            'delay': self.delay,
-            'DELAY': self.delay,
-            'STEP': self.step
-            # 'init': self.init
+        # sim_specs
+        self.sim_specs = {
+            'initial_time': 0,
+            'current_time': 0,
+            'dt': 0.25,
+            'simulation_time': 13,
+            'time_units' :'Weeks'
         }
 
-        self.time_related_functions = {
-            'init': self.init,
-            'INIT': self.init,  # Stella uses capital INIT
-            'delay': self.delay,
-            'DELAY': self.delay
-        }
-
-        # Polarity table for functions
-        self.function_polarities = {
-            self.LINEAR: {-1:'positive'},
-            self.ADDITION: {-1:'positive'},
-            self.MULTIPLICATION: {-1:'positive'},
-            self.SUBTRACTION: {0:'positive', 1:'negative'},
-            self.DIVISION: {0:'positive', 1:'negative'},
-            self.RBINOM: {-1:'positive'},
-            self.DELAY1: {0:'positive', 1:'negative', 2:'positive'},
-            self.INIT: {0:'positive'}
-        }
-
-        # Define equation-text converter
-        self.name_operator_mapping = {self.ADDITION: '+', self.SUBTRACTION: '-', self.MULTIPLICATION: '*', self.DIVISION: '/'}
-
-        self.sfd = nx.DiGraph()
-        self.__uid_manager = UidManager()
-        self.__name_manager = NameManager()
-        self.__uid_element_name = dict()
-        self.__time_slice_values = dict() # a time-slice of name values
-        self.__name_values = dict() # centralised simulation data manager
-        self.__built_in_variables = {'TIME':list()}
-        self.__expression_values = dict() # centralised data manager for init(expression)
-        # self.__name_external_data = dict() # centralised external data manager
-        
-        # Specify if subscript is used
-        self.subscripts = subscripts
+        # dimensions
         self.var_dimensions = dict()
-
-        # Define cumulative registers for time-related functions, such as delays
-        self.delay_registers = dict()
+        self.dimension_elements = dict()
         
-        self.initial_time = 0
-        self.current_time = self.initial_time
-        self.current_step = 1 # object-wise global indicator for current simulation step. start from 1 (values after the 1st step)
-        self.dt = 0.25
-        self.simulation_time = 25
-        self.time_units = 'Weeks'
+        # stocks
+        self.stock_equations = dict()
+        self.stock_equations_parsed = dict()
+        self.stock_non_negative = dict()
 
-        self.verbose = False
+        # discrete variables
+        self.conveyors = dict()
 
-        # Initialisation indicator
-        self.is_initialised = False
+        # connections
+        self.stock_flows = dict()
+        self.leak_conveyors = dict()
+        self.outflow_conveyors = dict()
+        
+        # flow
+        self.flow_positivity = dict()
+        self.flow_equations = dict()
+        self.flow_equations_parsed = dict()
+        
+        # aux
+        self.aux_equations = dict()
+        self.aux_equations_parsed = dict()
+
+        # graph_functions
+        self.graph_functions = dict()
+        self.graph_functions_renamed = dict()
+
+        # variable_values
+        self.name_space = dict()
+        self.time_slice = dict()
+        self.full_result = dict()
+        self.full_result_flattened = dict()
+
+        # env variables
+        self.env_variables = {
+            'TIME': 0
+        }
+
+        # parser
+        self.parser = Parser()
+
+        # solver
+        self.solver = Solver(
+            sim_specs=self.sim_specs,
+            dimension_elements=self.dimension_elements,
+            name_space=self.name_space,
+            graph_functions=self.graph_functions,
+            )
+
+        # sequences
+        self.seq_flow_aux = list()
+
+        # custom functions
+        self.custom_functions = {}
 
         # If the model is based on an XMILE file
         if from_xmile is not None:
+            print(self.HEAD, 'Reading XMILE model from {}'.format(from_xmile))
             from pathlib import Path
             xmile_path = Path(from_xmile)
             if xmile_path.exists():
@@ -299,11 +104,12 @@ class Structure(object):
                 if sim_dt_root.get('reciprocal') == 'true':
                     sim_dt = 1/sim_dt
                 
-                self.initial_time = sim_start
-                self.current_time = self.initial_time
-                self.dt = sim_dt
-                self.simulation_time = sim_duration
-                self.time_units = time_units
+                self.sim_specs['initial_time'] = sim_start
+                self.sim_specs['current_time'] = sim_start
+                self.env_variables['TIME'] = sim_start
+                self.sim_specs['dt'] = sim_dt
+                self.sim_specs['simulation_time'] = sim_duration
+                self.sim_specs['time_units'] = time_units
 
                 # read subscritps
                 try:
@@ -322,8 +128,7 @@ class Structure(object):
                             for elem in elems:
                                 elem_names.append(elem.get('name'))
                             dims[name] = elem_names
-                    # print(dims)
-                    self.subscripts = dims
+                    self.dimension_elements.update(dims) # need to use update here to do the 'True' assignment
                 except AttributeError:
                     pass
                 
@@ -332,23 +137,33 @@ class Structure(object):
                 stocks = variables_root.findAll('stock')
                 flows = variables_root.findAll('flow')
                 auxiliaries = variables_root.findAll('aux')
-
-                inflow_stock = dict()
-                outflow_stock = dict()
                 
                 # read graph functions
                 def read_graph_func(var):
-                    xscale = [
-                        float(var.find('gf').find('xscale').get('min')),
-                        float(var.find('gf').find('xscale').get('max'))
-                    ]
-                    yscale = [
-                        float(var.find('gf').find('yscale').get('min')),
-                        float(var.find('gf').find('yscale').get('max'))
-                    ]
-                    ypts = [float(t) for t in var.find('gf').find('ypts').text.split(',')]
+                    gf = var.find('gf')
+                    if gf.find('xscale'):
+                        xscale = [
+                            float(gf.find('xscale').get('min')),
+                            float(gf.find('xscale').get('max'))
+                        ]
+                    else:
+                        xscale = None
+                    
+                    if gf.find('xpts'):
+                        xpts = [float(t) for t in gf.find('xpts').text.split(',')]
+                    else:
+                        xpts = None
+                    
+                    if xscale is None and xpts is None:
+                        raise Exception("GraphFunc: xscale and xpts cannot both be None.")
 
-                    equation = GraphFunc(xscale, yscale, ypts)
+                    yscale = [
+                        float(gf.find('yscale').get('min')),
+                        float(gf.find('yscale').get('max'))
+                    ]
+                    ypts = [float(t) for t in gf.find('ypts').text.split(',')]
+
+                    equation = GraphFunc(yscale=yscale, ypts=ypts, xscale=xscale, xpts=xpts)
                     return equation
 
                 # create var subscripted equation
@@ -364,18 +179,17 @@ class Structure(object):
                         for dimension in var_dimensions:
                             name = dimension.get('name')
                             self.var_dimensions[var.get('name')].append(name)
-                            # print(dimension)
-                            # print(name)
+                            # print('dim name:', name)
                             var_dims[name] = dims[name]
+                        
                         var_subscripted_eqn = dict()
-
                         var_elements = var.findAll('element')
                         if len(var_elements) != 0:
                             for var_element in var_elements:
 
                                 element_combination_text = var_element.get('subscript') # something like "1, First"
-                                element_combination_text = self.process_subscript(element_combination_text) # "1, First" -> 1__cmm__First
-                                # list_of_elements = list_of_elements_text.split(', ')
+                                elements = self.process_subscript(element_combination_text) # "1, First" -> 1__cmm__First
+                                # list_of_elements = element_combination_text.split(', ')
                                 # tuple_of_elements = tuple(list_of_elements)
                                 if var.find('conveyor'):
                                     equation = var_element.find('eqn').text
@@ -387,7 +201,7 @@ class Structure(object):
                                 elif var_element.find('eqn'): # eqn is per element
                                     element_equation = var_element.find('eqn').text
                                     equation = element_equation
-                                var_subscripted_eqn[element_combination_text] = equation
+                                var_subscripted_eqn[elements] = equation
 
                         else: # all elements share the same equation
                             if var.find('conveyor'):
@@ -405,14 +219,12 @@ class Structure(object):
                             
                             # fetch lists of elements and generate elements trings
                             element_combinations = product(*list(var_dims.values()))
-                            element_combination_texts = ['__cmm__'.join(cmb) for cmb in element_combinations]
-                            # print('ec', element_combination_texts)
 
-                            for ect in element_combination_texts:
+                            for ect in element_combinations:
                                 var_subscripted_eqn[ect] =equation
                         return(var_subscripted_eqn)
                     else:
-                        self.var_dimensions[var.get('name')] = ['nodimension']
+                        self.var_dimensions[var.get('name')] = None
                         # print('Processing XMILE definition for:', var.get('name'))
                         var_subscripted_eqn = dict()
                         if var.find('conveyor'):
@@ -423,10 +235,8 @@ class Structure(object):
                             equation = read_graph_func(var)
                             equation.eqn = var.find('eqn').text
                         elif var.find('eqn'):
-                            var_equation = var.find('eqn').text
-                            equation = var_equation
-                        var_subscripted_eqn['nosubscript'] = equation
-                        return(var_subscripted_eqn)
+                            equation = var.find('eqn').text
+                        return equation
                         
 
                 # create stocks
@@ -436,18 +246,22 @@ class Structure(object):
                     if stock.find('non_negative'):
                         # print('nonnegstock', stock)
                         non_negative = True
-
-                    self.add_stock(self.name_handler(stock.get('name')), equation=subscripted_equation(stock), non_negative=non_negative)
                     
-                    inflows = stock.findAll('inflow')
-                    if len(inflows) != 0:
-                        for inflow in inflows:
-                            inflow_stock[inflow.text]=self.name_handler(stock.get('name'))
-                    outflows = stock.findAll('outflow')
-                    if len(outflows) != 0:
-                        for outflow in outflows:
-                            outflow_stock[outflow.text]=self.name_handler(stock.get('name'))
+                    is_conveyor = False
+                    if stock.find('conveyor'):
+                        is_conveyor = True
 
+                    inflows = stock.findAll('inflow')
+                    outflows = stock.findAll('outflow')
+                    self.add_stock(
+                        self.name_handler(stock.get('name')), 
+                        equation=subscripted_equation(stock), 
+                        non_negative=non_negative,
+                        is_conveyor=is_conveyor,
+                        in_flows=[f.text for f in inflows],
+                        out_flows=[f.text for f in outflows],
+                        )
+                    
                 # create auxiliaries
                 for auxiliary in auxiliaries:
                     # self.add_aux(self.name_handler(auxiliary.get('name')), equation=auxiliary.find('eqn').text)
@@ -455,15 +269,6 @@ class Structure(object):
 
                 # create flows
                 for flow in flows:
-                    if self.name_handler(flow.get('name')) in inflow_stock.keys():
-                        flow_to = inflow_stock[self.name_handler(flow.get('name'))]
-                    else:
-                        flow_to = None
-                    
-                    if self.name_handler(flow.get('name')) in outflow_stock.keys():
-                        flow_from = outflow_stock[self.name_handler(flow.get('name'))]
-                    else:
-                        flow_from = None
                     
                     # check if flow is a leakage flow
                     if flow.find('leak'):
@@ -475,1416 +280,564 @@ class Structure(object):
                     non_negative = False
                     if flow.find('non_negative'):
                         non_negative = True
-                    self.add_flow(self.name_handler(flow.get('name')), equation=subscripted_equation(flow), flow_from=flow_from, flow_to=flow_to, leak=leak, non_negative=non_negative)
+                    self.add_flow(self.name_handler(flow.get('name')), equation=subscripted_equation(flow), leak=leak, non_negative=non_negative)
 
             else:
                 raise Exception("Specified model file does not exist.")
 
+            self.name_space.update(self.env_variables)
+
+    # utilities
     def name_handler(self, name):
         return name.replace(' ', '_').replace('\\n', '_')
-
-    # Define functions
-    
-    def linear(self, x, a=1, b=0):
-        return a * float(x) + b
-
-    def addition(self, *args):
-        s = 0
-        for arg in args:
-            s = s + float(arg)
-        return s
-    
-    def subtraction(self, x, y):
-        return float(x) - float(y)
-    
-    def division(self, x, y):
-        return float(x) / float(y)
-
-    def multiplication(self, *args):
-        product = 1
-        for arg in args:
-            product = product * float(arg)
-        return product
-    
-    def rbinom(self, n, p):
-        return stats.binom.rvs(int(n), p, size=1)[0]
-    
-    def step(self, stp, time):
-        # print('step:', stp, time)
-        if self.current_time >= time:
-            # print('step out:', stp)
-            return stp
-        else:
-            # print('step out:', 0)
-            return 0
-
-    def delay(self, subscript, input, delay_time, initial_value=None):
-        delay_time = float(delay_time)
-        try:
-            output = self.__name_values[self.current_time-delay_time][input][subscript]
-            # print(input, 'aa')
-        except KeyError: # current time < delay time
-            if initial_value is not None: # initial value is supplied
-                output = initial_value
-                # print(input, 'bb')
-            else: # initial values is not supplied
-                try:
-                    output = self.__name_values[self.initial_time][input][subscript]
-                    # print(input, 'cc')
-                except KeyError: # the delayed variable has not been calculated for once
-                    output = self.calculate_experiment(input, subscript)
-                    # print(input, 'dd')
-        return output
-
-    def delay1(self, input, delay_time, initial_value=None):
-        delay_time = float(delay_time)
-        if initial_value is not None:
-            initial_value = float(initial_value) 
-        # print(input, delay_time, initial_value)
-        # create a register for the cumulative effect
-        if input not in self.delay_registers.keys():
-            self.delay_registers[input] = dict({self.DELAY1:0}) # delay1:cumulative value
-        
-        # initialise the delay register
-        if self.current_step == 1:
-            if initial_value is None: # initial value not specified, using input
-                self.delay_registers[input][self.DELAY1] = delay_time*input
-            else:  # when initial value is specified
-                self.delay_registers[input][self.DELAY1] = delay_time*initial_value
-        # decide the output value
-        output = self.delay_registers[input][self.DELAY1]/delay_time
-        
-        # adjust the register's value
-        self.delay_registers[input][self.DELAY1] += (input-output)*self.dt
-
-        return output
-
-    def init(self, subscript, var):
-        # print('calculating init', var)
-        # case 1: var is a variable in the model
-        if var in self.sfd.nodes:
-            v = self.__name_values[self.initial_time][var][subscript]
-        elif '__ele1__' in var and var.split('__ele1__')[0] in self.sfd.nodes:
-            print('init case1.2')
-            var_name = var.split('__ele1__')[0]
-            var_subscript = var.split('__ele1__')[1].split('__ele2__')[0]
-            v = self.__name_values[self.initial_time][var_name][var_subscript]
-            if v is None:
-                v = self.calculate_experiment(var_name, var_subscript)
-        # case 2: var is an expression
-        else:
-            if var in self.__expression_values.keys():
-                v = self.__expression_values[var]
-            else:
-                equation = var
-                value = None
-                while type(value) not in [int, float, np.int64]: # if value has not become a number (taking care of the numpy data types)
-                
-                    # decide if the remaining expression is a time-related function (like init(), delay1(), delay())
-                    func_names = re.findall(r"(\w+)[(].+[)]", str(var))
-                    # print('0',func_names, 'in', equation)
-                    if len(func_names) != 0:
-                        func_name = func_names[0]
-                        if func_name in self.time_related_functions.keys():
-                            func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
-                            # print('1',func_args)
-                            func_args_split = func_args[0].split(",")
-                            # print('2',func_names[0], func_args_split)
-
-                            # pass args to the corresponding time-related function
-                            func_args_full = func_args_split + [subscript]
-                            init_value = self.time_related_functions[func_names[0]](*func_args_full)
-                            
-                            # replace the init() parts in the equation with their values
-                            init_value_str = str(init_value)
-                            init_func_str = func_name+'\('+func_args[0]+'\)' # use '\' to mark '(' and ')', otherwise Python will see them as reg grammar
-
-                            equation = re.sub(init_func_str, init_value_str, equation) # in case init() is a part of an equation, substitue init() with its value
-                            # print('1', init_value_str, init_func_str, equation)
-                    
-                    try:
-                        value = eval(str(equation), self.custom_functions)
-                    except NameError as e:
-                        s = e.args[0]
-                        p = s.split("'")[1]
-                        val = self.calculate_experiment(p, subscript)
-                        val_str = str(val)
-                        reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
-                        equation = re.sub(reg, val_str, equation)
-                self.__expression_values[var] = value
-                v = value
-        return v
-
-    def get_function_polarity(self, function, para_position):
-        func_pol = self.function_polarities[function]
-        if -1 in func_pol.keys():
-            return func_pol[-1]
-        else:
-            return func_pol[para_position]
-
-    def text_to_digit(self, text):
-        try:
-            digit = float(text)
-            return digit
-        except ValueError:
-            return text
-
-    def parsing_addition(self, equation):
-        factors = equation.split('+')
-        for i in range(len(factors)):
-            factors[i] = self.text_to_digit(factors[i])
-        return factors
-
-    def parsing_multiplication(self, equation):
-        factors = equation.split('*')
-        for i in range(len(factors)):
-            factors[i] = self.text_to_digit(factors[i])
-        return factors
-
-    def parsing_division(self, equation):
-        factors = equation.split('/')
-        for i in range(len(factors)):
-            factors[i] = self.text_to_digit(factors[i])
-        return factors
-
-    def parsing_subtract(self, equation):
-        factors = equation.split('-')
-        for i in range(len(factors)):
-            factors[i] = self.text_to_digit(factors[i])
-        return factors
-
-    def parsing_rbinom(self, equation):
-        # rbinom takes 2 arguments: n (trials) and p (probability of success)
-        # looks like rbinom(n, p)
-        a = equation.split('(')[1]
-        b = a.split(')')[0]
-        c, d = b.split(',')
-        c = c.strip()
-        d = d.strip()
-        factors = [self.text_to_digit(c), self.text_to_digit(d)]
-        return factors
-    
-    def parsing_delay1(self, equation):
-        # delay1 takes 2 (3) arguments: input and delay time
-        # looks like delay1(input, delay)
-        a = equation.split('(')[1]
-        b = a.split(')')[0]
-        factors = b.split(',')
-        for i in range(len(factors)):
-            factors[i] = factors[i].strip()
-        return factors
-    
-    def parsing_init(self, equation):
-        # init takes 2 arguments: input and subscript
-        # looks like init(input:subscript.element)
-        print('parsing init', equation)
-        a = equation.split('(')[1]
-        b = a.split(')')[0]
-        factors = [b]
-        return factors
-
-    def equation_to_text(self, equation):
-        if type(equation) == int or type(equation) == float:
-            return str(equation)
-        try:
-            equation[0].isdigit()  # if it's a number
-            return str(equation)
-        except AttributeError:
-            if equation[0] in [self.ADDITION, self.SUBTRACTION, self.MULTIPLICATION, self.DIVISION]:
-                return str(equation[1]) + self.name_operator_mapping[equation[0]] + str(equation[2])
-            elif equation[0] == self.LINEAR:
-                return str(equation[1])
-
-    def __add_element(self, element_name, element_type, flow_from=None, flow_to=None, x=0, y=0, equation=None, points=None, external=False, non_negative=False, leak=None):
-        uid = self.__uid_manager.get_new_uid()
-
-        # construct subscripted equation indexer
-        # the 1st column stores the equation{function or initial value}, indexed by subscripts
-        if type(equation) is DataFeeder:  # wrap external data into DataFeeder
-            equation = {'nosubscript': equation}
-            external = True
-
-        # when equation is manually specified without explicit subscript, e.g., 1, 2+1, etc.
-        if type(equation) is not dict:
-            equation = {'nosubscript': equation}
-        
-        # create a name_values binding for its simulation data
-        v_dict = dict()
-        for k in equation.keys():
-            v_dict[k] = None
-        self.__time_slice_values[element_name] = v_dict
-
-        # create a node in the SFD graph
-        self.sfd.add_node(element_name,
-                        uid=uid,
-                        element_type=element_type,
-                        flow_from=flow_from,
-                        flow_to=flow_to,
-                        pos=[x, y],
-                        equation=equation,
-                        points=points,
-                        external=external,
-                        non_negative=non_negative,
-                        leak=leak)
-        # print('Engine: adding element:', element_name, 'equation:', equation)
-
-        return uid
-
-    # def __add_function_dependencies(self, element_name, function, subscript):  # confirm bunch of dependency found in a function
-    def __add_function_dependencies(self, element_name, function):  # confirm bunch of dependency found in a function
-        for i in range(len(function[1:])):
-            from_variable = function[1:][i]
-            if type(from_variable) == str:
-                # print('Engine: adding causal link, from {} to {}, at subscript {}'.format(from_variable, element_name, subscript))
-                print('Engine: adding causal link, from {} to {}, at subscript {}'.format(from_variable, element_name))
-                self.__add_dependency(
-                    from_element=from_variable,
-                    to_element=element_name,
-                    # subscript=subscript,
-                    uid=self.__uid_manager.get_new_uid(),
-                    polarity=self.get_function_polarity(function[0], i)
-                    )
-
-    # def __add_dependency(self, from_element, to_element, subscript, uid=0, angle=None, polarity=None, display=True):
-    def __add_dependency(self, from_element, to_element, uid=0, angle=None, polarity=None, display=True):
-        if not self.sfd.has_edge(from_element, to_element):
-            self.sfd.add_edge(
-                from_element,
-                to_element,
-                # subscripts=[subscript],
-                uid=uid,
-                angle=angle,
-                length=0,  # for automated generation of CLD
-                trend=1,  # for automated generation of CLD
-                polarity=polarity,
-                rad=0,  # for automated generation of CLD
-                display=display)  # display as a flag for to or not to display
-        
-        # else:
-        #     if subscript not in self.sfd.edges[from_element, to_element]['subscripts']:
-        #         self.sfd.edges[from_element, to_element]['subscripts'].append(subscript)
-
-    def __get_element_by_uid(self, uid):
-        # print("Uid_Element_Name, ", self.uid_element_name)
-        return self.sfd.nodes[self.__uid_element_name[uid]]
-
-    def __get_element_name_by_uid(self, uid):
-        return self.__uid_element_name[uid]
-
-    def print_elements(self):
-        print('Engine: All elements in this SFD:')
-        print(self.sfd.nodes.data())
-
-    def print_element(self, name):
-        print('Engine: Attributes of element {}:'.format(name))
-        print(self.sfd.nodes[name])
-
-    def print_causal_links(self):
-        print('Engine: All causal links in this SFD:')
-        print(self.sfd.edges)
-
-    def print_causal_link(self, from_element, to_element):
-        print('Engine: dependency from {} to {}:'.format(from_element, to_element))
-        print(self.sfd[from_element][to_element])
-
-    def get_all_certain_type(self, element_type):
-        # able to handle both single type and multiple types
-        elements = list()
-        if type(element_type) != list:
-            element_types = [element_type]
-        else:
-            element_types = element_type
-
-        for ele_tp in element_types:
-            for node, attributes in self.sfd.nodes.data():
-                try:
-                    if attributes['element_type'] == ele_tp:
-                        elements.append(node)
-                except KeyError:
-                    print('node:', node)
-        # print(elements, "Found for", element_types)
-        return elements
-
-    def set_external(self, element_name):
-        self.sfd.nodes[element_name]["external"] = True
-
-    def __get_coordinate(self, name):
-        """
-        Get the coordinate of a specified variable
-        :param name:
-        :return: coordinate of the variable in a tuple
-        """
-        return self.sfd.nodes[name]['pos']
-
-    # Simulate a structure based on a certain set of parameters
-    def simulate(self, simulation_time=None, dt=None, progress_bar=False, verbose=False):
-        self.verbose = verbose
-        if self.verbose:
-            print('Starting simulation...')
-        if simulation_time is not None:
-            self.simulation_time = simulation_time
-        if dt is not None:
-            self.dt = dt
-        total_steps = int(self.simulation_time / self.dt)
-        
-        # have a dict for all visited (calculated) variables (F/V/P) in this model
-        # this is also a buffer to store calculated value for variables, to avoid calculating the same variable multiple times.
-        # ususally this is not a problem, but when random process is included, values from multiple calculations can be different.
-        self.visited = dict()
-
-        # Setp 1 initialise the state of the stocks if this is the first run
-
-        if self.is_initialised == False:
-            self.__built_in_variables['TIME'].append(self.initial_time) # initialization of stocks might require TIME
-            self.init_stocks()
-        else:
-            self.update_stocks(self.dt)
-        
-        # Step 2
-        from tqdm import tnrange
-        for _ in tnrange(total_steps, disable=not progress_bar):
-            self.update_states()
-            self.current_step += 1  # update current_step counter
-            self.current_time += self.dt
-            self.__built_in_variables['TIME'].append(self.current_time)
-            self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
-
-            self.visited = dict()
-
-            self.update_stocks(self.dt)
-        
-        # Step 3
-
-        self.update_states()
-        
-    def init_stocks(self):
-        self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
-        for element in self.get_all_certain_type(['stock']):
-            if self.verbose:
-                print('Initializing stock: {}'.format(element))
-            # for ix in self.sfd.nodes[element]['equation'].sub_index:
-            for ix in self.sfd.nodes[element]['equation'].keys():
-                equation = self.sfd.nodes[element]['equation'][ix]
-                # print('EQU', equation)
-
-                # if the stock is a conveyor, extract its equation
-                is_conveyor = False
-                if type(equation) is Conveyor:
-                    is_conveyor = True
-                    conveyor = equation
-                    equation = equation.equation
-
-                value = self.calculate_experiment(equation, ix)
-                
-                self.__name_values[self.current_time][element][ix] = value
-
-                if is_conveyor:
-                    length = int(self.calculate_experiment(conveyor.length_time_units, ix) / self.dt)
-                    # search for leaking flow
-                    leak_fraction = None
-                    for e in self.sfd.nodes:
-                        if self.sfd.nodes[e]['element_type'] == 'flow':
-                            if self.sfd.nodes[e]['leak']:
-                                if self.sfd.nodes[e]['flow_from'] == element:
-                                    leak_fraction_eqn = self.sfd.nodes[e]['equation'][ix]
-                                    leak_fraction = self.calculate_experiment(leak_fraction_eqn, ix)
-                    conveyor.initialize(length, value, leak_fraction)
-
-        # set is_initialised flag to True
-        if self.verbose:
-            print('All stocks initialised.')
-        self.is_initialised = True
-
-    def update_stocks(self, dt):
-        # have a dictionary for flows and their values in this default_dt, to be added to or subtracted from stocks
-        flows_dt = dict()
-
-        # find all flows in the model
-        for element in self.get_all_certain_type('flow'):  # loop through all flows in this SFD,
-            flows_dt[element] = dict()  # make a position for it in the dict of flows_dt, initializing it with 0
-
-        # calculate flow values for this dt
-        for flow in flows_dt.keys():
-            for ix in self.sfd.nodes[flow]['equation'].keys():
-                flows_dt[flow][ix] = dt * self.__name_values[self.current_time-self.dt][flow][ix]
-
-        # calculating changes in stocks
-        # have a dictionary of affected stocks and their changes, since one flow could affect 2 stocks.
-        affected_stocks = dict()
-        for flow in flows_dt.keys():
-            successors = list(self.sfd.successors(flow))  # successors of a flow into a list
-            # print('Successors of {}: '.format(flow), successors)
-
-            for successor in successors:
-                if self.sfd.nodes[successor]['element_type'] == 'stock':  # flow may also affect elements other than stock
-                    
-                    if successor not in affected_stocks.keys():
-                        affected_stocks[successor] = dict() # a dict for subscripts
-                    
-                    in_out_factor = 1  # initialize
-                    if self.sfd.nodes[flow]['flow_from'] == successor:  # if flow influences this stock negatively
-                        in_out_factor = -1
-                    elif self.sfd.nodes[flow]['flow_to'] == successor:  # if flow influences this stock positively
-                        in_out_factor = 1
-                    else:
-                        print("Engine: Strange! {} seems to influence {} but not found in graph's attributes.".format(flow, successor))
-                    
-                    # because the connection between a flow and a stock does not vary across subscripts, we only consider indexer from here
-                    for ix in self.sfd.nodes[flow]['equation'].keys():
-                        if self.sfd.nodes[flow]['flow_from'] == successor and type(self.sfd.nodes[successor]['equation'][ix]) is Conveyor:
-                            pass
-                        elif ix in affected_stocks[successor].keys():  # this stock may have been added by other flows
-                            affected_stocks[successor][ix] += flows_dt[flow][ix] * in_out_factor
-                        else:
-                            affected_stocks[successor][ix] = flows_dt[flow][ix] * in_out_factor
-
-        # updating affected stocks values
-        for stock, subscripted_delta_values in affected_stocks.items():
-            for ix in self.__name_values[self.current_time][stock].keys():
-                delta_value = subscripted_delta_values[ix]
-                if type(self.sfd.nodes[stock]['equation'][ix]) is Conveyor:
-                    self.sfd.nodes[stock]['equation'][ix].inflow(delta_value)
-                    new_value = self.sfd.nodes[stock]['equation'][ix].level()
-                else:
-                    current_value = self.__name_values[self.current_time-self.dt][stock][ix]
-                    # print(delta_value, type(delta_value), current_value, type(current_value))
-                    new_value = delta_value + current_value
-                if self.sfd.nodes[stock]['non_negative'] is True and new_value < 0:# if the stock in non-negative and the new value is below 0
-                    # print("Stock {} is non-negative but its value is going below 0.".format(stock))
-                    self.__name_values[self.current_time][stock][ix] = 0
-                    # outflows from this stock should also be 0
-                    
-                else:
-                    self.__name_values[self.current_time][stock][ix] = new_value
-
-        # for those stocks not affected, extend its 'values' by its current value
-        for node in self.sfd.nodes:
-            if self.sfd.nodes[node]['element_type'] == 'stock':
-                if node not in affected_stocks.keys():
-                    for ix in self.__name_values[self.current_time][node].keys():
-                        self.__name_values[self.current_time][node][ix] = self.__name_values[self.current_time-self.dt][node][ix]
-    
-    def update_states(self):
-        # print('us0')
-        """
-        Core function for simulation. Calculating all flows and adjust stocks accordingly based on recursion.
-        """
-
-        # have a dictionary for flows and their values in this default_dt, to be added to or subtracted from stocks
-        flows = dict()
-
-        # find all flows in the model
-        for element in self.get_all_certain_type('flow'):  # loop through all elements in this SFD,
-            flows[element] = dict()  # make a position for it in the dict of flows, initializing it with 0
-
-        leaking_flows = list() # tier 1
-        convey_outflows = list() # tier 2
-        non_leaking_flows = list() # tier 3
-        # calculate flows
-        
-        # prioritise leaking flows
-        for flow in flows.keys():
-            if self.sfd.nodes[flow]['leak']:
-                leaking_flows.append(flow)
-            else:
-                flow_from = self.sfd.nodes[flow]['flow_from']
-                if flow_from is not None:
-                    for ix in self.sfd.nodes[flow_from]['equation'].keys():
-                        flow_from_equation = self.sfd.nodes[flow_from]['equation'][ix]
-                        if type(flow_from_equation) is Conveyor:
-                            convey_outflows.append(flow)
-                        else:
-                            non_leaking_flows.append(flow)
-                        break
-                else:
-                    non_leaking_flows.append(flow)
-
-        # tier 1
-        for flow in leaking_flows:
-            for ix in self.sfd.nodes[flow]['equation'].keys():
-                
-                # print('f leak:', flow)
-                flow_leak_fraction_eqn = self.sfd.nodes[flow]['equation'][ix]
-                flow_leak_fraction = self.calculate_experiment(flow_leak_fraction_eqn, ix)
-                # print('f leak frac:', flow_leak_fraction)
-                v = self.sfd.nodes[self.sfd.nodes[flow]['flow_from']]['equation'][ix].leak_linear(flow_leak_fraction) / self.dt
-                # print('f leak v:', flow, v)
-                
-                flows[flow][ix] = v
-                # as this flow is not calculated through calculate(), we manually register its value to __name_values
-                self.__name_values[self.current_time][flow][ix] = v
-            
-            self.visited[flow] = flows[flow]  # save calculated flow to buffer
-        
-        # tier 2
-        for flow in convey_outflows:
-            if type(self.sfd.nodes[flow]['equation']) is dict:
-                for ix in self.sfd.nodes[flow]['equation'].keys():
-                    flow_from = self.sfd.nodes[flow]['flow_from']
-                    # print('f out:', flow)
-                    v = self.sfd.nodes[flow_from]['equation'][ix].outflow() / self.dt # the conveyor outputs the value of this DT but we need a flow value for the whole time unit (DT = 1)
-                    # print('f out v:', v)
-                    flows[flow][ix] = v
-                    # as this flow is not calculated through calculate(), we manually register its value to __name_values
-                    self.__name_values[self.current_time][flow][ix] = v
-            else:
-                flow_from = self.sfd.nodes[flow]['flow_from']
-                # print('f out:', flow)
-                v = self.sfd.nodes[flow_from]['equation'].outflow() / self.dt # the conveyor outputs the value of this DT but we need a flow value for the whole time unit (DT = 1)
-                # print('f out v:', v)
-                flows[flow] = v
-                # as this flow is not calculated through calculate(), we manually register its value to __name_values
-                self.__name_values[self.current_time][flow] = v  
-            self.visited[flow] = flows[flow]  # save calculated flow to buffer
-
-        # tier 3
-        for flow in non_leaking_flows:
-            # print('fff3', flow, self.sfd.nodes[flow])
-            for ix in self.sfd.nodes[flow]['equation'].keys():
-                v = self.calculate_experiment(flow, ix)
-                # print('fff3.1', flow, ix, v)
-                flows[flow][ix] = v # TODO: Flow behaviour needs more attention. (1) flow value should not exceed the amount remaining in the stock/dt (2) when multiple flows compete for one stock, the early-added gets higher priority
-        
-            self.visited[flow] = flows[flow]  # save calculated flow to buffer
-
-        # print('All flows default_dt:', flows_dt)
-
-        # calculate all not visited variables and parameters in this model, in order to update their value list
-        # because all flows and stocks should be visited sooner or later, only V and P are considered.
-        
-        for element in self.get_all_certain_type(['auxiliary']):
-            if element not in self.visited.keys():
-                for ix in self.sfd.nodes[element]['equation'].keys():
-                    # if ix not in self.visited[element].keys():
-                    self.calculate_experiment(element, ix)
-
-    def process_expression(self, expression, intended_subscripts=None):
-        # print(self.n_indentation*'\t' + 'PE0 processING expression:', expression, 'with intended subs:', intended_subscripts)
-        # print(self.n_indentation*'\t' + 'split', intended_subscripts)
-        if intended_subscripts is not None:
-            intended_subscripts = intended_subscripts.split('__cmm__')
-        
-        expression_1 = expression
-        while '[' in expression_1:
-            expression_1_a, expression_1_b = expression_1.split('[', 1)
-            expression_1_b, expression_1_c = expression_1_b.split(']', 1)
-            expression_1_b = expression_1_b.replace(' ', '').replace(',', '__cmm__')
-            
-            # Dynamically resolve collective reference such as a[Dimension1]
-            if intended_subscripts is not None:
-                subscripts = expression_1_b.split('__cmm__')
-                for i in range(len(subscripts)):
-                    if subscripts[i] in self.subscripts.keys(): # a[Dimension1] instead of a[Element1]
-                        subscripts[i] = intended_subscripts[i] # dynamically replace Dimension1 by Element1
-                expression_1_b = '__cmm__'.join(subscripts)
-
-            expression_1 = expression_1_a + '__ele1__' + expression_1_b + '__ele2__' + expression_1_c
-        expression = expression_1
-        # print(self.n_indentation*'\t' + 'PE1 processED equation:', expression)
-        return expression
     
     @staticmethod
     def process_subscript(subscript):
-        subscript = subscript.replace(',', '__cmm__').replace(' ', '')
+        # subscript = subscript.replace(',', '__cmm__').replace(' ', '')
+        subscript = tuple(subscript.replace(' ', '').split(','))
         return subscript
 
+    # model building
+    def add_stock(self, name, equation, non_negative=True, is_conveyor=False, in_flows=[], out_flows=[]):
+        if type(equation) in [int, float, np.int_, np.float_]:
+            equation = str(equation)
+        self.stock_equations[name] = equation
+        self.stock_non_negative[name] = non_negative
+        connections = dict()
+        if len(in_flows) != 0:
+            connections['in'] = in_flows
+        if len(out_flows) != 0:
+            connections['out'] = out_flows
+        self.stock_flows[name] = connections
     
-    def calculate_experiment(self, expression, subscript):
-        self.n_indentation += 1
-        if self.verbose:
-            print(self.n_indentation*'\t' + 'processing expression of {} on subscript {}:'.format(expression, subscript))
+    def add_flow(self, name, equation, leak=None, non_negative=False):
+        if type(equation) in [int, float, np.int_, np.float_]:
+            equation = str(equation)
+        self.flow_positivity[name] = non_negative
+        if leak:
+            self.leak_conveyors[name] = None # to be filled when parsing the conveyor
+        self.flow_equations[name] = equation
+    
+    def add_aux(self, name, equation):
+        if type(equation) in [int, float, np.int_, np.float_]:
+            equation = str(equation)
+        self.aux_equations[name] = equation
 
-        # check if the expression contains '[]' - cross reference of arrays
-        if type(expression) is str and '[' in expression:
-            # print('process a')
-            expression = self.process_expression(expression)
-            # print('process expression with subscripts:', expression)
+    def replace_element_equation(self, name, new_equation):
+        if type(new_equation) in [int, float, np.int_, np.float_]:
+            new_equation = str(new_equation)
+        else:
+            raise Exception('Unsupported new equation type {}'.format(type(new_equation)))
         
-        elif type(expression) is str and '__ele1__' in expression:
-            # print('process b')
-            expression, subscript = expression.split('__ele1__')
-            subscript = subscript.split('__ele2__')[0]
-            # print('process b:', expression, subscript)
+        if name in self.stock_equations:
+            self.stock_equations[name] = new_equation
+        elif name in self.flow_equations:
+            self.flow_equations[name] = new_equation
+        elif name in self.aux_equations:
+            self.aux_equations[name] = new_equation
+        else:
+            raise Exception('Unable to find {} in the current model'.format(name))
 
-        # check if this value has been calculated and stored in buffer
-        # when initialising stock values, there's no 'self.visited' yet
-        if expression in self.visited.keys():
-            # print('calc a')
-            # print(self.visited[expression])
-            if subscript in self.visited[expression].keys():
-                # print(self.visited[expression][subscript])
-                self.n_indentation -= 1
-                return self.visited[expression][subscript]
-            else:
-                pass
-        
-        # check if this is a system variable like TIME
-        if expression in self.__built_in_variables.keys():
-            # print('calc b')
-            self.n_indentation -= 1
-            return self.__built_in_variables[expression][-1]
-
-        elif type(expression) in [int, float, np.int64]:
-            # print('calc d')
-            self.n_indentation -= 1
-            return expression
+    def parse_0(self, equations, parsed_equations):
+        for var, equation in equations.items():
+            # print(self.HEAD, "Parsing:", var)
+            if type(equation) is GraphFunc:
+                gfunc_name = 'GFUNC{}'.format(len(self.graph_functions_renamed))
+                self.graph_functions_renamed[gfunc_name] = equation # just for length ... for now
+                self.graph_functions[var] = equation
+                self.parser.functions.update({gfunc_name:gfunc_name+"(?=\()"}) # make name var also a function name and add it to the parser
+                self.parser.patterns_custom_func.update(
+                    {
+                        gfunc_name+'__LPAREN__FUNC__RPAREN':{ # GraphFunc(var, expr, etc.)
+                            'token':['FUNC', gfunc_name],
+                            'operator':[gfunc_name],
+                            'operand':['FUNC']
+                        },
+                    }
+                )
+                self.solver.custom_functions.update({gfunc_name:equation})
+                equation = gfunc_name+'('+ equation.eqn + ')'  # make equation into form like var(eqn), 
+                                                # where eqn is the euqaiton whose outcome is the input to GraphFunc var()
+                                                # this is also how Vensim handles GraphFunc
+                parsed_equation = self.parser.parse(equation)
+                parsed_equations[var] = parsed_equation
             
-        # check if this value has been calculated
-        # if expression in self.__name_values[self.current_time].keys(): # name might be equation such as 'a > b'
-        # if expression in self.sfd.nodes and self.__name_values[self.current_time][expression][subscript] is not None:
-        if expression in self.sfd.nodes and subscript in self.__name_values[self.current_time][expression].keys() and self.__name_values[self.current_time][expression][subscript] is not None:
-            #  and self.__name_values[self.current_time][expression][subscript] is not None: # case 1: subscripted var
-                # print('calc c', expression, subscript)
-                # print('calc c', self.__name_values[self.current_time][expression])
-                self.n_indentation -= 1
-                return self.__name_values[self.current_time][expression][subscript]
+            elif type(equation) is Conveyor: # TODO we should also consider arrayed conveyors
+                self.conveyors[var] = {
+                    'conveyor': equation, # the Conveyor object
+                    'inflow': self.stock_flows[var]['in'],
+                    'outflow': self.stock_flows[var]['out'],
+                    'outputflow': [], # this list should have a fixed length of 1
+                    'leakflow': {},
+                }
+                for flow in self.stock_flows[var]['out']:
+                    if flow in self.leak_conveyors:
+                        self.conveyors[var]['leakflow'][flow] = 0
+                        self.leak_conveyors[flow] = var
+                    else:
+                        self.conveyors[var]['outputflow'].append(flow)
+                        self.outflow_conveyors[flow] = var
+                equation_length = equation.length_time_units # this is the equation for its length
+                parsed_equation_len = self.parser.parse(equation_length)
 
-        # Goal --> Gap, gap is subscripted but goal is not; access to goal's value through gap's subscript (calc c) fails
-        if  expression in self.sfd.nodes and 'nosubscript' in self.__name_values[self.current_time][expression].keys() and self.__name_values[self.current_time][expression]['nosubscript'] is not None:
-                # print('calc e', expression, subscript)
-                # print('calc e', self.__name_values[self.current_time][expression])
-                self.n_indentation -= 1
-                return self.__name_values[self.current_time][expression]['nosubscript']
+                equation_init_value = equation.equation # this is the equation for its initial value
+                parsed_equation_val = self.parser.parse(equation_init_value)
 
-        elif expression in self.sfd.nodes and self.sfd.nodes[expression]['element_type'] == 'stock':
-            # print('calc g')
-            # print(self.__name_values.keys())
-            if not self.is_initialised:
-                stock_eqn = self.sfd.nodes[expression]['equation'][subscript]
-                if type(stock_eqn) is Conveyor:
-                    value = self.calculate_experiment(stock_eqn.equation, subscript)
+                parsed_equations[var] = {
+                    'len': parsed_equation_len,
+                    'val': parsed_equation_val
+                }
+
+            else:
+                parsed_equation = self.parser.parse(equation)
+                # parsed_equation = self.parser.parse(equation, verbose=True)
+                parsed_equations[var] = parsed_equation
+
+    def parse(self):
+        # string equation -> calculation tree
+
+        self.parse_0(self.stock_equations, self.stock_equations_parsed)
+        self.parse_0(self.flow_equations, self.flow_equations_parsed)
+        self.parse_0(self.aux_equations, self.aux_equations_parsed)
+
+    def iter_trace(self, seq, var, subscript=None, mode=None):
+        # print('  Iter_tracing:', var)
+        if var in self.env_variables: # var is a built-in variable like TIME
+            pass # skip, as they will already be in name_space by the time of simulation
+
+        # var is a leakflow or an outflow from a conveyor. In this case the conveyor needs to be initialised
+        elif var in self.leak_conveyors:
+            # requiring a leakflow's value triggers the calculation of its connected conveyor
+
+            # if mode is not 'leak_frac', something other than the conveyor is requiring the leak_flow; then conveyor needs to be calculated. Otherwise it is the conveyor that requires it
+            if mode != 'leak_frac':  
+                if self.leak_conveyors[var] not in seq:
+                    self.iter_trace(seq=seq, var=self.leak_conveyors[var], subscript=subscript)
                 else:
-                    value = self.calculate_experiment(stock_eqn, subscript)
-            else:
-                value = self.__name_values[self.current_time][expression][subscript]
-            self.n_indentation -= 1
-            return value
+                    # the conveyor, which is pre-required for this leak_flow, needs to be move forward so that it is calculated before this leak_flow
+                    seq.remove(self.leak_conveyors[var])
+                    self.iter_trace(seq=seq, var=self.leak_conveyors[var], subscript=subscript)
+            # leakflow should not be added to seq, as
+            # (1) their equation yiels leakfraction, not the actualy flow value;
+            # (2) they are calculated when the conveyor is initialised or updated
+            # However, leak_fraction is calculated using leakflow's equation. 
+            leafs = [x for x in self.flow_equations_parsed[var].nodes() if self.flow_equations_parsed[var].out_degree(x)==0]
+            for leaf in leafs:
+                # print('i4.1')
+                if self.flow_equations_parsed[var].nodes[leaf]['operator'][0] in ['EQUALS', 'SPAREN']:
+                    operands = self.flow_equations_parsed[var].nodes[leaf]['operands']
+                    # print('i5', operands)
+                    if operands[0][0] == 'NUMBER': # if 'NUMBER' then pass, as numbers (e.g. 100) do not have a node
+                        # print('i5.0') 
+                        pass
+                    elif operands[0][0] == 'NAME': # this refers to a variable like 'a'
+                        # print('i5.1', operands[0][0])
+                        var_dependent = self.flow_equations_parsed[var].nodes[leaf]['operands'][0][1]
+                        # print('i5.2', var_dependent)
+                        self.iter_trace(seq=seq, var=var_dependent)
+                    elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
+                        # print('i5.3')
+                        # need to find that 'SPAREN' node
+                        var_dependent_node_id = self.flow_equations_parsed[var].nodes[leaf]['operands'][0][2]
+                        var_dependent = self.flow_equations_parsed[var].nodes[var_dependent_node_id]['operands'][0][1]
+                        # print('var_dependent2', var_dependent)
+                        self.iter_trace(seq=seq, var=var_dependent)
+
+        elif var in self.outflow_conveyors:
+            # requiring an outflow's value triggers the calculation of its connected conveyor
+            self.iter_trace(seq=seq, var=self.outflow_conveyors[var], subscript=subscript)
+            # convoutflows should not be added to seq, as they are calculated when the conveyor is initialised or updated
         
-        # expression is the name of a leaking flow
-        elif expression in self.sfd.nodes and self.sfd.nodes[expression]['leak']:
-            if not self.is_initialised: # it's currently in the process of init_stocks, no leaks have been calculated
-                self.n_indentation -= 1
-                return 0 # leaks are currently all 0
+        elif var in self.conveyors: # var is a conveyor (stock)
+            # These two variables only need to be calculated once to initialise the conveyor 
+            if var in seq: # add conveyor to seq
+                seq.remove(var)
+            seq.append(var)
+            
+            for _, parsed_eqn in self.stock_equations_parsed[var].items(): # ['len', 'val']
+                leafs = [x for x in parsed_eqn.nodes() if parsed_eqn.out_degree(x)==0]
+                for leaf in leafs:
+                    # print('i4.1')
+                    if parsed_eqn.nodes[leaf]['operator'][0] in ['EQUALS', 'SPAREN']:
+                        operands = parsed_eqn.nodes[leaf]['operands']
+                        # print('i5', operands)
+                        if operands[0][0] == 'NUMBER': # if 'NUMBER' then pass, as numbers (e.g. 100) do not have a node
+                            # print('i5.0') 
+                            pass
+                        elif operands[0][0] == 'NAME': # this refers to a variable like 'a'
+                            # print('i5.1', operands[0][0])
+                            var_dependent = parsed_eqn.nodes[leaf]['operands'][0][1]
+                            # print('i5.2', var_dependent)
+                            self.iter_trace(seq=seq, var=var_dependent)
+                        elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
+                            # print('i5.3')
+                            # need to find that 'SPAREN' node
+                            var_dependent_node_id = parsed_eqn.nodes[leaf]['operands'][0][2]
+                            var_dependent = parsed_eqn.nodes[var_dependent_node_id]['operands'][0][1]
+                            # print('var_dependent2', var_dependent)
+                            self.iter_trace(seq=seq, var=var_dependent)
+            
+            # conveyor also requries leak_frac
+            for leak_flow in self.conveyors[var]['leakflow'].keys():
+                if leak_flow in seq:
+                    seq.remove(leak_flow)
+                seq.append(leak_flow)
+                self.iter_trace(seq=seq, var=leak_flow, mode='leak_frac')
 
-        else:  # calculation is needed
-            # print(self.n_indentation*'\t' + 'calc h:', expression, 'SUB:', subscript)
-            if expression in self.sfd.nodes: # careful - outflows from conveyors have eqn 0 but should not be dealt with here
-                # print(self.n_indentation*'\t' + 'calc h1:', self.sfd.nodes[expression]['equation'])
-                # print(self.n_indentation*'\t' + 'retriving:', list(self.sfd.nodes[expression]['equation'].keys()))
-                if subscript in self.sfd.nodes[expression]['equation'].keys():
-                    # print(self.n_indentation*'\t' + 'calc h1.1')
-                    equation = self.sfd.nodes[expression]['equation'][subscript]
-                else:
-                    # print(self.n_indentation*'\t' + 'calc h1.2')
-                    equation = self.sfd.nodes[expression]['equation']['nosubscript']
+        else: # var is a user-defined varialbe
+            if subscript is not None:
+                parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var][subscript]
+                # print('i1')
             else:
-                equation = expression
-
-            # replace abc[subscript] -> abc__ele1__subscript__ele2__
-            if type(equation) is str:
-                equation = self.process_expression(equation, intended_subscripts=subscript)
+                parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var]
+                # print('i2')
             
-            # pre-process expression to match Python syntax
-            # replace '=' with '=='
-            if type(equation) is str:
-                reg = "(?<!(<|>|=))=(?!(<|>|=))"
-                equation = re.sub(reg, "==", equation)
-            
-            value = None
-
-            while type(value) not in [int, float, np.int64, bool]: # if value has not become a number (taking care of the numpy data types)
-                
-                # check if the expression is an external DataFeeder
-                if type(equation) is DataFeeder:
-                    # print('calc df')
-                    equation = equation(self.current_time)
-
-                # check if the variable is a graph function which has an additonal layer that transforms the equation outcome
-                if type(equation) is GraphFunc:
-                    # print('calc h0')
-                    input = self.calculate_experiment(equation.eqn, subscript)
-                    equation = equation(input)
-                
-                # check if this is a conditional statement
-                elif type(equation) is str and len(equation) > 2 and equation[:2] == 'IF':
-                    # print('calc h1')
-                    con_if = equation[2:].split('THEN')[0]
-                    # print('con_if:', con_if)
-                    con_then = equation[2:].split('THEN')[1].split('ELSE')[0]
-                    # print(self.n_indentation*'\t'+'con_then:', con_then)
-                    con_else = equation[2:].split('THEN')[1].split('ELSE')[1]
-                    # print('con_else:', con_else)
-                    if con_if is None:
-                        raise Exception("Condition IF cannot be None.")
-                    elif con_then is None and con_else is None:
-                        raise Exception("Condition THEN and ELSE cannot both be None")
+            # print('type var', type(parsed_equation))
+            if type(parsed_equation) is dict:
+                for k, g in parsed_equation.items():
+                    self.iter_trace(seq=seq, var=var, subscript=k)
+            else:
+                # print('i3', var)
+                if var in seq:
+                    # print('i3.1', 'var {} in seq'.format(var), var in seq)
+                    seq.remove(var)
+                seq.append(var)
+                # print('i3.2', 'var {} in seq'.format(var), var in seq)
+                # print('i4', seq)
+                leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
+                for leaf in leafs:
+                    # print('i4.1')
+                    if parsed_equation.nodes[leaf]['operator'][0] in ['EQUALS', 'SPAREN']:
+                        operands = parsed_equation.nodes[leaf]['operands']
+                        # print('i5', operands)
+                        if operands[0][0] == 'NUMBER': # if 'NUMBER' then pass, as numbers (e.g. 100) do not have a node
+                            # print('i5.0') 
+                            pass
+                        elif operands[0][0] == 'NAME': # this refers to a variable like 'a'
+                            # print('i5.1')
+                            var_dependent = parsed_equation.nodes[leaf]['operands'][0][1]
+                            # print('i5.2', var_dependent)
+                            self.iter_trace(seq=seq, var=var_dependent)
+                        elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
+                            # print('i5.3')
+                            # need to find that 'SPAREN' node
+                            var_dependent_node_id = parsed_equation.nodes[leaf]['operands'][0][2]
+                            var_dependent = parsed_equation.nodes[var_dependent_node_id]['operands'][0][1]
+                            # print('var_dependent2', var_dependent)
+                            self.iter_trace(seq=seq, var=var_dependent)
+    
+    # calculation tree -> sequence of variables to evaluate
+    def compile(self):
+        # print('Start compiling...')
+        for var in (self.stock_equations_parsed | self.aux_equations_parsed | self.flow_equations_parsed).keys():
+            # print('Compiling:', var)
+            self.iter_trace(var=var, seq=self.seq_flow_aux)
+        self.seq_flow_aux.reverse()
+    
+    def calculate_variables(self, verbose=False):
+        for var in self.seq_flow_aux:    
+            # print('Engine Calculating:', var, 'current name space', self.name_space)
+            if var in self.conveyors:
+                if not self.conveyors[var]['conveyor'].is_initialized:
+                    conveyor_length = self.solver.calculate_node(self.stock_equations_parsed[var]['len'], verbose=verbose)
+                    length_steps = int(conveyor_length/self.sim_specs['dt'])
+                    conveyor_value = self.solver.calculate_node(self.stock_equations_parsed[var]['val'], verbose=verbose)
+                    leak_flows = self.conveyors[var]['leakflow']
+                    if len(leak_flows) == 0:
+                        leak_fraction = 0
                     else:
-                        con_eval = self.calculate_experiment(con_if, subscript)
-                        # print('con_eval', con_eval)
-                        if type(con_eval) is not bool:
-                            raise TypeError("Condition IF must be True of False")
-                        elif con_eval:
-                            # print(self.n_indentation*'\t'+'here')
-                            con_outcome = self.calculate_experiment(con_then, subscript)
-                        else:
-                            con_outcome = self.calculate_experiment(con_else, subscript)
-                    con_outcome = str(con_outcome)
-                    # print(self.n_indentation*'\t'+'con_outcome:', con_outcome)
-                    con_statement = 'IF'+con_if+'THEN'+con_then+'ELSE'+con_else
-                    # print('Constat', con_statement)
-                    equation = equation.replace(con_statement, con_outcome)
-                    # print('equation after con', equation)
+                        for leak_flow in leak_flows.keys():
+                            leak_fraction = leak_flows[leak_flow] # TODO multiple leakflows
+                    self.conveyors[var]['conveyor'].initialize(length_steps, conveyor_value, leak_fraction)
                 
-                elif type(equation) is str and len(equation) > 3 and 'AND' in equation:
-                    # print('calc h2.1')
-                    and_0, and_1 = equation.split('AND')
-                    # print('and_0', and_0)
-                    # print('and_1', and_1)
-                    and_0_eval = self.calculate_experiment(and_0, subscript)
-                    if type(and_0_eval) is not bool:
-                        raise TypeError
-                    and_1_eval = self.calculate_experiment(and_1, subscript)
-                    if type(and_1_eval) is not bool:
-                        raise TypeError
-                    if and_0_eval and and_1_eval:
-                        and_outcome = 'True'
+                # level
+                value = self.conveyors[var]['conveyor'].level()
+
+                self.name_space[var] = value
+                # leak
+                for leak_flow, leak_fraction in self.conveyors[var]['leakflow'].items():
+                    leaked_value = self.conveyors[var]['conveyor'].leak_linear()
+                    self.name_space[leak_flow] = leaked_value / self.sim_specs['dt'] # TODO: we should also consider when leak flows are subscripted
+                # out
+                for outputflow in self.conveyors[var]['outputflow']:
+                    outflow_value = self.conveyors[var]['conveyor'].outflow()
+                    self.name_space[outputflow] = outflow_value / self.sim_specs['dt']
+            else:
+                value = self.solver.calculate_node((self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var], verbose=verbose, var_name=var)
+                if var in self.leak_conveyors.keys():
+                    self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = value
+                else:
+                    if var in self.flow_equations:
+                        if self.flow_positivity[var]:
+                            if type(value) is dict:
+                                for sub, subval in value.items():
+                                    if subval < 0:
+                                        value[sub] = 0
+                            else:
+                                if value < 0:
+                                    value = 0            
+                    self.name_space[var] = value
+
+    def update_stocks(self):
+        for stock, connections in self.stock_flows.items(): 
+            if stock not in self.conveyors: # stock is a normal SD stock
+                if type(self.stock_equations_parsed[stock]) is dict:
+                    total_flow_effect = dict()
+                    for kse in self.stock_equations_parsed[stock]:
+                        total_flow_effect[kse] = 0
+                else:
+                    total_flow_effect = 0
+                for direction, flows in connections.items():
+                    if direction == 'in':
+                        for flow in flows:
+                            try:
+                                total_flow_effect += self.name_space[flow]
+                            except TypeError:
+                                for kf, vf in self.name_space[flow].items():
+                                    total_flow_effect[kf] += vf
+                    elif direction == 'out':
+                        for flow in flows:
+                            try:
+                                total_flow_effect -= self.name_space[flow]
+                            except TypeError:
+                                for kf, vf in self.name_space[flow].items():
+                                    total_flow_effect[kf] -= vf
                     else:
-                        and_outcome = 'False'
-                    equation = and_outcome
-
-                elif type(equation) is str and len(equation) > 2 and 'OR' in equation:
-                    # print('calc h2.2')
-                    and_0, and_1 = equation.split('OR')
-                    # print('and_0', and_0)
-                    # print('and_1', and_1)
-                    and_0_eval = self.calculate_experiment(and_0, subscript)
-                    if type(and_0_eval) is not bool:
-                        raise TypeError
-                    and_1_eval = self.calculate_experiment(and_1, subscript)
-                    if type(and_1_eval) is not bool:
-                        raise TypeError
-                    if and_0_eval or and_1_eval:
-                        equation = 'True'
-                    else:
-                        equation = 'False'
-
-                # check if there are time-related functions in the equation
-                elif type(equation) is str and re.findall(r"(\w+)[(].+[)]", str(equation)):
-                    func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
-                    # print(self.n_indentation*'\t'+'calc h3')
-                    for func_name in func_names:
-                        # print(self.n_indentation*'\t'+'calc h3.0', func_name)
-                        if func_name in self.time_related_functions.keys():
-                            func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
-                            # print(self.n_indentation*'\t'+'calc h3.0.0',func_args)
-                            func_args_split = func_args[0].split(",")
-                            # print(self.n_indentation*'\t'+'calc h3.0.1',func_names[0], func_args_split)
-
-                            # pass args to the corresponding time-related function
-                            func_args_full = [subscript] + func_args_split
-                            func_value = self.time_related_functions[func_names[0]](*func_args_full)
-                            
-                            # replace the init() parts in the equation with their values
-                            func_value_str = str(func_value)
-                            func_str = func_name+'('+func_args[0]+')'
-                            equation = equation.replace(func_str, func_value_str) # in case init() is a part of an equation, substitue init() with its value
-                            # print(self.n_indentation*'\t'+'calc h3.0.2', equation)
-
-                # # check if the expression is abc__ele1__subscript__ele2__
-                # elif type(expression) is str and '__ele1__' in expression:
-                #     print('process b')
-                #     expression, subscript = expression.split('__ele1__', 1)
-                #     subscript, remaining = subscript.split('__ele2__', 1)
-                #     print('process b', expression, subscript, remaining)
-
-                # if type(equation) is str and '[' in equation:
-                #     equation = self.process_expression(equation)
-
-                '''
-                Until here, all we want to have is an modified equation suitable for evaluation.
-                '''
-
+                        raise Exception("Invalid flow direction: {}".format(direction))
                 try:
-                    # print(self.n_indentation*'\t' + 'eval:', equation)
-                    value = eval(str(equation), self.custom_functions) # TODO: 'Beds' in 'TimeToAddBeds' got replaced by the value of var 'Beds'. Fix needed
-                    # print(self.n_indentation*'\t'+'Evaluated {} = {}'.format(equation, value))
+                    value = self.name_space[stock] + total_flow_effect * self.sim_specs['dt']
+                except TypeError:
+                    value = dict()
+                    for fk, fv in total_flow_effect.items():
+                        value[fk] = self.name_space[stock][fk] + fv * self.sim_specs['dt']
+                self.name_space[stock] = value
 
-                except NameError as e:
-                    s = e.args[0]
-                    p = s.split("'")[1]
-                    # print(self.n_indentation*'\t'+'NameError {} for equation: {}'.format(p,equation))
-                    val = self.calculate_experiment(p, subscript)
-                    # print(self.n_indentation*'\t'+'Calculated value for {}: {}'.format(p, val))
-                    val_str = str(val)
-                    reg = '(?<!_)'+p+'(?!_)' # negative lookahead/behind to makesure p is not _p/p_/_p_
-                    equation = re.sub(reg, val_str, equation)
+                # remove stock from seq
+                if stock in self.seq_flow_aux:
+                    self.seq_flow_aux.remove(stock)
+
+        for conveyor_name, conveyor in self.conveyors.items(): # Stock is a Conveyor
+            total_flow_effect = 0
+            connections = self.stock_flows[conveyor_name]
+            for direction, flows in connections.items():
+                if direction == 'in':
+                    for flow in flows:
+                        total_flow_effect += self.name_space[flow]
+
+            # in
+            conveyor['conveyor'].inflow(total_flow_effect * self.sim_specs['dt'])
+            
+            # level
+            value = conveyor['conveyor'].level()
+            self.name_space[conveyor_name] = value
                 
-                except ZeroDivisionError as e:
-                    raise e
+    def simulate(self, time=None, dt=None, verbose=False):
+        self.parse()
+
+        self.compile()
+
+        if time is None:
+            time = self.sim_specs['simulation_time']
+        if dt is None:
+            dt = self.sim_specs['dt']
+        steps = time/dt
+
+        for s in range(int(steps)+1):
+            # print('--step {}--'.format(s))
+            self.calculate_variables(verbose=verbose)
+
+            self.time_slice[self.sim_specs['current_time']] = deepcopy(self.name_space)
+
+            self.sim_specs['current_time'] += dt
+            self.name_space['TIME'] += dt
             
-            if expression in self.sfd.nodes:
-
-                # Noted 21/8/2022: This is not OK. Positive check of non-negative stocks should be performed when updating the stock, not calculating flows. -10->[0]-10-> is legitimate but not pass here.
-                # non-negative control of flows
-                if self.sfd.nodes[expression]['element_type'] == 'flow':
-                    # when flow is not bi-flow, i.e., cannot go negative
-                    if self.sfd.nodes[expression]['non_negative']:
-                        if value < 0:
-                            # print('Flow {} is non-negative but is going under 0 to {}.'.format(expression, value))
-                            value = 0
-                    # check if flow is constrained by the stock it is drawing from; this is not perfect - if 2 flows f1, f2 are drawing from the same stock, f2 is constrained by s-f1, not just s
-                    if self.sfd.nodes[expression]['flow_from'] is not None:
-                        stock_flow_from_level = self.__name_values[self.current_time][self.sfd.nodes[expression]['flow_from']][subscript]
-                        if value > stock_flow_from_level:
-                            value = stock_flow_from_level
-
-                # leak flows have eqn but it's not for value, but for leak fraction. Check before register
-                if self.sfd.nodes[expression]['leak']:
-                    pass
-                # register calculated values to __name_values
-                else:
-                    if 'nosubscript' in self.sfd.nodes[expression]['equation'].keys(): # A variable is not subscripted but is used to calculate a subscripted variable
-                        self.__name_values[self.current_time][expression]['nosubscript'] = value
-                    else:
-                        self.__name_values[self.current_time][expression][subscript] = value
-
-                try:  # when initialising stock values, there's no 'self.visited' yet
-                    # print('calc updating vidited', expression, subscript, value)
-                    if expression in self.sfd.nodes: # only register those that are variable names in the model
-                        if expression not in self.visited.keys():
-                            self.visited[expression] = dict()
-                        if subscript not in self.visited[expression].keys():
-                            self.visited[expression][subscript] = value
-                except AttributeError:
-                    pass
-            
-            if self.verbose:
-                print(self.n_indentation*'\t'+'calc-ed value:'+str(value))
-            
-            self.n_indentation -= 1
-            return value
-
-
+            self.update_stocks()
+        
     def clear_last_run(self):
-        """
-        Clear values for all nodes
-        :return:
-        """
-        self.current_step = 1
-        self.current_time = self.initial_time
+        self.sim_specs['current_time'] = self.sim_specs['initial_time']
+        self.name_space = dict()
+        self.name_space.update(self.env_variables)
+        self.time_slice = dict()
 
-        # for name in self.__name_values.keys():
-        #     self.__name_values[name] = dict()
+        self.stock_equations_parsed = dict()
+        self.flow_equations_parsed = dict()
+        self.aux_equations_parsed = dict()
 
-        self.__name_values = dict()
+        self.seq_flow_aux = list()
         
-        self.__built_in_variables['TIME'] = list()
-        
-        # reset delay_registers
-        self.delay_registers = dict()
+        self.full_result = dict()
+        self.full_result_flattened = dict()
 
-        # reset is_initialised flag
-        self.is_initialised = False
-
-    # Add elements on a stock-and-flow level (work with model file handlers)
-    def add_stock(self, name=None, equation=None, x=0, y=0, non_negative=False):
-        """
-        :param name: name of the stock
-        :param equation: initial value
-        :param x: x
-        :param y: y
-        :return: uid of the stock
-        """
-        if equation is not None:
-            # equation = self.text_to_equation(equation)
-            uid = self.__add_element(name, element_type='stock', x=x, y=y, equation=equation, non_negative=non_negative)
-            # # the initial value of a stock should be added to its simulation value DataFrame
-            # for ix in self.__name_values[name].sub_index:
-            #     self.__name_values[name][ix].append(equation)
-        else:
-            raise TypeError("Equation should not be None.")
-        # print('Engine: added stock:', name, 'to graph.')
-        return uid
-
-    def add_flow(self, name=None, equation=None, x=0, y=0, points=None, flow_from=None, flow_to=None, leak=None, non_negative=False):
-        if name is None:
-            name = self.__name_manager.get_new_name(element_type='flow')
-        if equation is not None:
-            uid = self.__add_element(name,
-                                    element_type='flow',
-                                    flow_from=flow_from,
-                                    flow_to=flow_to,
-                                    x=x,
-                                    y=y,
-                                    equation=equation,
-                                    points=points,
-                                    leak=leak,
-                                    non_negative=non_negative)
-
-        self.connect_stock_flow(name, flow_from=flow_from, flow_to=flow_to)
-        # print('Engine: added flow:', name, 'to graph.')
-        return uid
-
-    def connect_stock_flow(self, flow_name, flow_from=None, flow_to=None):
-        """
-        Connect stock and flow.
-        :param flow_name: The flow's name
-        :param flow_from: The stock this flow coming from
-        :param flow_to: The stock this flow going into
-        :return:
-        """
-        # If the flow influences a stock, create the causal link
-        # we assume the connection between a flow and stock holds across all subscripts
-        # for ix in self.sfd.nodes[flow_name]['equation'].sub_index:
-        if flow_from is not None:  # Just set up
-            self.sfd.nodes[flow_name]['flow_from'] = flow_from
-            # self.__add_dependency(flow_name, flow_from, subscript=ix, display=False, polarity='negative')
-            self.__add_dependency(flow_name, flow_from, display=False, polarity='negative')
-        if flow_to is not None:  # Just set up
-            self.sfd.nodes[flow_name]['flow_to'] = flow_to
-            # self.__add_dependency(flow_name, flow_to, subscript=ix, display=False, polarity='positive')
-            self.__add_dependency(flow_name, flow_to, display=False, polarity='positive')
-
-    def disconnect_stock_flow(self, flow_name, stock_name):
-        """
-        Disconnect stock and flow
-        :param flow_name: The flow's name
-        :param stock_name: The stock this flow no longer connected to
-        :return:
-        """
-        if self.sfd.nodes[flow_name]['flow_from'] == stock_name:
-            self.sfd.remove_edge(flow_name, stock_name)
-            self.sfd.nodes[flow_name]['flow_from'] = None
-        if self.sfd.nodes[flow_name]['flow_to'] == stock_name:
-            self.sfd.remove_edge(flow_name, stock_name)
-            self.sfd.nodes[flow_name]['flow_to'] = None
-
-    def add_aux(self, name=None, equation=None, x=0, y=0):
-        
-        if equation is not None:
-            uid = self.__add_element(
-                name,
-                element_type='auxiliary',
-                x=x,
-                y=y,
-                equation=equation
+        self.solver = Solver(
+            sim_specs=self.sim_specs,
+            dimension_elements=self.dimension_elements,
+            name_space=self.name_space,
+            graph_functions=self.graph_functions,
             )
+
+    def summary(self):
+        print('\nSummary:\n')
+        print('------------- Definitions -------------')
+        pprint(self.stock_equations | self.flow_equations | self.aux_equations)
+        print('')
+        print('-------------  Sim specs  -------------')
+        pprint(self.sim_specs)
+        print('')
+        print('-------------   Runtime   -------------')
+        pprint(self.name_space)
+        print('')
+    
+    def get_element_simulation_result(self, name, subscript=None):
+        if not subscript:
+            if type((self.stock_equations | self.flow_equations | self.aux_equations)[name]) is dict:
+                result = dict()
+                for sub in (self.stock_equations | self.flow_equations | self.aux_equations)[name].keys():
+                    result[sub] = list()
+                for time, slice in self.time_slice.items():
+                    for sub, subvalue in slice.items():
+                        result[sub].append(subvalue)
+                return result
+            else:
+                result = list()
+                for time, slice in self.time_slice.items():
+                    result.append(slice[name])
+                return result
+
         else:
-            raise TypeError("Equation should not be None.")
-
-        return uid
-
-    def get_element_equation(self, name):
-        if self.sfd.nodes[name]['element_type'] == 'stock':
-            # if the node is a stock
-            return self.sfd.nodes[name]['value'][0]  # just return its first value (initial).
-        elif self.sfd.nodes[name]['function'] is None:
-            # if the node does not have a function and not a stock, then it's constant
-            return self.sfd.nodes[name]['value'][0]  # use its latest value
-        else:  # it's not a constant value but a function  #
-            return self.sfd.nodes[name]['function']
-
-    def replace_element_equation(self, name, new_equation, subscripts=None):
-        """
-        Replace the equation of a variable.
-        :param name: The name of the variable
-        :param new_equation: The new equation
-        :return:
-        """
-        # step 1: if not stock, remove all incoming connectors into this variable (node)
-        #         if stock, just reset it's (initial) value
-        # step 2: replace the equation of this variable in the graph representation
-        # step 3: confirm connectors based on the new equation (only when the new equation is a function not a number
-        # print("Engine: Replacing equation of {}".format(name))
-        
-        if new_equation is None:
-        #     new_equation_parsed = self.text_to_equation(new_equation)
-        # else:
-            raise Exception("New equation for replacing could not be None.")
-        
-        # step 0: consider DataFeeder
-        if type(new_equation) is DataFeeder:
-            self.sfd.nodes[name]['equation']['nosubscript'] = new_equation
-            self.sfd.nodes[name]['external'] = True
-            return
-
-        # step 1:
-        if self.sfd.nodes[name]['element_type'] != 'stock':
-            to_remove = list()
-            for u, v in self.sfd.in_edges(name):
-                # print("In_edge found:", u, v)
-                to_remove.append((u, v))
-            self.sfd.remove_edges_from(to_remove)
-            if len(to_remove) > 0:
-                print("Engine: Edges removed.")
-                pass
-
-        # step 2:
-        # retrieve or generate indexer
-        if subscripts is None:
-            subscripts = self.sfd.nodes[name]['equation'].keys()
-        else:
-            if type(subscripts) is not dict:
-                raise TypeError("Subscripts should be described using a dictironary.")
-            subscript_names = list()
-            subscript_elements = list()
-            for name, elements in subscripts.items():
-                if type(elements) is not list:
-                    raise TypeError("Subscripts elements should be described using a list.")
-                subscript_names.append(name)
-                subscript_elements.append(elements)
-            subscripts = pd.MultiIndex.from_product(subscript_elements, subscript_names)
-        
-        for ix in subscripts:
-            self.sfd.nodes[name]['equation'][ix] = new_equation
-        
-            # step 3:
-            # if type(new_equation) not in [int, float]:
-            #     # If new equation (parsed list) does not starts with a number, 
-            #     # it's not a constant value, but a function
-            #     if type(new_equation) is not str:
-            #         self.__add_function_dependencies(name, new_equation, ix)
-            #         # print("Engine: New edges created.")
-
-    def remove_element(self, name):
-        """
-        Delete an element
-        :param name:
-        :return:
-        """
-        self.sfd.remove_node(name)
-        print("Engine: {} is removed from the graph.".format(name))
-
-    def remove_connector(self, from_element, to_element):
-        self.sfd.remove_edge(from_element, to_element)
-
-    # Reset a structure
-    def reset_a_structure(self):
-        self.sfd.clear()
-
-    # Return a behavior
-    def get_element_simulation_result(self, name):
-        full_result = dict()
-        for time, values in self.__name_values.items():
-            time_result = dict()
-            time_result[self.time_units] = time
-            name_output = name.replace('_', ' ')
-            if name_output[0].isdigit():
-                name_output = '"{}"'.format(name_output)
+            result= list()
+            for time, slice in self.time_slice.items():
+                result.append(slice[name][subscript])
+            return result
             
-            for ix in self.__name_values[time][name].keys():
-                if ix == 'nosubscript':
-                    time_result[name_output] = values[name]['nosubscript']
+    def export_simulation_result(self, flatten=False, to_csv=False):
+        self.full_result = dict()
+        for time, slice in self.time_slice.items():
+            for var, value in slice.items():
+                if type(value) is dict:
+                    for sub, subvalue in value.items():
+                        try:
+                            # self.full_result[var+'[{}]'.format(', '.join(sub))].append(subvalue)
+                            self.full_result[var][sub].append(subvalue)
+                        except:
+                            try:
+                                self.full_result[var][sub] = [subvalue]
+                            except:
+                                self.full_result[var] = dict()
+                                self.full_result[var][sub] = [subvalue]
                 else:
-                    time_result[name_output+'[{}]'.format(ix.replace('__cmm__', ', ').replace('_', ' '))] = values[name][ix]
-            full_result[time] = time_result
-        # return full_result
-        df_full_result = pd.DataFrame.from_dict(full_result).transpose()
-        df_full_result.set_index(self.time_units, inplace=True)
-        return df_full_result[name]
-
-    # Return all simulation results as a pandas DataFrame
-    def export_simulation_result(self):
-        full_result = dict()
-        for time, values in self.__name_values.items():
-            # time_result = pd.DataFrame(index=None)
-            time_result = dict()
-            time_result[self.time_units] = time
-            for node in self.sfd.nodes:
-                
-                # process variable name to match Stella standard
-                node_output = node.replace('_', ' ')
-                if node_output[0].isdigit():
-                    node_output = '"{}"'.format(node_output)
-                
-                for ix in self.__name_values[time][node].keys():
-                    if ix == 'nosubscript':
-                        time_result[node_output] = values[node]['nosubscript']
-                    else:
-                        time_result[node_output+'[{}]'.format(ix.replace('__cmm__', ', ').replace('_', ' '))] = values[node][ix]
-            full_result[time] = time_result
-        df_full_result = pd.DataFrame.from_dict(full_result).transpose()
-        df_full_result.set_index(self.time_units, inplace=True)
-        return df_full_result
-
-    # Draw results
-    def display_results(self, variables=None, dpi=100, rtn=False):
-        if variables is None:
-            variables = list(self.sfd.nodes)
-
-        figure_0 = plt.figure(
-            figsize=(8, 6),
-            facecolor='whitesmoke',
-            edgecolor='grey',
-            dpi=dpi
-        )
-
-        plt.xlabel('Steps {} (Time: {} / Dt: {})'.format(
-            int(self.simulation_time / self.dt),
-            self.simulation_time,
-            self.dt))
-        plt.ylabel('Behavior')
-        y_axis_minimum = 0
-        y_axis_maximum = 0
-        for name in variables:
-            if self.sfd.nodes[name]['external'] is True:
-                values = self.data_feeder.buffers_list[name]
-            elif self.sfd.nodes[name]['value'] is not None:  # otherwise, dont's plot
-                values = self.sfd.nodes[name]['value']
+                    try:
+                        self.full_result[var].append(value)
+                    except:
+                        self.full_result[var] = [value]
+        if to_csv or flatten:
+            self.full_result_flattened = dict()
+            for var, result in self.full_result.items():
+                if type(result) is dict:
+                    for sub, subresult in result.items():
+                        self.full_result_flattened[var+'[{}]'.format(', '.join(sub))] = subresult
+                else:
+                    self.full_result_flattened[var] = result
+        if to_csv:
+            import pandas as pd
+            df_full_result = pd.DataFrame.from_dict(self.full_result_flattened)
+            if type(to_csv) is not str:
+                df_full_result.to_csv('asdm.csv')
             else:
-                continue  # no value found for this variable
-            # print("Engine: getting min/max for", name)
-            # set the range of axis based on this element's behavior
-            # 0 -> end of period (time), 0 -> 100 (y range)
-
-            name_minimum = min(values)
-            name_maximum = max(values)
-            if name_minimum == name_maximum:
-                name_minimum *= 2
-                name_maximum *= 2
-                # print('Engine: Centered this straight line')
-
-            if name_minimum < y_axis_minimum:
-                y_axis_minimum = name_minimum
-
-            if name_maximum > y_axis_maximum:
-                y_axis_maximum = name_maximum
-
-            # print("Engine: Y range: ", y_axis_minimum, '-', y_axis_maximum)
-            plt.axis([0, self.simulation_time / self.dt, y_axis_minimum, y_axis_maximum])
-            # print("Engine: Time series of {}:".format(name))
-            # for i in range(len(values)):
-            #     print("Engine: {0} at DT {1} : {2:8.4f}".format(name, i+1, values[i]))
-            plt.plot(values, label=name)
-        plt.legend()
-        if rtn:  # if called from external, return the figure without show it.
-            return figure_0
-        else:  # otherwise, show the figure.
-            plt.show()
-
-    # Draw CLD with auto generated layout
-    def draw_cld_with_auto_gen_layout(self, rtn=False):
-        figure_3 = plt.figure(num='cld_auto_layout')
-        subplot1 = figure_3.add_subplot(111)
-
-        pp = pprint.PrettyPrinter(indent=4)
-
-        # generate edge colors from polarities
-        edge_attrs_polarity = nx.get_edge_attributes(self.sfd, 'polarity')
-        custom_edge_colors = list()
-        for edge, attr in edge_attrs_polarity.items():
-            # print(attr)
-            color = 'dodgerblue'  # black
-            if attr == 'negative':
-                color = 'k'  # black
-            custom_edge_colors.append(color)
-
-        # TODO: Develop the layout algorithm for CLDs
-
-        # get all loops
-        loop_gen = nx.simple_cycles(self.sfd)
-
-        loops = dict()
-        loop_n = 1
-        longest_loop = 1
-        longest_length = 1
-
-        for loop in loop_gen:
-            print(loop)
-            loop_length = len(loop)
-
-            # find (one of) the longest loop(s)
-            if loop_length >= longest_length:
-                longest_loop = loop_n
-                longest_length = loop_length
-
-            loops[loop_n] = {
-                'variables': loop,
-                'length': loop_length,
-            }
-            loop_n += 1
-
-        print("Longest loop is {},length: {}, vars: {}".format(
-            longest_loop, longest_length,
-            str(loops[longest_loop]['variables'])
-            )
-        )
-
-        # get positions for all nodes
-        pos = nx.get_node_attributes(self.sfd, 'pos')
-
-        # assign random positions to nodes
-        for key in pos.keys():
-            upper_range = 1
-            lower_range = -1
-            pos[key] = [random.uniform(lower_range, upper_range),
-                        random.uniform(lower_range, upper_range)]
-        pp.pprint(pos)
-
-        # iteration parameters
-        prior_edge_length = 0.1
-        prior_hooke_law_k = 0.1
-
-        def calculate_edge_length(edge):
-            length = math.sqrt((pos[edge[0]][0] - pos[edge[1]][0]) ** 2 + (pos[edge[0]][1] - pos[edge[1]][1]) ** 2)
-            return length
-
-        def calculate_edge_trend(edge):
-            if self.sfd[edge[0]][edge[1]]['length'] > prior_edge_length:  # stretched
-                return -1
-            elif self.sfd[edge[0]][edge[1]]['length'] == prior_edge_length:
-                return 0
-            elif self.sfd[edge[0]][edge[1]]['length'] < prior_edge_length:  # compressed
-                return 1
-            else:
-                raise Exception
-
-        def calculate_edge_move(edge):
-            move_distance = abs(self.sfd[edge[0]][edge[1]]['length'] - prior_edge_length) * prior_hooke_law_k
-            return move_distance
-
-        # iteration
-        for i in range(1001):
-            subplot1.clear()
-            for edge in self.sfd.edges:
-                # print(edge)
-                self.sfd[edge[0]][edge[1]]['length'] = calculate_edge_length(edge)
-                self.sfd[edge[0]][edge[1]]['trend'] = calculate_edge_trend(edge)
-                # print(self.sfd[edge[0]][edge[1]]['length'])
-                # print(self.sfd[edge[0]][edge[1]]['trend'])
-
-            for node in self.sfd.nodes:
-                # print("for Node ", node)
-                combined_distance = np.array([0.0, 0.0])
-                for edge in self.sfd.edges(node):
-                    # print("    for Edge ", edge)
-
-                    direction = np.array(
-                        [
-                            pos[edge[0]][0] - pos[edge[1]][0],
-                            pos[edge[0]][1] - pos[edge[1]][1]
-                        ]
-                    ) * self.sfd[edge[0]][edge[1]]['trend']
-
-                    distance = direction * calculate_edge_move(edge)
-                    # print('   ', distance)
-
-                    combined_distance += distance
-
-                # print("    Combined distance ", combined_distance)
-                pos[node] += combined_distance
-
-            # node_pos_adjustment_by_loop_center():
-            """
-            # the ORIGINAL object here is to decide the rad for one edge.
-            # by default rad is set to 0.
-            # one edge may appear in multiple loops.
-            # therefore we take the cumulative rad.
-
-            # Update:
-            # Because networkx and matplotlib do not support specifying specifying rad for each edge,
-            # we choose to use cross product to move the node, instead of change the rad
-            """
-            # TODO: re-write a node-edge based function for drawing CLD.
-            for loop_n, loop in loops.items():
-                # calculate the arithmetic center for all nodes
-                x_sum = 0.0
-                y_sum = 0.0
-                for node in loop['variables']:
-                    x_sum += pos[node][0]
-                    y_sum += pos[node][1]
-                center = (x_sum / loop['length'], y_sum / loop['length'])
-                # print(center)
-
-                # assign rad for all edges
-                loop_edges = list(zip(loop['variables'], loop['variables'][1:] + [loop['variables'][0]]))
-                for edge in loop_edges:
-                    edge_vector = np.array(  # from end to head
-                        [
-                            pos[edge[1]][0] - pos[edge[0]][0],
-                            pos[edge[1]][1] - pos[edge[0]][1]
-                        ]
-                    )
-                    center_vector = np.array(  # from end to center
-                        [
-                            center[0] - pos[edge[0]][0],
-                            center[1] - pos[edge[0]][1]
-                        ]
-                    )
-                    cross_product = np.cross(edge_vector, center_vector)
-                    # print('cp', cross_product)
-
-                    head_vector = np.array(  # from head to center
-                        [
-                            center[0] - pos[edge[1]][0],
-                            center[1] - pos[edge[1]][1]
-                        ]
-                    )
-
-                    if cross_product >= 0:  # move head toward the center
-                        pos[edge[1]] += head_vector * 0.1
-
-            if i % 100 == 0:
-                print("Iteration step:", i, "/1000")
-                if i % 500 == 0:
-
-                    nx.draw_networkx(
-                        self.sfd,
-                        pos=pos,
-                        connectionstyle='arc3, rad=-0.3',
-                        # connectionstyle=custom_edge_connectionstyle,
-                        node_color='gold',
-                        edge_color=custom_edge_colors,
-                        arrowsize=20,
-                        font_size=9
-                    )
-                    plt.axis('off')  # turn off axis for structure display
-                    plt.show()
-
-    # Draw graphs with customized labels and colored connectors
-    def draw_graphs_with_function_value_polarity(self, rtn=False):
-        self.figure2 = plt.figure(num='cld')
-
-        plt.clf()
-        # generate node labels
-        node_attrs_function = nx.get_node_attributes(self.sfd, 'function')
-        node_attrs_value = nx.get_node_attributes(self.sfd, 'value')
-        custom_node_labels = dict()
-        for node, attr in node_attrs_function.items():
-            # when element only has a value but no function
-            if attr is None:
-                attr = node_attrs_value[node][0]
-            # when the element has a function
-            else:
-                attr = self.equation_to_text(attr)
-            custom_node_labels[node] = "{}={}".format(node, attr)
-
-        # generate edge polarities
-        edge_attrs_polarity = nx.get_edge_attributes(self.sfd, 'polarity')
-        custom_edge_colors = list()
-        for edge, attr in edge_attrs_polarity.items():
-            color = 'k'  # black
-            if attr == 'negative':
-                color = 'b'  # blue
-            custom_edge_colors.append(color)
-
-        # generate node positions
-        pos = nx.get_node_attributes(self.sfd, 'pos')
-
-        nx.draw_networkx(
-            G=self.sfd,
-            labels=custom_node_labels,
-            font_size=10,
-            node_color='skyblue',
-            edge_color=custom_edge_colors,
-            pos=pos,
-            ax=plt.gca()
-        )
-
-        plt.gca().invert_yaxis()
-        plt.axis('off')  # turn off axis for structure display
-
-        if rtn:
-            return self.figure2
+                df_full_result.to_csv(to_csv)
+        if flatten:
+            return self.full_result_flattened
         else:
-            plt.show()
+            return self.full_result
+    
+    def display_results(self, variables=None):
+        if type(variables) is list and len(variables) == 0:
+            variables = list((self.stock_equations | self.flow_equations | self.aux_equations).keys())
+
+        if type(variables) is str:
+            variables = [variables]
+
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+        
+        if len(self.full_result) == 0:
+            self.full_result = self.export_simulation_result()
+
+        for var in variables:
+            result = self.full_result[var]
+            if type(result) is list:
+                ax.plot(result, label='{}'.format(var))
+            else:
+                for sub, subresult in self.full_result[var].items():
+                    ax.plot(subresult, label='{}[{}]'.format(var, ', '.join(sub)))
+        
+        ax.legend()
+        plt.show()                    
+
+
+if __name__ == '__main__':
+
+    #### Test Models ###
+
+    # model = Structure(from_xmile='BuiltinTestModels/MOD.stmx')
+    # model = Structure(from_xmile='BuiltinTestModels/MOD_arrayed.stmx')
+    # model = Structure(from_xmile='BuiltinTestModels/Min_Max.stmx')
+    # model = Structure(from_xmile='BuiltinTestModels/Non-negative_stocks.stmx')
+    # model = Structure(from_xmile='BuiltinTestModels/Isolated_var.stmx')
+
+    # model = Structure(from_xmile='BuiltinTestModels/Goal_gap.stmx')
+
+    # model = Structure(from_xmile='BuiltinTestModels/Goal_gap_array.stmx')
+    # model = Structure(from_xmile='BuiltinTestModels/Array_parallel_reference.stmx')
+    # model = Structure(from_xmile='BuiltinTestModels/Array_cross_reference.stmx')
+    # model = Structure(from_xmile='BuiltinTestModels/Array_cross_reference_inference.stmx')
+    
+    # model = Structure(from_xmile='BuiltInTestModels/Built_in_vars.stmx')
+    
+    # model = Structure(from_xmile='BuiltInTestModels/Logic.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/IF_THEN_ELSE.stmx')
+    
+    # model = Structure(from_xmile='BuiltInTestModels/Graph_function.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/LOOKUP.stmx')
+
+    # model = Structure(from_xmile='BuiltInTestModels/INIT.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/Delays.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/Delays2.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/History.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/Smooth.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/Time_related_functions.stmx')
+    
+    # model = Structure(from_xmile='BuiltInTestModels/Conveyor.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/Conveyor_leakage1.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/Conveyor_leakage2.stmx')
+    # model = Structure(from_xmile='BuiltInTestModels/Conveyor_initialisation.stmx')
+
+    ### Production Models ###
+
+    # model = Structure(from_xmile='TestModels/Elective Recovery Model.stmx')
+    # model = Structure(from_xmile='TestModels/Elective Recovery Model_renamed.stmx')
+    # model = Structure(from_xmile='../PhD_Progress/CaseStudies/CaseStudy1/CaseStudy1Codes/CaseStudy1Models/CS1SFD3.stmx')
+    model=Structure(from_xmile='TestModels/2022_07_14 no milk without meat.stmx')
+    # model=Structure(from_xmile='TestModels/TempTest1.stmx')
+
+    model.simulate()
+    model.export_simulation_result(to_csv=True)
+    # model.display_results([
+    #     # 'thirteen_wk_wait_for_urgent_treatment',
+    #     # 'Routine_treatment',
+    #     # 'percent_becoming_urgent_by_waiting_time_pa'
+    #     ])
+
+    # vars_to_view = [
+    #     # 'thirteen_wk_wait_for_urgent_treatment', 
+    #     # 'Negative_test_results', 
+    #     # 'COVID_modified_percent_urgent', 
+    #     # 'Undergoing_diagnostic_tests',
+    #     # 'Positive_test_results_urgent',
+    #     # 'Less_than_6mth_to_urgent',
+    #     # 'Between_6_to_12mth_wait_to_urgent',
+    #     # 'Between_12_to_24mth_wait_to_urgent',
+    #     # 'Urgent_treatment',
+    #     # 'Total_treatment_capacity',
+    #     # 'Routine_treatment',
+    #     # 'Net_COVID_induced_changes_in_underlying_health_needs'
+    #     ]
