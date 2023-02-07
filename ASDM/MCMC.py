@@ -1,4 +1,5 @@
-import theano.tensor as tt
+# import theano.tensor as tt
+import pytensor.tensor as pt
 # import cython
 # cimport cython
 import numpy as np
@@ -7,7 +8,7 @@ import warnings
 from scipy.optimize import approx_fprime
 
 
-class LogLike(tt.Op):
+class LogLike(pt.Op):
 
     """
     Adapted from https://docs.pymc.io/notebooks/blackbox_external_likelihood.html
@@ -18,8 +19,8 @@ class LogLike(tt.Op):
     log-likelihood)
     """
 
-    itypes = [tt.dvector]  # expects a vector of parameter values when called
-    otypes = [tt.dscalar]  # outputs a single scalar value (the log likelihood)
+    itypes = [pt.dvector]  # expects a vector of parameter values when called
+    otypes = [pt.dscalar]  # outputs a single scalar value (the log likelihood)
 
     def __init__(self, loglike):
         # add inputs as class attributes
@@ -164,10 +165,10 @@ def gradients_scipy(vals, func, releps=1e-3):
 
 
 # define a theano Op for our likelihood function
-class LogLikeWithGrad(tt.Op):
+class LogLikeWithGrad(pt.Op):
 
-    itypes = [tt.dvector]  # expects a vector of parameter values when called
-    otypes = [tt.dscalar]  # outputs a single scalar value (the log likelihood)
+    itypes = [pt.dvector]  # expects a vector of parameter values when called
+    otypes = [pt.dscalar]  # outputs a single scalar value (the log likelihood)
 
     # def __init__(self, loglike, data, x, sigma):
     def __init__(self, loglike):
@@ -214,15 +215,15 @@ class LogLikeWithGrad(tt.Op):
         return [g[0] * self.logpgrad(theta)]
 
 
-class LogLikeGradOp(tt.Op):
+class LogLikeGradOp(pt.Op):
 
     """
     This Op will be called with a vector of values and also return a vector of
     values - the gradients in each dimension.
     """
 
-    itypes = [tt.dvector]
-    otypes = [tt.dvector]
+    itypes = [pt.dvector]
+    otypes = [pt.dvector]
 
     # def __init__(self, loglike, data, x, sigma):
     def __init__(self, loglike):
