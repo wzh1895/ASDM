@@ -237,7 +237,8 @@ class Solver(object):
         #     else:
         #         print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', parsed_equation.nodes(data=True))
         
-        if type(parsed_equation) is dict:
+        if type(parsed_equation) is dict:  
+            # This section is not active; only kept for potential future reference
             # if verbose:
             #     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'type of parsed_equation: dict')
             value = dict()
