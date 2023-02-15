@@ -7,7 +7,7 @@
 		<vendor>isee systems, inc.</vendor>
 		<product version="2.0" isee:build_number="2176" isee:saved_by_v1="true" lang="en">Stella Professional</product>
 	</header>
-	<sim_specs isee:sim_duration="1.5" isee:simulation_delay="0.25" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="false" isee:loop_exhaustive_allowed="1000">
+	<sim_specs isee:sim_duration="1" isee:simulation_delay="0.166667" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="false" isee:loop_exhaustive_allowed="1000">
 		<start>0</start>
 		<stop>6</stop>
 		<dt reciprocal="true">4</dt>
@@ -18,6 +18,11 @@
 		<isee:time_format name="Builtin" type="adaptive"/>
 	</isee:time_formats>
 	<default_format precision="full" scale_by="1"/>
+	<data>
+		<export resource="/Users/jonker/Library/CloudStorage/OneDrive-UniversityofStrathclyde/ASDM/stella.csv" interval="DT" precomputed="false" isee:format="numbers">
+			<all/>
+		</export>
+	</data>
 	<model_units>
 		<unit name="Months">
 			<eqn/>

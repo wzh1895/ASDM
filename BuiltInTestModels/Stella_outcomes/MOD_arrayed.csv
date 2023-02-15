@@ -1,0 +1,6 @@
+Months,AMODB 2[Element 1],AMODB 2[Element 2],c 2,MOD0 2[Element 1],MOD0 2[Element 2],output 2[Element 1],output 2[Element 2],output 3[Element 1],output 3[Element 2],output 4[Element 1],output 4[Element 2]
+1,2,2,2,1,1,1,1,1,1,0,0
+1.25,2,2,2,1.25,1.25,1.25,1.25,1.25,1.25,0.75,0.75
+1.5,2,2,2,1.5,1.5,1.5,1.5,1.5,1.5,0.5,0.5
+1.75,2,2,2,1.75,1.75,1.75,1.75,1.75,1.75,0.25,0.25
+2,2,2,2,2,2,0,0,0,0,0,0
