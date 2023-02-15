@@ -18,7 +18,7 @@ Hierarchy in parsing
 class Parser(object):
     def __init__(self):
         self.numbers = {
-            'NUMBER': r'(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?'
+            'NUMBER': r'^-?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?' # TODO 1+(-6) still doesn't work, although ^ is a workaround
         }
         self.special_symbols = {
             'COMMA': r',',
@@ -217,7 +217,7 @@ class Parser(object):
                 'operator':['SMTH3'],
                 'operand':['FUNC']
             },
-            'HISTORY__LPAREN__DOT+__RPAREN':{
+            'HISTORY__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'HISTORY'],
                 'operator':['HISTORY'],
                 'operand':['FUNC']
@@ -487,7 +487,8 @@ if __name__ == '__main__':
     string_g = '( IF TIME < DEMAND_CHANGE_START_YEAR THEN BASELINE_PC_CONSUMPTION_OF_BOVINE_MEAT ELSE (1-SWITCH_CONSUMPTION_RECOMMENDATIONS_0_off_1_on)*BASELINE_PC_CONSUMPTION_OF_BOVINE_MEAT+recommended_pc_consumption_of_bovine_meat*SWITCH_CONSUMPTION_RECOMMENDATIONS_0_off_1_on )'
     string_h = '( IF a < b THEN c ELSE (1-d)*c+e*d )' # equivalent to string_g
     string_i = '(Waiting_6mths_for_treatment*(percent_becoming_urgent_by_waiting_time_pa[Less_than_6mths]/100))/52'
+    string_j = 'HISTORY(a+1,  1)'
 
     parser = Parser()
-    graph = parser.parse(string_i, verbose=True)
+    graph = parser.parse(string_j, verbose=True)
     parser.plot_ast(graph=graph)
