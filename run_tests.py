@@ -32,7 +32,9 @@ for t in path_tests.iterdir():
 def test(test_path, outcome_path):
     # Generate ASDM outcome
     model = Structure(from_xmile=test_path.resolve())
-    model.simulate()
+    
+    model.simulate(dynamic=False)
+
     df_asdm = model.export_simulation_result(format='df')
 
     # Process ASDM outcome for comparison
