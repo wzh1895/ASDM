@@ -1,16 +1,13 @@
-import sys
 import traceback
 import logging
-sys.path.append('ASDM')
 import pathlib
-import pprint
 import pandas as pd
 import numpy as np
-# from ASDM.EngineStatic import Structure
-from ASDM.Engine import Structure
+from ASDM import Structure
 
 ### Load the tests and outcomes ###
 
+# Run this script at the project's root directory
 path_tests = pathlib.Path('./BuiltinTestModels')
 path_test_results = pathlib.Path('./BuiltinTestModels/Stella_outcomes')
 tests = list()
@@ -33,7 +30,7 @@ def test(test_path, outcome_path):
     # Generate ASDM outcome
     model = Structure(from_xmile=test_path.resolve())
     
-    model.simulate(dynamic=False)
+    model.simulate(dynamic=True)
 
     df_asdm = model.export_simulation_result(format='df')
 
@@ -97,5 +94,10 @@ print('Total tests: {}'.format(len(tests)))
 print('Passed     : {}'.format(len(passed)))
 print('Failed     : {}'.format(len(failed)))
 print()
+print('Passed tests:')
+for f in passed:
+    print('             {:0>2} {}'.format(f[0], f[1]))
+print()
+print('Failed tests:')
 for f in failed:
     print('             {:0>2} {}'.format(f[0], f[1]))
