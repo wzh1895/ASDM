@@ -38,6 +38,7 @@ class Parser(object):
             'PLUS': r'\+',
             'MINUS': r'\-',
             'TIMES': r'\*',
+            'FLOORDIVIDE': r'\/\/',
             'DIVIDE': r'\/',
             'MOD': r'MOD(?=\s)', # there are spaces surronding MOD, but the front space is strip()-ed
         }
@@ -114,6 +115,11 @@ class Parser(object):
             'FUNC__DIVIDE__FUNC': {
                 'token':['FUNC', 'DIVIDE'],
                 'operator':['DIVIDE'],
+                'operand':['FUNC']
+                },
+            'FUNC__FLOORDIVIDE__FUNC': {
+                'token':['FUNC', 'FLOORDIVIDE'],
+                'operator':['FLOORDIVIDE'],
                 'operand':['FUNC']
                 },
         }
@@ -322,131 +328,131 @@ class Parser(object):
         return items
 
     def parse(self, string, verbose=False, max_iter=100):
-        if type(string) is dict:
-            parsed_equations = dict()
-            for k, ks in string.items():
-                parsed_equations[k] = self.parse(ks)
-            return parsed_equations
-        else:
+        # if type(string) is dict:
+        #     parsed_equations = dict()
+        #     for k, ks in string.items():
+        #         parsed_equations[k] = self.parse(ks)
+        #     return parsed_equations
+        # else:
+        if verbose:
+            print(self.HEAD, 'Parse string:', string)
+        items = self.tokenisation(string)
+        if verbose:
+            print(self.HEAD, 'Items:', items)
+        graph = nx.DiGraph()
+        if len(items) == 1:
+            if items[0][0] == 'NAME':
+                operator = ['EQUALS']
+            elif items[0][0] == 'NUMBER':
+                operator = ['IS']
+                items[0][1] = float(items[0][1])
+            graph.add_node(
+                self.node_id, 
+                operator=operator,
+                operands=items
+                )
+            graph.add_edge('root', self.node_id)
+            return graph
+        r = max_iter
+        while len(items) > 1 and r > 0:
             if verbose:
-                print(self.HEAD, 'Parse string:', string)
-            items = self.tokenisation(string)
+                print('\n'+self.HEAD, 'Iter:', r)
+            r -= 1 # use this line to put a stop by number of iterations
+            if r == 0:
+                raise Exception('Parser timeout on String\n  {}, \nItems\n  {}'.format(string, items))
+            items_changed = False
             if verbose:
-                print(self.HEAD, 'Items:', items)
-            graph = nx.DiGraph()
-            if len(items) == 1:
-                if items[0][0] == 'NAME':
-                    operator = ['EQUALS']
-                elif items[0][0] == 'NUMBER':
-                    operator = ['IS']
-                    items[0][1] = float(items[0][1])
-                graph.add_node(
-                    self.node_id, 
-                    operator=operator,
-                    operands=items
-                    )
-                graph.add_edge('root', self.node_id)
-                return graph
-            r = max_iter
-            while len(items) > 1 and r > 0:
-                if verbose:
-                    print('\n'+self.HEAD, 'Iter:', r)
-                r -= 1 # use this line to put a stop by number of iterations
-                if r == 0:
-                    raise Exception('Parser timeout on String\n  {}, \nItems\n  {}'.format(string, items))
-                items_changed = False
-                if verbose:
-                    print(self.HEAD, '---Parsing---','\n')
-                    print(self.HEAD, 'Items', items)
-                    print(self.HEAD, 'Nodes', graph.nodes.data(True))
-                    print(self.HEAD, 'Edges', graph.edges.data(True))
+                print(self.HEAD, '---Parsing---','\n')
+                print(self.HEAD, 'Items', items)
+                print(self.HEAD, 'Nodes', graph.nodes.data(True))
+                print(self.HEAD, 'Edges', graph.edges.data(True))
 
-                for pattern_set in [ # the order of the following patterns is IMPORTANT
-                    self.patterns_sub_var,
-                    self.patterns_num,
-                    self.patterns_var,
-                    self.patterns_custom_func,
-                    self.patterns_built_in_func,
-                    self.patterns_brackets,
-                    self.patterns_arithmetic_1,
-                    self.patterns_arithmetic_2,
-                    self.patterns_arithmetic_3,
-                    self.patterns_logic,
-                    self.patterns_conditional,
-                    ]: # loop over all patterns
-                    for i in range(len(items)): # loop over all positions for this pattern
+            for pattern_set in [ # the order of the following patterns is IMPORTANT
+                self.patterns_sub_var,
+                self.patterns_num,
+                self.patterns_var,
+                self.patterns_custom_func,
+                self.patterns_built_in_func,
+                self.patterns_brackets,
+                self.patterns_arithmetic_1,
+                self.patterns_arithmetic_2,
+                self.patterns_arithmetic_3,
+                self.patterns_logic,
+                self.patterns_conditional,
+                ]: # loop over all patterns
+                for i in range(len(items)): # loop over all positions for this pattern
+                    # if verbose:
+                        # print(self.HEAD, 'Position:', i)
+                    #     print(self.HEAD, 'Checking item:', i, items[i])
+                    for pattern, func in pattern_set.items():
+                        pattern = pattern.split('__')
                         # if verbose:
-                            # print(self.HEAD, 'Position:', i)
-                        #     print(self.HEAD, 'Checking item:', i, items[i])
-                        for pattern, func in pattern_set.items():
-                            pattern = pattern.split('__')
-                            # if verbose:
-                                # print(self.HEAD, "Searching for {} with operator {}".format(pattern, func['operator']))
-                            pattern_len = len(pattern)
+                            # print(self.HEAD, "Searching for {} with operator {}".format(pattern, func['operator']))
+                        pattern_len = len(pattern)
 
-                            if len(items) - i >= pattern_len:
-                                matched = True
-                                for j in range(pattern_len): # matching pattern at this position
-                                    if pattern[j] == items[i+j][0]: # exact match
-                                        pass
-                                    else: 
-                                        if pattern[j] == 'DOT+': # fuzzy match
-                                            dotplus_matched = False
-                                            # print(self.HEAD, 'Matching DOT+')
-                                            try:
-                                                next_to_match = pattern[j+1] # it is pattern[j+1] that matters
-                                                # print(self.HEAD, 'Next to match:', next_to_match)
-                                                for k in range(i+j+1, len(items)):
-                                                    if next_to_match == items[k][0]:
-                                                        # print(self.HEAD, 'Found next to match:', next_to_match, 'at', k, items[k])
-                                                        pattern_len = k - i + 1
-                                                        dotplus_matched = True
-                                                        break                 
-                                            except IndexError: # 'DOT+' is the last in the pattern
-                                                pass
-                                            if dotplus_matched:
-                                                break
-                                        else:
-                                            matched = False
+                        if len(items) - i >= pattern_len:
+                            matched = True
+                            for j in range(pattern_len): # matching pattern at this position
+                                if pattern[j] == items[i+j][0]: # exact match
+                                    pass
+                                else: 
+                                    if pattern[j] == 'DOT+': # fuzzy match
+                                        dotplus_matched = False
+                                        # print(self.HEAD, 'Matching DOT+')
+                                        try:
+                                            next_to_match = pattern[j+1] # it is pattern[j+1] that matters
+                                            # print(self.HEAD, 'Next to match:', next_to_match)
+                                            for k in range(i+j+1, len(items)):
+                                                if next_to_match == items[k][0]:
+                                                    # print(self.HEAD, 'Found next to match:', next_to_match, 'at', k, items[k])
+                                                    pattern_len = k - i + 1
+                                                    dotplus_matched = True
+                                                    break                 
+                                        except IndexError: # 'DOT+' is the last in the pattern
+                                            pass
+                                        if dotplus_matched:
                                             break
-                                if matched:
-                                    matched_items = items[i:i+pattern_len]
-                                    if verbose:
-                                        print(self.HEAD, "Found {} at {}".format(pattern, matched_items))
-                                    operands = []
-                                    for item in matched_items:
-                                        if item[0] in func['operand']:
-                                            if item[0] in ['NAME', 'NUMBER']:
-                                                if item[0] == 'NUMBER':
-                                                    # if item is a part of a[1,ele1] then it should remain str
-                                                    # otherwise it should be converted to float
-                                                    # print(self.HEAD, 'found a number', item, 'func:', func['operator'])
-                                                    if func['operator'][0] == 'IS':
-                                                        item[1] = float(item[1])
-                                            else:
-                                                # print(self.HEAD, 'adding edge from {} to {}'.format(self.node_id, item[2]))
-                                                graph.add_edge(self.node_id, item[2])
-                                            operands.append(item)
-                                    graph.add_node(
-                                        self.node_id, 
-                                        operator=func['operator'],
-                                        operands=operands
-                                        )
-                                    items = items[0:i] + [func['token'][:] + [self.node_id]] + items[i+pattern_len:]
-                                    items_changed = True
-                                    self.node_id += 1
-                                    break # items has been updated and got a new length, need to start the for loop over again
-                        
-                        if items_changed:
-                            break
+                                    else:
+                                        matched = False
+                                        break
+                            if matched:
+                                matched_items = items[i:i+pattern_len]
+                                if verbose:
+                                    print(self.HEAD, "Found {} at {}".format(pattern, matched_items))
+                                operands = []
+                                for item in matched_items:
+                                    if item[0] in func['operand']:
+                                        if item[0] in ['NAME', 'NUMBER']:
+                                            if item[0] == 'NUMBER':
+                                                # if item is a part of a[1,ele1] then it should remain str
+                                                # otherwise it should be converted to float
+                                                # print(self.HEAD, 'found a number', item, 'func:', func['operator'])
+                                                if func['operator'][0] == 'IS':
+                                                    item[1] = float(item[1])
+                                        else:
+                                            # print(self.HEAD, 'adding edge from {} to {}'.format(self.node_id, item[2]))
+                                            graph.add_edge(self.node_id, item[2])
+                                        operands.append(item)
+                                graph.add_node(
+                                    self.node_id, 
+                                    operator=func['operator'],
+                                    operands=operands
+                                    )
+                                items = items[0:i] + [func['token'][:] + [self.node_id]] + items[i+pattern_len:]
+                                items_changed = True
+                                self.node_id += 1
+                                break # items has been updated and got a new length, need to start the for loop over again
+                    
                     if items_changed:
                         break
-            
-            # add root node as entry
-            graph.add_node('root')
-            graph.add_edge('root', items[0][2])
+                if items_changed:
+                    break
+        
+        # add root node as entry
+        graph.add_node('root')
+        graph.add_edge('root', items[0][2])
 
-            return graph
+        return graph
 
     def plot_ast(self, graph):
         import matplotlib.pyplot as plt
@@ -602,6 +608,29 @@ class Solver(object):
                     return o
                 else:
                     raise e
+        
+        def floor_divide(a, b):
+            try:
+                return a // b
+            except TypeError as e:
+                if type(a) is dict and type(b) is dict:
+                    # print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a//b', a, b)
+                    o = dict()
+                    for k in a:
+                        o[k] = a[k] // b[k]
+                    return o
+                elif type(a) is dict and type(b) in [int, float]:
+                    o = dict()
+                    for k in a:
+                        o[k] = a[k] // b
+                    return o
+                elif type(a) in [int, float] and type(b) is dict:
+                    o = dict()
+                    for k in b:
+                        o[k] = a // b[k]
+                    return o
+                else:
+                    raise e
                 
         def mod(a, b):
             try:
@@ -660,6 +689,7 @@ class Solver(object):
             'MINUS':    minus,
             'TIMES':    times,
             'DIVIDE':   divide,
+            'FLOORDIVIDE': floor_divide,
             'MIN':      min,
             'MAX':      max,
             'CON':      con,
@@ -1496,67 +1526,79 @@ class Structure(object):
         else:
             raise Exception('Unable to find {} in the current model'.format(name))
 
-    def parse_0(self, equations, parsed_equations):
-        for var, equation in equations.items():
-            # print(self.HEAD, "Parsing:", var)
-            if type(equation) is GraphFunc:
-                gfunc_name = 'GFUNC{}'.format(len(self.graph_functions_renamed))
-                self.graph_functions_renamed[gfunc_name] = equation # just for length ... for now
-                self.graph_functions[var] = equation
-                self.parser.functions.update({gfunc_name:gfunc_name+"(?=\()"}) # make name var also a function name and add it to the parser
-                self.parser.patterns_custom_func.update(
-                    {
-                        gfunc_name+'__LPAREN__FUNC__RPAREN':{ # GraphFunc(var, expr, etc.)
-                            'token':['FUNC', gfunc_name],
-                            'operator':[gfunc_name],
-                            'operand':['FUNC']
-                        },
-                    }
-                )
-                self.solver.custom_functions.update({gfunc_name:equation})
-                equation = gfunc_name+'('+ equation.eqn + ')'  # make equation into form like var(eqn), 
-                                                # where eqn is the euqaiton whose outcome is the input to GraphFunc var()
-                                                # this is also how Vensim handles GraphFunc
-                parsed_equation = self.parser.parse(equation)
-                parsed_equations[var] = parsed_equation
-            
-            elif type(equation) is Conveyor: # TODO we should also consider arrayed conveyors
-                self.conveyors[var] = {
-                    'conveyor': equation, # the Conveyor object
-                    'inflow': self.stock_flows[var]['in'],
-                    'outflow': self.stock_flows[var]['out'],
-                    'outputflow': [], # this list should have a fixed length of 1
-                    'leakflow': {},
+    def parse_1(self, var, equation):
+        if type(equation) is GraphFunc:
+            gfunc_name = 'GFUNC{}'.format(len(self.graph_functions_renamed))
+            self.graph_functions_renamed[gfunc_name] = equation # just for length ... for now
+            self.graph_functions[var] = equation
+            self.parser.functions.update({gfunc_name:gfunc_name+"(?=\()"}) # make name var also a function name and add it to the parser
+            self.parser.patterns_custom_func.update(
+                {
+                    gfunc_name+'__LPAREN__FUNC__RPAREN':{ # GraphFunc(var, expr, etc.)
+                        'token':['FUNC', gfunc_name],
+                        'operator':[gfunc_name],
+                        'operand':['FUNC']
+                    },
                 }
-                for flow in self.stock_flows[var]['out']:
-                    if flow in self.leak_conveyors:
-                        self.conveyors[var]['leakflow'][flow] = 0
-                        self.leak_conveyors[flow] = var
-                    else:
-                        self.conveyors[var]['outputflow'].append(flow)
-                        self.outflow_conveyors[flow] = var
-                equation_length = equation.length_time_units # this is the equation for its length
-                parsed_equation_len = self.parser.parse(equation_length)
+            )
+            self.solver.custom_functions.update({gfunc_name:equation})
+            equation = gfunc_name+'('+ equation.eqn + ')'  # make equation into form like var(eqn), 
+                                            # where eqn is the euqaiton whose outcome is the input to GraphFunc var()
+                                            # this is also how Vensim handles GraphFunc
+            parsed_equation = self.parser.parse(equation)
+            return parsed_equation
+        
+        elif type(equation) is Conveyor: # TODO we should also consider arrayed conveyors
+            self.conveyors[var] = {
+                'conveyor': equation, # the Conveyor object
+                'inflow': self.stock_flows[var]['in'],
+                'outflow': self.stock_flows[var]['out'],
+                'outputflow': [], # this list should have a fixed length of 1
+                'leakflow': {},
+            }
+            for flow in self.stock_flows[var]['out']:
+                if flow in self.leak_conveyors:
+                    self.conveyors[var]['leakflow'][flow] = 0
+                    self.leak_conveyors[flow] = var
+                else:
+                    self.conveyors[var]['outputflow'].append(flow)
+                    self.outflow_conveyors[flow] = var
+            equation_length = equation.length_time_units # this is the equation for its length
+            parsed_equation_len = self.parser.parse(equation_length)
 
-                equation_init_value = equation.equation # this is the equation for its initial value
-                parsed_equation_val = self.parser.parse(equation_init_value)
+            equation_init_value = equation.equation # this is the equation for its initial value
+            parsed_equation_val = self.parser.parse(equation_init_value)
 
-                parsed_equations[var] = [ # using list to store [len_eqn, val_eqn]. Don't use {'len':xxx, 'val':xxx} to avoid confusion with subscripted equation.
-                    parsed_equation_len, 
-                    parsed_equation_val
-                    ]
+            return [ # using list to store [len_eqn, val_eqn]. Don't use {'len':xxx, 'val':xxx} to avoid confusion with subscripted equation.
+                parsed_equation_len, 
+                parsed_equation_val
+                ]
 
+        else:
+            parsed_equation = self.parser.parse(equation)
+            return parsed_equation
+    
+    def parse_0(self, equations, parsed_equations, verbose=False):
+        for var, equation in equations.items():
+            if verbose:
+                print(self.HEAD, "Parsing:", var)
+                print(self.HEAD, "    Eqn:", equation)
+            
+            if type(equation) is dict:
+                parsed_equations[var] = dict()
+                for k, ks in equation.items():
+                    parsed_equations[var][k] = self.parse_1(var=var, equation=ks)
+            
             else:
-                parsed_equation = self.parser.parse(equation)
-                # parsed_equation = self.parser.parse(equation, verbose=True)
-                parsed_equations[var] = parsed_equation
+                parsed_equations[var] = self.parse_1(var=var, equation=equation)
+            
 
-    def parse(self):
+    def parse(self, verbose=False):
         # string equation -> calculation tree
 
-        self.parse_0(self.stock_equations, self.stock_equations_parsed)
-        self.parse_0(self.flow_equations, self.flow_equations_parsed)
-        self.parse_0(self.aux_equations, self.aux_equations_parsed)
+        self.parse_0(self.stock_equations, self.stock_equations_parsed, verbose=verbose)
+        self.parse_0(self.flow_equations, self.flow_equations_parsed, verbose=verbose)
+        self.parse_0(self.aux_equations, self.aux_equations_parsed, verbose=verbose)
         
     def is_dependent(self, var1, var2):
         # determine if var2 depends on var1, i.e., var1 --> var2 or var1 appears in var2's equation
@@ -1867,7 +1909,7 @@ class Structure(object):
             else:
                 self.df_debug_against = pd.read_csv(debug_against)
 
-        self.parse()
+        self.parse(verbose=verbose)
 
         if time is None:
             time = self.sim_specs['simulation_time']
