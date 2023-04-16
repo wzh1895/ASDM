@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "asdm"
+description = "ASDM Engine"
+readme = "README.md"
+requires-python = "==3.9.12"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Wang Zhao", email = "wang.zhao@strath.ac.uk" },
+    { name = "Matt Stammers", email = "matthew.stammers@uhs.nhs.uk" },
+]
+dependencies = [
+    "matplotlib==3.5.1",
+    "networkx==2.6.3",
+    "numpy==1.21.5",
+    "pandas==1.3.5",
+    "pymc3==3.11.4",
+    "scipy==1.7.1",
+    "theano-pymc==1.1.2",
+    "lxml==4.9.1",
+    "beautifulsoup4==4.11.1",
+    "tqdm==4.64.0",
+    "ipywidgets==7.6.5",
+    "openpyxl==3.0.10",
+    "ipykernel==6.22.0",
+    "streamlit==1.20.0"
+]
+
+dynamic = ["version"]
+
+
+[project.urls]
+Homepage = "https://github.com/wzh1895/ASDM/tree/dev"
+
+[project.optional-dependencies]
+eda = [
+    "black",
+    "bokeh",
+    "holoviews",
+    "isort",
+    "jupyterlab_code_formatter",
+    "jupyterlab",
+    "seaborn",
+]
+dev = [
+    "mkdocs-material",
+    "mkdocs",
+    "mkdocstrings-python",
+    "mkdocstrings",
+    "nbstripout",
+    "pre-commit",
+    "requests-cache",
+    "pyyaml"
+]
+
+[tool.isort]
+profile = "black"
