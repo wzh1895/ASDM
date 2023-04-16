@@ -131,9 +131,16 @@ dmypy.json
 # OS
 .DS_Store
 
+# OS
+.DS_Store
+
 # Customised
 TestModels/
+Notes/
+Discarded/
+
 BuiltInTestModels/*.isdb
+
 Smoking_Cessation_Model.png
 Smoking_Cessation_ASDM_model.ipynb
 Fix_Smoking_Cessation_ASDM_model.ipynb
@@ -142,3 +149,16 @@ ASDM/ValidationOutcomeSmokingCessation.ipynb
 ply/
 sly/
 Notes/
+
+ASDM/ValidationOutcomeSmokingCessation.ipynb
+3-From_XMILE_ERM.ipynb
+3-From_XMILE_Endoscopy.ipynb
+Elective Recovery Model flattened.xlsx
+
+.vscode/launch.json
+asdm.csv
+stella.csv
+ValidateSimuOutcomes.ipynb
+comparison.csv
+asdm_outcome.csv
+stella_outocome.csv

@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xmile version="1.0" xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0" xmlns:isee="http://iseesystems.com/XMILE">
+	<header>
+		<smile version="1.0" namespace="std, isee"/>
+		<name>Non-negative_stocks_with_flows</name>
+		<uuid>537894ae-ccc9-463b-b0ee-a643f5e1cbb8</uuid>
+		<vendor>isee systems, inc.</vendor>
+		<product version="2.0" isee:build_number="2176" isee:saved_by_v1="true" lang="en">Stella Professional</product>
+	</header>
+	<sim_specs isee:sim_duration="1.5" isee:simulation_delay="0.214286" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="false" isee:loop_exhaustive_allowed="1000">
+		<start>1</start>
+		<stop>8</stop>
+		<dt reciprocal="true">1</dt>
+	</sim_specs>
+	<isee:prefs show_module_prefix="true" live_update_on_drag="true" show_restore_buttons="false" layer="model" interface_scale_ui="true" interface_max_page_width="10000" interface_max_page_height="10000" interface_min_page_width="0" interface_min_page_height="0" rerun_on_structure_change="false" saved_runs="1" keep="false" rifp="true"/>
+	<isee:multiplayer_settings include_chat="true" allow_observers="false" advance_time_increment="1" observer_start_page="home_page" enabled="false"/>
+	<isee:time_formats default_format="Builtin">
+		<isee:time_format name="Builtin" type="adaptive"/>
+	</isee:time_formats>
+	<default_format/>
+	<data>
+		<export resource="/Users/jonker/Library/CloudStorage/OneDrive-UniversityofStrathclyde/ASDM/stella.csv" interval="DT" precomputed="false" isee:format="numbers">
+			<all/>
+		</export>
+	</data>
+	<model_units/>
+	<model>
+		<variables>
+			<stock name="Stock 1">
+				<eqn>OutFlow_1+OutFlow_2-20</eqn>
+				<inflow>InFlow</inflow>
+				<outflow>OutFlow_1</outflow>
+				<outflow>OutFlow_2</outflow>
+				<non_negative/>
+			</stock>
+			<flow name="OutFlow 1">
+				<eqn>50</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="InFlow">
+				<eqn>30</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="OutFlow 2">
+				<eqn>10</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Converter 1">
+				<eqn>OutFlow_1</eqn>
+			</aux>
+			<aux name="Converter 2">
+				<eqn>OutFlow_2</eqn>
+			</aux>
+			<aux name="Converter 3">
+				<eqn>Stock_1</eqn>
+			</aux>
+			<stock name="Stock 2">
+				<eqn>0</eqn>
+				<inflow>InFlow2</inflow>
+				<non_negative/>
+			</stock>
+			<flow name="InFlow2">
+				<eqn>-3</eqn>
+				<non_negative/>
+			</flow>
+			<stock name="Stock 3">
+				<eqn>20</eqn>
+				<outflow>Flow_1</outflow>
+				<outflow>Flow_2</outflow>
+				<non_negative/>
+			</stock>
+			<stock name="Stock 4">
+				<eqn>20</eqn>
+				<outflow>Flow_3</outflow>
+				<outflow>Flow_4</outflow>
+				<non_negative/>
+			</stock>
+			<flow name="Flow 1">
+				<eqn>15</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Flow 2">
+				<eqn>15</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Flow 3">
+				<eqn>15</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Flow 4">
+				<eqn>15</eqn>
+				<non_negative/>
+			</flow>
+			<stock name="Stock 5">
+				<eqn>20</eqn>
+				<inflow>Flow_5</inflow>
+				<outflow>Flow_6</outflow>
+				<outflow>Flow_7</outflow>
+				<outflow>Flow_8</outflow>
+				<non_negative/>
+			</stock>
+			<flow name="Flow 5">
+				<eqn>20</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Flow 6">
+				<eqn>10</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Flow 7">
+				<eqn>20</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Flow 8">
+				<eqn>30</eqn>
+				<non_negative/>
+			</flow>
+		</variables>
+		<views>
+			<style color="black" background="white" font_style="normal" font_weight="normal" text_decoration="none" text_align="center" vertical_text_align="center" font_color="black" font_family="Arial" font_size="10pt" padding="2" border_color="black" border_width="thin" border_style="none">
+				<text_box color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt"/>
+				<isee:loop_indicator color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt"/>
+				<numeric_display color="blue" background="white" font_size="9pt" isee:transparent="false"/>
+				<graph color="black" background="white" font_size="12pt" axis_color="#666666" grid_color="#C8C8C8" isee:graph_area_color="white" legend_position="bottom" isee:transparent="false" isee:hide_border="false" axis_title_font_style="normal" axis_title_font_weight="normal" axis_title_text_decoration="none" axis_title_text_align="center" axis_title_vertical_text_align="center" axis_title_font_color="black" axis_title_font_family="Arial" axis_title_font_size="12pt" axis_title_text_padding="2" axis_title_text_border_color="black" axis_title_text_border_width="thin" axis_title_text_border_style="none" axis_label_font_style="normal" axis_label_font_weight="normal" axis_label_text_decoration="none" axis_label_text_align="center" axis_label_vertical_text_align="center" axis_label_font_color="black" axis_label_font_family="Arial" axis_label_font_size="9pt" axis_label_text_padding="2" axis_label_text_border_color="black" axis_label_text_border_width="thin" axis_label_text_border_style="none">
+					<isee:series_styles>
+						<isee:series_style color="blue" thickness="1"/>
+						<isee:series_style color="red" thickness="1" pen_style="dot_dashed"/>
+						<isee:series_style color="fuchsia" thickness="1" pen_style="dotted"/>
+						<isee:series_style color="#008F44" thickness="1" pen_style="dashed"/>
+						<isee:series_style color="#FF7F00" thickness="1"/>
+						<isee:series_style color="#7F00FF" thickness="1" pen_style="dot_dashed"/>
+						<isee:series_style color="#0CA0FF" thickness="1" pen_style="dotted"/>
+						<isee:series_style color="lime" thickness="1" pen_style="dashed"/>
+						<isee:series_style color="#FF007F" thickness="1"/>
+						<isee:series_style color="aqua" thickness="1" pen_style="dot_dashed"/>
+						<isee:series_style color="#F586FF" thickness="1" pen_style="dotted"/>
+						<isee:series_style color="black" thickness="1" pen_style="dashed"/>
+						<isee:series_style color="#C8C8C8" thickness="1"/>
+					</isee:series_styles>
+				</graph>
+				<table color="black" background="#E0E0E0" text_align="right" font_size="12pt" orientation="vertical" wrap_text="false" isee:auto_fit="true" isee:use_alternate_row_colors="false" isee:unlimited_table_length="false" blank_column_width="80" column_width="160" interval="1" report_balances="beginning" report_flows="instantaneous" header_font_style="normal" header_font_weight="normal" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="12pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
+				<button color="black" background="#E0E0E0" font_size="12pt" border_width="thin" border_style="solid" transparent="false" corner_radius="0" isee:flat="false" icon_side="top" isee:highlight_on_hover="false" isee:highlight_color="#959595"/>
+				<isee:annotation color="black" background="#E0E0E0" font_size="12pt" border_width="thin" border_style="solid" transparent="false" corner_radius="0" isee:flat="false" icon_side="top" isee:highlight_on_hover="false" isee:highlight_color="#959595" popup_corner_radius="0" popup_background_color="#FFFECF"/>
+				<slider color="#66CC66" background="#E0E0E0" font_size="12pt" num_ticks="3" label_side="top" wrap_title="true" vertical="false" isee:fancy_appearance="false" isee:show_hover_tip="when_deciding" input_expands="true" input_width="100"/>
+				<isee:sim_speed_slider color="black" background="white"/>
+				<isee:time_slider color="#E95F74" background="silver"/>
+				<isee:pie_input color="black" background="white" font_size="12pt" legend_position="bottom" isee:transparent="false"/>
+				<knob color="#66CC66" background="#E0E0E0" font_size="12pt" label_side="bottom" wrap_title="true"/>
+				<numeric_input color="black" background="#E0E0E0" font_size="12pt" label_side="left" wrap_title="true" input_expands="false" input_width="100"/>
+				<switch color="black" background="#E0E0E0" font_size="12pt" label_side="top" wrap_title="true" isee:appearance="switch" isee:on_color="green"/>
+				<options color="black" background="white" appearance="radio-buttons" arrangement="vertical"/>
+				<graphical_input color="black" background="#E0E0E0" font_size="12pt" isee:show_hover_tip="true"/>
+				<group_input color="black" background="#E0E0E0" font_size="12pt"/>
+				<lamp color="black" background="white" font_size="9pt"/>
+				<gauge color="black" background="white" font_size="9pt" needle_color="#F09F72" bar_color="#EEEEEE" bar_progress_color="black" appearance="radial" num_major_ticks="11" num_minor_ticks="11" show_numeric_value="true"/>
+				<isee:spatial_map color="black" background="white" font_size="12pt"/>
+				<isee:animation_object color="black" background="white" font_size="12pt"/>
+				<isee:navigation_widget color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt" border_color="#999999" border_width="thin" border_style="solid" item_spacing="6" appearance="tabs" corner_radius="4" selected_item_color="black" selected_item_background="white" item_background="#DDDDDD"/>
+				<isee:shape color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt" border_width="thin" border_style="solid" opacity="1" transparent_background="true"/>
+				<isee:selector color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt"/>
+				<isee:iframe color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt" border_width="thin" border_style="solid"/>
+				<isee:financial_table color="black" background="#E0E0E0" text_align="right" font_size="12pt" auto_fit="true" first_column_width="250" other_column_width="100" header_font_style="normal" header_font_weight="bold" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="14pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
+			</style>
+			<view isee:show_pages="false" background="white" page_width="818" page_height="571" isee:page_cols="2" isee:page_rows="3" isee:scroll_x="281" isee:scroll_y="408" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
+				<style color="black" background="white" font_style="normal" font_weight="normal" text_decoration="none" text_align="center" vertical_text_align="center" font_color="black" font_family="Arial" font_size="10pt" padding="2" border_color="black" border_width="thin" border_style="none">
+					<stock color="blue" background="white" font_color="blue" font_size="9pt" label_side="top">
+						<shape type="rectangle" width="45" height="35"/>
+					</stock>
+					<flow color="blue" background="white" font_color="blue" font_size="9pt" label_side="bottom"/>
+					<isee:placeholder color="#228B22" background="white" font_color="#228B22" font_size="9pt" label_side="bottom"/>
+					<module color="blue" background="white" font_color="blue" font_size="9pt" label_side="top">
+						<shape type="rectangle" width="55" height="45"/>
+					</module>
+					<aux color="blue" background="white" font_color="blue" font_size="9pt" label_side="bottom">
+						<shape type="circle" radius="18"/>
+					</aux>
+					<group color="red" background="white" font_color="red" font_size="9pt"/>
+					<connector color="#FF007F" background="white" font_color="#FF007F" font_size="9pt" isee:thickness="1"/>
+					<text_box color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt"/>
+					<isee:loop_indicator color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt"/>
+					<numeric_display color="blue" background="white" font_size="9pt" isee:transparent="false"/>
+					<graph color="black" background="white" font_size="12pt" axis_color="#666666" grid_color="#C8C8C8" isee:graph_area_color="white" legend_position="bottom" isee:transparent="false" isee:hide_border="false" axis_title_font_style="normal" axis_title_font_weight="normal" axis_title_text_decoration="none" axis_title_text_align="center" axis_title_vertical_text_align="center" axis_title_font_color="black" axis_title_font_family="Arial" axis_title_font_size="12pt" axis_title_text_padding="2" axis_title_text_border_color="black" axis_title_text_border_width="thin" axis_title_text_border_style="none" axis_label_font_style="normal" axis_label_font_weight="normal" axis_label_text_decoration="none" axis_label_text_align="center" axis_label_vertical_text_align="center" axis_label_font_color="black" axis_label_font_family="Arial" axis_label_font_size="9pt" axis_label_text_padding="2" axis_label_text_border_color="black" axis_label_text_border_width="thin" axis_label_text_border_style="none">
+						<isee:series_styles>
+							<isee:series_style color="blue" thickness="1"/>
+							<isee:series_style color="red" thickness="1" pen_style="dot_dashed"/>
+							<isee:series_style color="fuchsia" thickness="1" pen_style="dotted"/>
+							<isee:series_style color="#008F44" thickness="1" pen_style="dashed"/>
+							<isee:series_style color="#FF7F00" thickness="1"/>
+							<isee:series_style color="#7F00FF" thickness="1" pen_style="dot_dashed"/>
+							<isee:series_style color="#0CA0FF" thickness="1" pen_style="dotted"/>
+							<isee:series_style color="lime" thickness="1" pen_style="dashed"/>
+							<isee:series_style color="#FF007F" thickness="1"/>
+							<isee:series_style color="aqua" thickness="1" pen_style="dot_dashed"/>
+							<isee:series_style color="#F586FF" thickness="1" pen_style="dotted"/>
+							<isee:series_style color="black" thickness="1" pen_style="dashed"/>
+							<isee:series_style color="#C8C8C8" thickness="1"/>
+						</isee:series_styles>
+					</graph>
+					<table color="black" background="#E0E0E0" text_align="right" font_size="12pt" orientation="vertical" wrap_text="false" isee:auto_fit="true" isee:use_alternate_row_colors="false" isee:unlimited_table_length="false" blank_column_width="80" column_width="160" interval="1" report_balances="beginning" report_flows="instantaneous" header_font_style="normal" header_font_weight="normal" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="12pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
+				</style>
+				<stock x="363" y="174" name="Stock 1"/>
+				<flow x="468.75" y="174" name="OutFlow 1">
+					<pts>
+						<pt x="385.5" y="174"/>
+						<pt x="576" y="174"/>
+					</pts>
+				</flow>
+				<flow x="255.25" y="174" name="InFlow">
+					<pts>
+						<pt x="170" y="174"/>
+						<pt x="340.5" y="174"/>
+					</pts>
+				</flow>
+				<flow x="364" y="261.75" name="OutFlow 2">
+					<pts>
+						<pt x="364" y="191.5"/>
+						<pt x="364" y="353"/>
+					</pts>
+				</flow>
+				<aux x="549" y="99" name="Converter 1"/>
+				<connector uid="1" angle="72.646">
+					<from>OutFlow_1</from>
+					<to>Converter_1</to>
+				</connector>
+				<aux x="464" y="332" name="Converter 2"/>
+				<connector uid="2" angle="4.49258">
+					<from>OutFlow_2</from>
+					<to>Converter_2</to>
+				</connector>
+				<stacked_container uid="3" x="200.75" y="425" width="557" height="418">
+					<graph width="557" height="418" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="8" num_y_labels="11" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="InFlow"/>
+						</plot>
+						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="OutFlow_1"/>
+						</plot>
+						<plot color="fuchsia" pen_style="dotted" isee:keep_zero_visible="true" pen_width="1" index="2" show_y_axis="true">
+							<entity name="OutFlow_2"/>
+						</plot>
+						<plot color="#008F44" pen_style="dashed" isee:keep_zero_visible="true" pen_width="1" index="3" show_y_axis="true">
+							<entity name="Stock_1"/>
+						</plot>
+					</graph>
+				</stacked_container>
+				<aux x="317" y="59" name="Converter 3"/>
+				<connector uid="4" angle="135.644">
+					<from>Stock_1</from>
+					<to>Converter_3</to>
+				</connector>
+				<stacked_container uid="5" x="851" y="233">
+					<graph width="350" height="250" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Stock_1"/>
+						</plot>
+						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="Converter_3"/>
+						</plot>
+					</graph>
+				</stacked_container>
+				<stock x="1019" y="516" name="Stock 2"/>
+				<flow x="923.25" y="519" name="InFlow2">
+					<pts>
+						<pt x="850" y="519"/>
+						<pt x="996.5" y="519"/>
+					</pts>
+				</flow>
+				<text_box uid="6" x="844" y="440.5" width="189" height="32">When the input is negative</text_box>
+				<text_box uid="7" x="209" y="892" width="237" height="30">Comparison: order of adding flows</text_box>
+				<stock x="290" y="995" name="Stock 3"/>
+				<stock x="653.5" y="995" name="Stock 4"/>
+				<flow x="361.25" y="995" name="Flow 1">
+					<pts>
+						<pt x="312.5" y="995"/>
+						<pt x="434" y="995"/>
+					</pts>
+				</flow>
+				<flow x="289" y="1051.75" name="Flow 2">
+					<pts>
+						<pt x="289" y="1012.5"/>
+						<pt x="289" y="1112"/>
+					</pts>
+				</flow>
+				<flow x="653.5" y="1057.25" name="Flow 3">
+					<pts>
+						<pt x="653.5" y="1012.5"/>
+						<pt x="653.5" y="1123"/>
+					</pts>
+				</flow>
+				<flow x="732" y="993" name="Flow 4">
+					<pts>
+						<pt x="676" y="993"/>
+						<pt x="812" y="993"/>
+					</pts>
+				</flow>
+				<text_box uid="8" x="359" y="950" width="114" height="18">added first - got 15</text_box>
+				<text_box uid="9" x="319" y="1042.75" width="136" height="18">added second - got 5</text_box>
+				<text_box uid="10" x="672" y="1054" width="114" height="18">added first - got 15</text_box>
+				<text_box uid="11" x="655" y="941.75" width="136" height="18">added second - got 5</text_box>
+				<stock x="932.25" y="968" width="142" height="37" name="Stock 5"/>
+				<flow x="968" y="915.5" name="Flow 5">
+					<pts>
+						<pt x="968" y="863"/>
+						<pt x="968" y="968"/>
+					</pts>
+				</flow>
+				<flow x="954" y="1053.5" name="Flow 6">
+					<pts>
+						<pt x="954" y="1005"/>
+						<pt x="954" y="1123"/>
+					</pts>
+				</flow>
+				<flow x="995" y="1054" name="Flow 7">
+					<pts>
+						<pt x="995" y="1005"/>
+						<pt x="995" y="1124"/>
+					</pts>
+				</flow>
+				<flow x="1043" y="1054" name="Flow 8">
+					<pts>
+						<pt x="1043" y="1005"/>
+						<pt x="1043" y="1124"/>
+					</pts>
+				</flow>
+			</view>
+		</views>
+	</model>
+</xmile>
+

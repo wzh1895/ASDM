@@ -5,23 +5,37 @@
 		<name>Conveyor_leakage</name>
 		<uuid>04a63222-a7cc-4175-99e0-ddcdacedd8cb</uuid>
 		<vendor>isee systems, inc.</vendor>
-		<product version="2.0" isee:build_number="2190" isee:saved_by_v1="true" lang="en">Stella Professional</product>
+		<product version="2.0" isee:build_number="2176" isee:saved_by_v1="true" lang="en">Stella Professional</product>
 	</header>
-	<sim_specs isee:sim_duration="1.5" isee:simulation_delay="0.1875" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="false" isee:loop_exhaustive_allowed="1000">
+	<sim_specs isee:sim_duration="1" isee:simulation_delay="0.166667" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="false" isee:loop_exhaustive_allowed="1000">
 		<start>0</start>
-		<stop>8</stop>
-		<dt reciprocal="true">2</dt>
+		<stop>6</stop>
+		<dt reciprocal="true">4</dt>
 	</sim_specs>
 	<isee:prefs show_module_prefix="true" live_update_on_drag="true" show_restore_buttons="false" layer="model" interface_scale_ui="true" interface_max_page_width="10000" interface_max_page_height="10000" interface_min_page_width="0" interface_min_page_height="0" rerun_on_structure_change="false" saved_runs="1" keep="false" rifp="true"/>
 	<isee:multiplayer_settings include_chat="true" allow_observers="false" advance_time_increment="1" observer_start_page="home_page" enabled="false"/>
 	<isee:time_formats default_format="Builtin">
 		<isee:time_format name="Builtin" type="adaptive"/>
 	</isee:time_formats>
-	<default_format/>
-	<model_units/>
+	<default_format precision="full" scale_by="1"/>
+	<data>
+		<export resource="/Users/jonker/Library/CloudStorage/OneDrive-UniversityofStrathclyde/ASDM/stella.csv" interval="DT" precomputed="false" isee:format="numbers">
+			<all/>
+		</export>
+	</data>
+	<model_units>
+		<unit name="Months">
+			<eqn/>
+			<alias>mo</alias>
+			<alias>month</alias>
+		</unit>
+		<unit name="Per Month">
+			<eqn>1/Months</eqn>
+		</unit>
+	</model_units>
 	<model>
 		<variables>
-			<stock name="Leaked Conveyor">
+			<stock name="Conveyor">
 				<eqn>10</eqn>
 				<inflow>InFlow</inflow>
 				<outflow>OutFlow</outflow>
@@ -31,17 +45,20 @@
 				</conveyor>
 			</stock>
 			<flow name="InFlow">
-				<eqn>0</eqn>
+				<eqn>1</eqn>
 				<non_negative/>
+				<units>Per Month</units>
 			</flow>
 			<flow name="OutFlow">
 				<eqn>0</eqn>
 				<non_negative/>
+				<units>Per Month</units>
 			</flow>
 			<flow name="LeakingFlow">
-				<eqn>0.1</eqn>
+				<eqn>0.3</eqn>
 				<non_negative/>
 				<leak/>
+				<units>Per Month</units>
 			</flow>
 			<stock name="AllLeaked">
 				<eqn>0</eqn>
@@ -97,7 +114,7 @@
 				<isee:iframe color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt" border_width="thin" border_style="solid"/>
 				<isee:financial_table color="black" background="#E0E0E0" text_align="right" font_size="12pt" auto_fit="true" first_column_width="250" other_column_width="100" header_font_style="normal" header_font_weight="bold" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="14pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 			</style>
-			<view isee:show_pages="false" background="white" page_width="1053" page_height="813" isee:scroll_x="11" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
+			<view isee:show_pages="false" background="white" page_width="818" page_height="571" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
 				<style color="black" background="white" font_style="normal" font_weight="normal" text_decoration="none" text_align="center" vertical_text_align="center" font_color="black" font_family="Arial" font_size="10pt" padding="2" border_color="black" border_width="thin" border_style="none">
 					<stock color="blue" background="white" font_color="blue" font_size="9pt" label_side="top">
 						<shape type="rectangle" width="45" height="35"/>
@@ -134,27 +151,49 @@
 					</graph>
 					<table color="black" background="#E0E0E0" text_align="right" font_size="12pt" orientation="vertical" wrap_text="false" isee:auto_fit="true" isee:use_alternate_row_colors="false" isee:unlimited_table_length="false" blank_column_width="80" column_width="160" interval="1" report_balances="beginning" report_flows="instantaneous" header_font_style="normal" header_font_weight="normal" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="12pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 				</style>
-				<stock x="394" y="187" name="Leaked Conveyor"/>
-				<flow x="305.25" y="184" name="InFlow">
+				<stock x="213" y="78" name="Conveyor"/>
+				<flow x="124.25" y="75" name="InFlow">
 					<pts>
-						<pt x="239" y="184"/>
-						<pt x="371.5" y="184"/>
+						<pt x="58" y="75"/>
+						<pt x="190.5" y="75"/>
 					</pts>
 				</flow>
-				<flow x="482" y="183" name="OutFlow">
+				<flow x="301" y="74" name="OutFlow">
 					<pts>
-						<pt x="416.5" y="183"/>
-						<pt x="559.5" y="183"/>
+						<pt x="235.5" y="74"/>
+						<pt x="378.5" y="74"/>
 					</pts>
 				</flow>
-				<flow x="394" y="250" name="LeakingFlow">
+				<flow x="213" y="141" name="LeakingFlow">
 					<pts>
-						<pt x="394" y="204.5"/>
-						<pt x="394" y="307.5"/>
+						<pt x="213" y="95.5"/>
+						<pt x="213" y="198.5"/>
 					</pts>
 				</flow>
-				<stock label_side="bottom" x="394" y="325" name="AllLeaked"/>
-				<stock x="582" y="187" name="AllOutFlowed"/>
+				<stock label_side="bottom" x="213" y="216" name="AllLeaked"/>
+				<stock x="401" y="78" name="AllOutFlowed"/>
+				<stacked_container uid="1" x="315" y="136" width="439" height="378">
+					<graph width="439" height="378" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="7" num_y_labels="11" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="InFlow"/>
+						</plot>
+						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="Conveyor"/>
+						</plot>
+						<plot color="fuchsia" pen_style="dotted" isee:keep_zero_visible="true" pen_width="1" index="2" show_y_axis="true">
+							<entity name="OutFlow"/>
+						</plot>
+						<plot color="#008F44" pen_style="dashed" isee:keep_zero_visible="true" pen_width="1" index="3" show_y_axis="true">
+							<entity name="LeakingFlow"/>
+						</plot>
+						<plot color="#FF7F00" isee:keep_zero_visible="true" pen_width="1" index="4" show_y_axis="true">
+							<entity name="AllLeaked"/>
+						</plot>
+						<plot color="#7F00FF" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="5" show_y_axis="true">
+							<entity name="AllOutFlowed"/>
+						</plot>
+					</graph>
+				</stacked_container>
 			</view>
 		</views>
 	</model>
