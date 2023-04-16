@@ -20,6 +20,8 @@ if __name__ == '__main__':
     # model = Structure(from_xmile='BuiltinTestModels/Array_parallel_reference.stmx')
     # model = Structure(from_xmile='BuiltinTestModels/Array_cross_reference.stmx')
     # model = Structure(from_xmile='BuiltinTestModels/Array_cross_reference_inference.stmx')
+    # model = Structure(from_xmile='BuiltinTestModels/array_SUM.stmx')
+    # model = Structure(from_xmile='BuiltinTestModels/array_in_function.stmx')
     
     # model = Structure(from_xmile='BuiltInTestModels/Built_in_vars.stmx')
     
@@ -44,21 +46,21 @@ if __name__ == '__main__':
 
     ### Production Models ###
 
-    model = Structure(from_xmile='TestModels/Elective Recovery Model.stmx')
+    # model = Structure(from_xmile='TestModels/Elective Recovery Model.stmx')
+    model = Structure(from_xmile='TestModels/Endoscopy v3b.stmx')
     # model=Structure(from_xmile='TestModels/2022_07_14 no milk without meat.stmx')
     # model=Structure(from_xmile='TestModels/TempTest1.stmx')
 
     ### Controls ###
 
     # Dynamic simulation
-    model.simulate(debug_against=True, verbose=False)
+    model.simulate(debug_against=False, verbose=False)
     model.summary()
-
     ### Simulation inspections ###
 
     model.export_simulation_result(to_csv=True)
-    # r = model.export_simulation_result(format='df', to_csv=False)
-    # print(r)
+    r = model.export_simulation_result(format='df', to_csv=False)
+    print(r)
 
     # vars_to_view = [
     #     '13wk_wait_for_urgent_treatment', 
