@@ -854,13 +854,13 @@ class Solver(object):
             oprds = []
             for operand in operands:
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'oprd', operand)
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7.1', 'oprd', operand)
                 v = self.calculate_node(parsed_equation=parsed_equation, node_id=operand[2], subscript=subscript, verbose=verbose)
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'value', v)
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7.2', 'value', v, subscript)
                 oprds.append(v)
             if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'oprds', oprds)
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7.3', 'oprds', oprds)
             value = function(*oprds)
             if verbose:
                 print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7 Built-in operation:', value)
@@ -1189,6 +1189,35 @@ class Conveyor(object):
 class Stock(object):
     def __init__(self):
         self.initialised = False
+
+
+class DataFeeder(object):
+    def __init__(self, data, from_time=0, data_dt=1):
+        """
+        data: a list
+
+        """
+        self.from_time =from_time
+        self.time_data = dict()
+        time = self.from_time
+        for d in data:
+            self.time_data[time] = d
+            time += data_dt
+        # print(self.time_data)
+        self.last_success_time = None
+
+    def __call__(self, current_time): # make a datafeeder callable
+        try:
+            d = self.time_data[current_time]
+            self.last_success_time = current_time
+        except KeyError:
+            if current_time < self.from_time:
+                raise Exception("Current time < external data starting time.")
+            elif current_time > list(self.time_data.keys())[-1]:
+                raise Exception("Current time > external data ending time.")
+            else:
+                d = self.time_data[self.last_success_time]
+        return(np.float64(d))
 
 
 class Structure(object):
@@ -1577,9 +1606,15 @@ class Structure(object):
                 parsed_equation_val
                 ]
 
-        else:
+        elif type(equation) is DataFeeder:
+            return equation
+
+        elif type(equation) in [str, int, float, np.int_, np.float_]:
             parsed_equation = self.parser.parse(equation)
             return parsed_equation
+
+        else:
+            raise Exception('Unsupported equation {} type {}'.format(equation, type(equation)))
     
     def parse_0(self, equations, parsed_equations, verbose=False):
         for var, equation in equations.items():
@@ -1666,258 +1701,263 @@ class Structure(object):
         # debug
         if var == 'TIME':
             return
+        
+        if subscript is not None:
+            parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var][subscript]
         else:
-            if subscript is not None:
-                parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var][subscript]
-            else:
-                parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var]
-            
-            # A: var is a Conveyor
-            if var in self.conveyors:
-                # print('Calculating Conveyor {}'.format(var))
-                if not (conveyor_init or conveyor_len):
-                    if not self.conveyors[var]['conveyor'].is_initialized:
-                        # print('Initialising {}'.format(var))
-                        # when initialising, equation of the conveyor needs to be evaluated, setting flag conveyor_len to True 
-                        self.calculate_variable_dynamic(var=var, subscript=subscript, verbose=verbose, conveyor_len=True)
-                        conveyor_length = self.conveyors[var]['len']
-                        length_steps = int(conveyor_length/self.sim_specs['dt'])
-                        
-                        # when initialising, equation of the conveyor needs to be evaluated, setting flag conveyor_init to True 
-                        self.calculate_variable_dynamic(var=var, subscript=subscript, verbose=verbose, conveyor_init=True)
-                        conveyor_init_value = self.conveyors[var]['val']
-                        
-                        leak_flows = self.conveyors[var]['leakflow']
-                        if len(leak_flows) == 0:
-                            leak_fraction = 0
-                        else:
-                            for leak_flow in leak_flows.keys():
-                                self.calculate_variable_dynamic(var=leak_flow, subscript=subscript, verbose=verbose, leak_frac=True)
-                                leak_fraction = self.conveyors[var]['leakflow'][leak_flow] # TODO multiple leakflows
-                        self.conveyors[var]['conveyor'].initialize(length_steps, conveyor_init_value, leak_fraction)
-                        
-                        # put initialised conveyor value to name_space
-                        value = self.conveyors[var]['conveyor'].level()
-                        self.name_space[var] = value
-                    
-                    if var not in self.stock_shadow_values:
-                        # print("Updatting {} and its outflows".format(var))
-                        # print("    Name space1:", self.name_space)
-                        # leak
-                        for leak_flow, leak_fraction in self.conveyors[var]['leakflow'].items():
-                            if leak_flow not in self.name_space: 
-                                # print('    Calculating leakflow {} for {}'.format(leak_flow, var))
-                                leaked_value = self.conveyors[var]['conveyor'].leak_linear()
-                                self.name_space[leak_flow] = leaked_value / self.sim_specs['dt'] # TODO: we should also consider when leak flows are subscripted
-                        # out
-                        for outputflow in self.conveyors[var]['outputflow']:
-                            if outputflow not in self.name_space:
-                                # print('    Calculating outflow {} for {}'.format(outputflow, var))
-                                outflow_value = self.conveyors[var]['conveyor'].outflow()
-                                self.name_space[outputflow] = outflow_value / self.sim_specs['dt']
-                        # print("    Name space2:", self.name_space)
-                        self.stock_shadow_values[var] = self.conveyors[var]['conveyor'].level()
+            parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var]
+        
+        # DataFeeder - external data
+        if type(parsed_equation) is DataFeeder:
+            if var not in self.name_space:
+                self.name_space[var] = parsed_equation(self.sim_specs['current_time'])
 
-                elif conveyor_len:
-                    # print('Calculating LEN for {}'.format(var))
-                    # it is the intitial value of the conveyoer
-                    parsed_equation = self.stock_equations_parsed[var][0]
-                    self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
-                    self.conveyors[var]['len'] = self.solver.calculate_node(parsed_equation=parsed_equation, verbose=verbose, var_name=var)
-                
-                elif conveyor_init:
-                    # print('Calculating INIT VAL for {}'.format(var))
-                    # it is the intitial value of the conveyoer
-                    parsed_equation = self.stock_equations_parsed[var][1]
-                    self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
-                    self.conveyors[var]['val'] = self.solver.calculate_node(parsed_equation=parsed_equation, verbose=verbose, var_name=var)
-            
-            # B: var is a normal stock
-            elif var not in self.conveyors and var in self.stocks:
-                if not self.stocks[var].initialised:
-                    # print('Stock {} not initialised'.format(var))
-                    if type(parsed_equation) is dict:
-                        for sub, sub_parsed_equation in parsed_equation.items():
-                            self.calculate_dependents(parsed_equation=sub_parsed_equation, verbose=verbose)
-                            value = self.solver.calculate_node(parsed_equation=sub_parsed_equation, subscript=sub, verbose=verbose, var_name=var)
-                            if var not in self.name_space:
-                                self.name_space[var] = dict()
-                            self.name_space[var][sub] = value
-                    elif self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
-                        self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
-                        for sub in self.dimension_elements[self.var_dimensions[var]]:
-                            value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=sub, verbose=verbose, var_name=var)
-                            if var not in self.name_space:
-                                self.name_space[var] = dict()
-                            self.name_space[var][sub] = value
-                    else: # The variable is not subscripted
-                        self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
-                        value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=subscript, verbose=verbose, var_name=var)
-                        self.name_space[var] = value
-                    self.stocks[var].initialised = True
+        # A: var is a Conveyor
+        if var in self.conveyors:
+            # print('Calculating Conveyor {}'.format(var))
+            if not (conveyor_init or conveyor_len):
+                if not self.conveyors[var]['conveyor'].is_initialized:
+                    # print('Initialising {}'.format(var))
+                    # when initialising, equation of the conveyor needs to be evaluated, setting flag conveyor_len to True 
+                    self.calculate_variable_dynamic(var=var, subscript=subscript, verbose=verbose, conveyor_len=True)
+                    conveyor_length = self.conveyors[var]['len']
+                    length_steps = int(conveyor_length/self.sim_specs['dt'])
                     
-                # if the stock's shadow value has not been calculated for this dt:
+                    # when initialising, equation of the conveyor needs to be evaluated, setting flag conveyor_init to True 
+                    self.calculate_variable_dynamic(var=var, subscript=subscript, verbose=verbose, conveyor_init=True)
+                    conveyor_init_value = self.conveyors[var]['val']
+                    
+                    leak_flows = self.conveyors[var]['leakflow']
+                    if len(leak_flows) == 0:
+                        leak_fraction = 0
+                    else:
+                        for leak_flow in leak_flows.keys():
+                            self.calculate_variable_dynamic(var=leak_flow, subscript=subscript, verbose=verbose, leak_frac=True)
+                            leak_fraction = self.conveyors[var]['leakflow'][leak_flow] # TODO multiple leakflows
+                    self.conveyors[var]['conveyor'].initialize(length_steps, conveyor_init_value, leak_fraction)
+                    
+                    # put initialised conveyor value to name_space
+                    value = self.conveyors[var]['conveyor'].level()
+                    self.name_space[var] = value
+                
                 if var not in self.stock_shadow_values:
-                    # load stock's value from last dt from name_space
-                    self.stock_shadow_values[var] = deepcopy(self.name_space[var])
-                    if var in self.stock_flows: # some stocks are not connected to any flow
-                        if 'in' in self.stock_flows[var]:
-                            in_flows = self.stock_flows[var]['in']
-                            for in_flow in in_flows:
-                                if in_flow not in self.name_space:
-                                    self.calculate_variable_dynamic(var=in_flow, subscript=subscript, verbose=verbose)
-                                if var in self.stock_non_negative:
-                                    if type(self.name_space[in_flow]) is not dict:
-                                        if self.stock_shadow_values[var] + self.name_space[in_flow] * self.sim_specs['dt'] < 0:
-                                            self.name_space[in_flow] = self.stock_shadow_values[var] * -1 / self.sim_specs['dt']
-                                            self.stock_shadow_values[var] = 0
-                                        else:
-                                            self.stock_shadow_values[var] += self.name_space[in_flow] * self.sim_specs['dt']
-                                    else:
-                                        for sub, subval in self.name_space[in_flow].items():
-                                            if self.stock_shadow_values[var][sub] + subval * self.sim_specs['dt'] < 0:
-                                                self.name_space[in_flow][sub] = self.stock_shadow_values[var][sub] * -1 / self.sim_specs['dt']
-                                                self.stock_shadow_values[var][sub] = 0
-                                            else:
-                                                self.stock_shadow_values[var][sub] += subval * self.sim_specs['dt']
-                                    
-                                else:
-                                    if type(self.name_space[in_flow]) is not dict:
-                                        self.stock_shadow_values[var] += self.name_space[in_flow] * self.sim_specs['dt']
-                                    else:
-                                        for sub, subval in self.name_space[in_flow].items():
-                                            self.stock_shadow_values[var][sub] += subval * self.sim_specs['dt']
-                        if 'out' in self.stock_flows[var]:
-                            out_flows = self.stock_flows[var]['out']
-                            
-                            # outflow prioritisation
-                            # rule 1: first added first
-                            # rule 2: dependents ranked higher
-                            if len(out_flows) > 1:
-                                for i in range(len(out_flows)-1, 0, -1):
-                                    for j in range(i):
-                                        if self.is_dependent(out_flows[j+1], out_flows[j]):
-                                            temp = out_flows[j+1]
-                                            out_flows[j+1] = out_flows[j]
-                                            out_flows[j] = temp
+                    # print("Updatting {} and its outflows".format(var))
+                    # print("    Name space1:", self.name_space)
+                    # leak
+                    for leak_flow, leak_fraction in self.conveyors[var]['leakflow'].items():
+                        if leak_flow not in self.name_space: 
+                            # print('    Calculating leakflow {} for {}'.format(leak_flow, var))
+                            leaked_value = self.conveyors[var]['conveyor'].leak_linear()
+                            self.name_space[leak_flow] = leaked_value / self.sim_specs['dt'] # TODO: we should also consider when leak flows are subscripted
+                    # out
+                    for outputflow in self.conveyors[var]['outputflow']:
+                        if outputflow not in self.name_space:
+                            # print('    Calculating outflow {} for {}'.format(outputflow, var))
+                            outflow_value = self.conveyors[var]['conveyor'].outflow()
+                            self.name_space[outputflow] = outflow_value / self.sim_specs['dt']
+                    # print("    Name space2:", self.name_space)
+                    self.stock_shadow_values[var] = self.conveyors[var]['conveyor'].level()
 
-                            for out_flow in out_flows:
-                                if out_flow not in self.name_space:
-                                    self.calculate_variable_dynamic(var=out_flow, subscript=subscript, verbose=verbose)
-                                if var in self.stock_non_negative:
-                                    if type(self.name_space[out_flow]) is not dict:
-                                        if self.stock_shadow_values[var] - self.name_space[out_flow] * self.sim_specs['dt'] < 0:
-                                            self.name_space[out_flow] = self.stock_shadow_values[var] / self.sim_specs['dt']
-                                            self.stock_shadow_values[var] = 0
-                                        else:
-                                            self.stock_shadow_values[var] -= self.name_space[out_flow] * self.sim_specs['dt']
-                                    else:
-                                        for sub, subval in self.name_space[out_flow].items():
-                                            if self.stock_shadow_values[var][sub] - subval * self.sim_specs['dt'] < 0:
-                                                self.name_space[out_flow][sub] = self.stock_shadow_values[var][sub] / self.sim_specs['dt']
-                                                self.stock_shadow_values[var][sub] = 0
-                                            else:
-                                                self.stock_shadow_values[var][sub] -= subval * self.sim_specs['dt']
-                                else:
-                                    if type(self.name_space[out_flow]) is not dict:
-                                        self.stock_shadow_values[var] -= self.name_space[out_flow] * self.sim_specs['dt']
-                                    else:
-                                        for sub, subval in self.name_space[out_flow].items():
-                                            self.stock_shadow_values[var][sub] -= self.name_space[out_flow][sub] * self.sim_specs['dt']
-                    else: # for those stocks without flows connected:
-                        pass
+            elif conveyor_len:
+                # print('Calculating LEN for {}'.format(var))
+                # it is the intitial value of the conveyoer
+                parsed_equation = self.stock_equations_parsed[var][0]
+                self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
+                self.conveyors[var]['len'] = self.solver.calculate_node(parsed_equation=parsed_equation, verbose=verbose, var_name=var)
+            
+            elif conveyor_init:
+                # print('Calculating INIT VAL for {}'.format(var))
+                # it is the intitial value of the conveyoer
+                parsed_equation = self.stock_equations_parsed[var][1]
+                self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
+                self.conveyors[var]['val'] = self.solver.calculate_node(parsed_equation=parsed_equation, verbose=verbose, var_name=var)
+        
+        # B: var is a normal stock
+        elif var not in self.conveyors and var in self.stocks:
+            if not self.stocks[var].initialised:
+                # print('Stock {} not initialised'.format(var))
+                if type(parsed_equation) is dict:
+                    for sub, sub_parsed_equation in parsed_equation.items():
+                        self.calculate_dependents(parsed_equation=sub_parsed_equation, verbose=verbose)
+                        value = self.solver.calculate_node(parsed_equation=sub_parsed_equation, subscript=sub, verbose=verbose, var_name=var)
+                        if var not in self.name_space:
+                            self.name_space[var] = dict()
+                        self.name_space[var][sub] = value
+                elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
+                    self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
+                    for sub in self.dimension_elements[self.var_dimensions[var]]:
+                        value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=sub, verbose=verbose, var_name=var)
+                        if var not in self.name_space:
+                            self.name_space[var] = dict()
+                        self.name_space[var][sub] = value
+                else: # The variable is not subscripted
+                    self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
+                    value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=subscript, verbose=verbose, var_name=var)
+                    self.name_space[var] = value
+                self.stocks[var].initialised = True
                 
-                # if the stock's shadow value has been updated, do nothing as the real value is already in name_space
-                else:
+            # if the stock's shadow value has not been calculated for this dt:
+            if var not in self.stock_shadow_values:
+                # load stock's value from last dt from name_space
+                self.stock_shadow_values[var] = deepcopy(self.name_space[var])
+                if var in self.stock_flows: # some stocks are not connected to any flow
+                    if 'in' in self.stock_flows[var]:
+                        in_flows = self.stock_flows[var]['in']
+                        for in_flow in in_flows:
+                            if in_flow not in self.name_space:
+                                self.calculate_variable_dynamic(var=in_flow, subscript=subscript, verbose=verbose)
+                            if var in self.stock_non_negative:
+                                if type(self.name_space[in_flow]) is not dict:
+                                    if self.stock_shadow_values[var] + self.name_space[in_flow] * self.sim_specs['dt'] < 0:
+                                        self.name_space[in_flow] = self.stock_shadow_values[var] * -1 / self.sim_specs['dt']
+                                        self.stock_shadow_values[var] = 0
+                                    else:
+                                        self.stock_shadow_values[var] += self.name_space[in_flow] * self.sim_specs['dt']
+                                else:
+                                    for sub, subval in self.name_space[in_flow].items():
+                                        if self.stock_shadow_values[var][sub] + subval * self.sim_specs['dt'] < 0:
+                                            self.name_space[in_flow][sub] = self.stock_shadow_values[var][sub] * -1 / self.sim_specs['dt']
+                                            self.stock_shadow_values[var][sub] = 0
+                                        else:
+                                            self.stock_shadow_values[var][sub] += subval * self.sim_specs['dt']
+                                
+                            else:
+                                if type(self.name_space[in_flow]) is not dict:
+                                    self.stock_shadow_values[var] += self.name_space[in_flow] * self.sim_specs['dt']
+                                else:
+                                    for sub, subval in self.name_space[in_flow].items():
+                                        self.stock_shadow_values[var][sub] += subval * self.sim_specs['dt']
+                    if 'out' in self.stock_flows[var]:
+                        out_flows = self.stock_flows[var]['out']
+                        
+                        # outflow prioritisation
+                        # rule 1: first added first
+                        # rule 2: dependents ranked higher
+                        if len(out_flows) > 1:
+                            for i in range(len(out_flows)-1, 0, -1):
+                                for j in range(i):
+                                    if self.is_dependent(out_flows[j+1], out_flows[j]):
+                                        temp = out_flows[j+1]
+                                        out_flows[j+1] = out_flows[j]
+                                        out_flows[j] = temp
+
+                        for out_flow in out_flows:
+                            if out_flow not in self.name_space:
+                                self.calculate_variable_dynamic(var=out_flow, subscript=subscript, verbose=verbose)
+                            if var in self.stock_non_negative:
+                                if type(self.name_space[out_flow]) is not dict:
+                                    if self.stock_shadow_values[var] - self.name_space[out_flow] * self.sim_specs['dt'] < 0:
+                                        self.name_space[out_flow] = self.stock_shadow_values[var] / self.sim_specs['dt']
+                                        self.stock_shadow_values[var] = 0
+                                    else:
+                                        self.stock_shadow_values[var] -= self.name_space[out_flow] * self.sim_specs['dt']
+                                else:
+                                    for sub, subval in self.name_space[out_flow].items():
+                                        if self.stock_shadow_values[var][sub] - subval * self.sim_specs['dt'] < 0:
+                                            self.name_space[out_flow][sub] = self.stock_shadow_values[var][sub] / self.sim_specs['dt']
+                                            self.stock_shadow_values[var][sub] = 0
+                                        else:
+                                            self.stock_shadow_values[var][sub] -= subval * self.sim_specs['dt']
+                            else:
+                                if type(self.name_space[out_flow]) is not dict:
+                                    self.stock_shadow_values[var] -= self.name_space[out_flow] * self.sim_specs['dt']
+                                else:
+                                    for sub, subval in self.name_space[out_flow].items():
+                                        self.stock_shadow_values[var][sub] -= self.name_space[out_flow][sub] * self.sim_specs['dt']
+                else: # for those stocks without flows connected:
                     pass
             
-            # C: var is a flow
-            elif var in self.flow_equations:
-                # var is a leakflow. In this case the conveyor needs to be initialised
-                if var in self.leak_conveyors:
-                    if not leak_frac:
-                        # if mode is not 'leak_frac', something other than the conveyor is requiring the leak_flow; 
-                        # then it is the real value of the leak flow that is requested.
-                        # then conveyor needs to be calculated. Otherwise it is the conveyor that requires it 
-                        if var not in self.name_space: # the leak_flow is not calculated, which means the conveyor has not been initialised
-                            self.calculate_variable_dynamic(var=self.leak_conveyors[var], subscript=subscript)
-                    else:
-                        # it is the value of the leak_fraction (a percentage) that is requested.    
-                        # leak_fraction is calculated using leakflow's equation. 
-                        parsed_equation = self.flow_equations_parsed[var]
-                        self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
-                        self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = self.solver.calculate_node(parsed_equation=parsed_equation, verbose=verbose, var_name=var)
+            # if the stock's shadow value has been updated, do nothing as the real value is already in name_space
+            else:
+                pass
+        
+        # C: var is a flow
+        elif var in self.flow_equations:
+            # var is a leakflow. In this case the conveyor needs to be initialised
+            if var in self.leak_conveyors:
+                if not leak_frac:
+                    # if mode is not 'leak_frac', something other than the conveyor is requiring the leak_flow; 
+                    # then it is the real value of the leak flow that is requested.
+                    # then conveyor needs to be calculated. Otherwise it is the conveyor that requires it 
+                    if var not in self.name_space: # the leak_flow is not calculated, which means the conveyor has not been initialised
+                        self.calculate_variable_dynamic(var=self.leak_conveyors[var], subscript=subscript)
+                else:
+                    # it is the value of the leak_fraction (a percentage) that is requested.    
+                    # leak_fraction is calculated using leakflow's equation. 
+                    parsed_equation = self.flow_equations_parsed[var]
+                    self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
+                    self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = self.solver.calculate_node(parsed_equation=parsed_equation, verbose=verbose, var_name=var)
 
-                elif var in self.outflow_conveyors:
-                    # requiring an outflow's value triggers the calculation of its connected conveyor
-                    if var not in self.name_space: # the outflow is not calculated, which means the conveyor has not been initialised
-                        self.calculate_variable_dynamic(var=self.outflow_conveyors[var], subscript=subscript)
-                        
-                elif var in self.flow_equations: # var is a normal flow
-                    if var not in self.name_space:
-                        if type(parsed_equation) is dict:
-                            for sub, sub_parsed_equaton in parsed_equation.items():
-                                self.calculate_dependents(parsed_equation=sub_parsed_equaton, verbose=verbose)
-                                value = self.solver.calculate_node(parsed_equation=sub_parsed_equaton, subscript=sub, verbose=verbose, var_name=var)
-                                
-                                # control flow positivity by itself
-                                if self.flow_positivity[var] is True:
-                                    if value < 0:
-                                        value = 0
-                                if var not in self.name_space:
-                                    self.name_space[var] = dict()
-                                self.name_space[var][sub] = value
-                        elif self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
-                            self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
-                            for sub in self.dimension_elements[self.var_dimensions[var]]:
-                                value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=sub, verbose=verbose, var_name=var)
-                                # control flow positivity by itself
-                                if self.flow_positivity[var] is True:
-                                    if value < 0:
-                                        value = 0
-                                if var not in self.name_space:
-                                    self.name_space[var] = dict()
-                                self.name_space[var][sub] = value
-                        else:
-                            self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
-                            value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=subscript, verbose=verbose, var_name=var)
-
+            elif var in self.outflow_conveyors:
+                # requiring an outflow's value triggers the calculation of its connected conveyor
+                if var not in self.name_space: # the outflow is not calculated, which means the conveyor has not been initialised
+                    self.calculate_variable_dynamic(var=self.outflow_conveyors[var], subscript=subscript)
+                    
+            elif var in self.flow_equations: # var is a normal flow
+                if var not in self.name_space:
+                    if type(parsed_equation) is dict:
+                        for sub, sub_parsed_equaton in parsed_equation.items():
+                            self.calculate_dependents(parsed_equation=sub_parsed_equaton, verbose=verbose)
+                            value = self.solver.calculate_node(parsed_equation=sub_parsed_equaton, subscript=sub, verbose=verbose, var_name=var)
+                            
                             # control flow positivity by itself
                             if self.flow_positivity[var] is True:
                                 if value < 0:
                                     value = 0
-                            
-                            self.name_space[var] = value
-                    else:
-                        pass
-            
-            # D: var is an auxiliary
-            elif var in self.aux_equations:
-                if var not in self.name_space:
-                    if type(parsed_equation) is dict:
-                        for sub, sub_parsed_equation in parsed_equation.items():
-                            self.calculate_dependents(parsed_equation=sub_parsed_equation, verbose=verbose)
-                            value = self.solver.calculate_node(parsed_equation=sub_parsed_equation, subscript=sub, verbose=verbose, var_name=var)
                             if var not in self.name_space:
                                 self.name_space[var] = dict()
                             self.name_space[var][sub] = value
-                    elif self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
+                    elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
                         self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
                         for sub in self.dimension_elements[self.var_dimensions[var]]:
                             value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=sub, verbose=verbose, var_name=var)
+                            # control flow positivity by itself
+                            if self.flow_positivity[var] is True:
+                                if value < 0:
+                                    value = 0
                             if var not in self.name_space:
                                 self.name_space[var] = dict()
                             self.name_space[var][sub] = value
                     else:
                         self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
                         value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=subscript, verbose=verbose, var_name=var)
+
+                        # control flow positivity by itself
+                        if self.flow_positivity[var] is True:
+                            if value < 0:
+                                value = 0
+                        
                         self.name_space[var] = value
-                            
                 else:
                     pass
-            
+        
+        # D: var is an auxiliary
+        elif var in self.aux_equations:
+            if var not in self.name_space:
+                if type(parsed_equation) is dict:
+                    for sub, sub_parsed_equation in parsed_equation.items():
+                        self.calculate_dependents(parsed_equation=sub_parsed_equation, verbose=verbose)
+                        value = self.solver.calculate_node(parsed_equation=sub_parsed_equation, subscript=sub, verbose=verbose, var_name=var)
+                        if var not in self.name_space:
+                            self.name_space[var] = dict()
+                        self.name_space[var][sub] = value
+                elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
+                    self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
+                    for sub in self.dimension_elements[self.var_dimensions[var]]:
+                        value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=sub, verbose=verbose, var_name=var)
+                        if var not in self.name_space:
+                            self.name_space[var] = dict()
+                        self.name_space[var][sub] = value
+                else:
+                    self.calculate_dependents(parsed_equation=parsed_equation, verbose=verbose)
+                    value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=subscript, verbose=verbose, var_name=var)
+                    self.name_space[var] = value
+                        
             else:
-                raise Exception("Undefined var: {}".format(var))
+                pass
+        
+        else:
+            raise Exception("Undefined var: {}".format(var))
 
     def calculate_variables_dynamic(self, verbose=False):
         for var in (self.stock_equations_parsed | self.aux_equations_parsed | self.flow_equations_parsed).keys():
@@ -1955,7 +1995,6 @@ class Structure(object):
         steps = int(time/dt)
 
         def step(debug=False):
-            print('--step {} start--'.format(s))
             if verbose:
                 # print('--time {} --'.format(self.sim_specs['current_time']))
                 print('--step {} start--'.format(s))
