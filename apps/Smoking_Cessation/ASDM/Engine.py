@@ -45,32 +45,42 @@ class NameManager(object):
             self.parameter_id += 1
             return 'parameter_' + str(self.parameter_id)
 
-class Data(object):
-    def __init__(self, data_source):
-        """
-        data_source: a DataFrame structure
+# class Data(object):
+#     def __init__(self, data_source):
+#         """
+#         data_source: a DataFrame structure
 
-        """
-        self.ts = data_source # we plan to convert more types of data_source to time_series
+#         """
+#         self.ts = data_source # we plan to convert more types of data_source to time_series
 
 
 class DataFeeder(object):
-    def __init__(self, data, from_step=1):
+    def __init__(self, data, from_time=0, data_dt=1):
         """
-        data: a Data object
+        data: a list
 
         """
-        self.ts_enumerator = enumerate(data.ts.values)
-        self.from_step = from_step
-        # self.n = 1
+        self.from_time =from_time
+        self.time_data = dict()
+        time = self.from_time
+        for d in data:
+            self.time_data[time] = d
+            time += data_dt
+        # print(self.time_data)
+        self.last_success_time = None
 
-    def __call__(self, current_step): # make a datafeeder callable
-        if current_step >= self.from_step:
-            ix, dp = next(self.ts_enumerator)
-
-            return(float(dp))
-        else:
-            return None
+    def __call__(self, current_time): # make a datafeeder callable
+        try:
+            d = self.time_data[current_time]
+            self.last_success_time = current_time
+        except KeyError:
+            if current_time < self.from_time:
+                raise Exception("Current time < external data starting time.")
+            elif current_time > list(self.time_data.keys())[-1]:
+                raise Exception("Current time > external data ending time.")
+            else:
+                d = self.time_data[self.last_success_time]
+        return(float(d))
 
 
 class ExtFunc(object):
@@ -105,6 +115,12 @@ class GraphFunc(object):
         self.interp_func = interp1d(self.xpts, self.ypts, kind='linear')
 
     def __call__(self, input):
+        # TODO implement other out-of-bounds contingencies
+        if input < self.xscale[0]:
+            input = self.xscale[0]
+        if input > self.xscale[1]:
+            input = self.xscale[1]
+        
         return self.interp_func(input)
 
 
@@ -201,10 +217,13 @@ class Structure(object):
         ]
 
         self.custom_functions = {
+            'MAX': max,
+            'MIN': min,
             'rbinom': self.rbinom,
             'delay1': self.delay1,
             'delay': self.delay,
-            'DELAY': self.delay
+            'DELAY': self.delay,
+            'STEP': self.step
             # 'init': self.init
         }
 
@@ -236,12 +255,13 @@ class Structure(object):
         self.__uid_element_name = dict()
         self.__time_slice_values = dict() # a time-slice of name values
         self.__name_values = dict() # centralised simulation data manager
-        self.__built_in_variables = dict()
+        self.__built_in_variables = {'TIME':list()}
         self.__expression_values = dict() # centralised data manager for init(expression)
-        self.__name_external_data = dict() # centralised external data manager
+        # self.__name_external_data = dict() # centralised external data manager
         
         # Specify if subscript is used
         self.subscripts = subscripts
+        self.var_dimensions = dict()
 
         # Define cumulative registers for time-related functions, such as delays
         self.delay_registers = dict()
@@ -252,6 +272,8 @@ class Structure(object):
         self.dt = 0.25
         self.simulation_time = 25
         self.time_units = 'Weeks'
+
+        self.verbose = False
 
         # Initialisation indicator
         self.is_initialised = False
@@ -333,6 +355,7 @@ class Structure(object):
                 def subscripted_equation(var):
                     # print('Reading variable from XMILE: {}'.format(var.get('name')))
                     if var.find('dimensions'):
+                        self.var_dimensions[var.get('name')] = list()
                         # print('Processing XMILE subscripted definition for:', var.get('name'))
                         var_dimensions = var.find('dimensions').findAll('dim')
                         # print('Found dimensions {}:'.format(var), var_dimensions)
@@ -340,6 +363,7 @@ class Structure(object):
                         var_dims = dict()
                         for dimension in var_dimensions:
                             name = dimension.get('name')
+                            self.var_dimensions[var.get('name')].append(name)
                             # print(dimension)
                             # print(name)
                             var_dims[name] = dims[name]
@@ -388,6 +412,7 @@ class Structure(object):
                                 var_subscripted_eqn[ect] =equation
                         return(var_subscripted_eqn)
                     else:
+                        self.var_dimensions[var.get('name')] = ['nodimension']
                         # print('Processing XMILE definition for:', var.get('name'))
                         var_subscripted_eqn = dict()
                         if var.find('conveyor'):
@@ -484,6 +509,15 @@ class Structure(object):
     def rbinom(self, n, p):
         return stats.binom.rvs(int(n), p, size=1)[0]
     
+    def step(self, stp, time):
+        # print('step:', stp, time)
+        if self.current_time >= time:
+            # print('step out:', stp)
+            return stp
+        else:
+            # print('step out:', 0)
+            return 0
+
     def delay(self, subscript, input, delay_time, initial_value=None):
         delay_time = float(delay_time)
         try:
@@ -530,6 +564,13 @@ class Structure(object):
         # case 1: var is a variable in the model
         if var in self.sfd.nodes:
             v = self.__name_values[self.initial_time][var][subscript]
+        elif '__ele1__' in var and var.split('__ele1__')[0] in self.sfd.nodes:
+            print('init case1.2')
+            var_name = var.split('__ele1__')[0]
+            var_subscript = var.split('__ele1__')[1].split('__ele2__')[0]
+            v = self.__name_values[self.initial_time][var_name][var_subscript]
+            if v is None:
+                v = self.calculate_experiment(var_name, var_subscript)
         # case 2: var is an expression
         else:
             if var in self.__expression_values.keys():
@@ -659,9 +700,14 @@ class Structure(object):
 
         # construct subscripted equation indexer
         # the 1st column stores the equation{function or initial value}, indexed by subscripts
-        if type(equation) is Data:  # wrap external data into DataFeeder
-            equation = DataFeeder(equation)
+        if type(equation) is DataFeeder:  # wrap external data into DataFeeder
+            equation = {'nosubscript': equation}
+            external = True
 
+        # when equation is manually specified without explicit subscript, e.g., 1, 2+1, etc.
+        if type(equation) is not dict:
+            equation = {'nosubscript': equation}
+        
         # create a name_values binding for its simulation data
         v_dict = dict()
         for k in equation.keys():
@@ -771,7 +817,10 @@ class Structure(object):
         return self.sfd.nodes[name]['pos']
 
     # Simulate a structure based on a certain set of parameters
-    def simulate(self, simulation_time=None, dt=None):
+    def simulate(self, simulation_time=None, dt=None, progress_bar=False, verbose=False):
+        self.verbose = verbose
+        if self.verbose:
+            print('Starting simulation...')
         if simulation_time is not None:
             self.simulation_time = simulation_time
         if dt is not None:
@@ -793,7 +842,7 @@ class Structure(object):
         
         # Step 2
         from tqdm import tnrange
-        for _ in tnrange(total_steps):
+        for _ in tnrange(total_steps, disable=not progress_bar):
             self.update_states()
             self.current_step += 1  # update current_step counter
             self.current_time += self.dt
@@ -811,7 +860,8 @@ class Structure(object):
     def init_stocks(self):
         self.__name_values[self.current_time] = deepcopy(self.__time_slice_values)
         for element in self.get_all_certain_type(['stock']):
-            print('Initializing stock: {}'.format(element))
+            if self.verbose:
+                print('Initializing stock: {}'.format(element))
             # for ix in self.sfd.nodes[element]['equation'].sub_index:
             for ix in self.sfd.nodes[element]['equation'].keys():
                 equation = self.sfd.nodes[element]['equation'][ix]
@@ -841,7 +891,8 @@ class Structure(object):
                     conveyor.initialize(length, value, leak_fraction)
 
         # set is_initialised flag to True
-        print('All stocks initialised.')
+        if self.verbose:
+            print('All stocks initialised.')
         self.is_initialised = True
 
     def update_stocks(self, dt):
@@ -852,8 +903,7 @@ class Structure(object):
         for element in self.get_all_certain_type('flow'):  # loop through all flows in this SFD,
             flows_dt[element] = dict()  # make a position for it in the dict of flows_dt, initializing it with 0
 
-
-        # calculate flows
+        # calculate flow values for this dt
         for flow in flows_dt.keys():
             for ix in self.sfd.nodes[flow]['equation'].keys():
                 flows_dt[flow][ix] = dt * self.__name_values[self.current_time-self.dt][flow][ix]
@@ -1008,16 +1058,29 @@ class Structure(object):
                     # if ix not in self.visited[element].keys():
                     self.calculate_experiment(element, ix)
 
-    @staticmethod
-    def process_expression(expression):
+    def process_expression(self, expression, intended_subscripts=None):
+        # print(self.n_indentation*'\t' + 'PE0 processING expression:', expression, 'with intended subs:', intended_subscripts)
+        # print(self.n_indentation*'\t' + 'split', intended_subscripts)
+        if intended_subscripts is not None:
+            intended_subscripts = intended_subscripts.split('__cmm__')
+        
         expression_1 = expression
         while '[' in expression_1:
             expression_1_a, expression_1_b = expression_1.split('[', 1)
             expression_1_b, expression_1_c = expression_1_b.split(']', 1)
             expression_1_b = expression_1_b.replace(' ', '').replace(',', '__cmm__')
+            
+            # Dynamically resolve collective reference such as a[Dimension1]
+            if intended_subscripts is not None:
+                subscripts = expression_1_b.split('__cmm__')
+                for i in range(len(subscripts)):
+                    if subscripts[i] in self.subscripts.keys(): # a[Dimension1] instead of a[Element1]
+                        subscripts[i] = intended_subscripts[i] # dynamically replace Dimension1 by Element1
+                expression_1_b = '__cmm__'.join(subscripts)
+
             expression_1 = expression_1_a + '__ele1__' + expression_1_b + '__ele2__' + expression_1_c
         expression = expression_1
-        # print('processed equation:', expression)
+        # print(self.n_indentation*'\t' + 'PE1 processED equation:', expression)
         return expression
     
     @staticmethod
@@ -1028,21 +1091,20 @@ class Structure(object):
     
     def calculate_experiment(self, expression, subscript):
         self.n_indentation += 1
-        # print(self.n_indentation*'\t' + 'processing expression:', expression)
+        if self.verbose:
+            print(self.n_indentation*'\t' + 'processing expression of {} on subscript {}:'.format(expression, subscript))
 
         # check if the expression contains '[]' - cross reference of arrays
         if type(expression) is str and '[' in expression:
             # print('process a')
             expression = self.process_expression(expression)
             # print('process expression with subscripts:', expression)
-            # expression = expression.replace('[', '__ele1__').replace(']', '__ele2__').replace(',', '__cmm__')
-
-        # check if the expression is abc__ele1__subscript__ele2__
-        if type(expression) is str and '__ele1__' in expression:
+        
+        elif type(expression) is str and '__ele1__' in expression:
             # print('process b')
-            expression, subscript = expression.split('__ele1__', 1)
-            subscript, remaining = subscript.split('__ele2__', 1)
-            # print('process b', expression, subscript, remaining)
+            expression, subscript = expression.split('__ele1__')
+            subscript = subscript.split('__ele2__')[0]
+            # print('process b:', expression, subscript)
 
         # check if this value has been calculated and stored in buffer
         # when initialising stock values, there's no 'self.visited' yet
@@ -1105,9 +1167,10 @@ class Structure(object):
                 return 0 # leaks are currently all 0
 
         else:  # calculation is needed
-            # print(self.n_indentation*'\t' + 'calc h:', expression, subscript)
+            # print(self.n_indentation*'\t' + 'calc h:', expression, 'SUB:', subscript)
             if expression in self.sfd.nodes: # careful - outflows from conveyors have eqn 0 but should not be dealt with here
                 # print(self.n_indentation*'\t' + 'calc h1:', self.sfd.nodes[expression]['equation'])
+                # print(self.n_indentation*'\t' + 'retriving:', list(self.sfd.nodes[expression]['equation'].keys()))
                 if subscript in self.sfd.nodes[expression]['equation'].keys():
                     # print(self.n_indentation*'\t' + 'calc h1.1')
                     equation = self.sfd.nodes[expression]['equation'][subscript]
@@ -1119,7 +1182,7 @@ class Structure(object):
 
             # replace abc[subscript] -> abc__ele1__subscript__ele2__
             if type(equation) is str:
-                equation = self.process_expression(equation)
+                equation = self.process_expression(equation, intended_subscripts=subscript)
             
             # pre-process expression to match Python syntax
             # replace '=' with '=='
@@ -1131,6 +1194,11 @@ class Structure(object):
 
             while type(value) not in [int, float, np.int64, bool]: # if value has not become a number (taking care of the numpy data types)
                 
+                # check if the expression is an external DataFeeder
+                if type(equation) is DataFeeder:
+                    # print('calc df')
+                    equation = equation(self.current_time)
+
                 # check if the variable is a graph function which has an additonal layer that transforms the equation outcome
                 if type(equation) is GraphFunc:
                     # print('calc h0')
@@ -1203,15 +1271,14 @@ class Structure(object):
                 # check if there are time-related functions in the equation
                 elif type(equation) is str and re.findall(r"(\w+)[(].+[)]", str(equation)):
                     func_names = re.findall(r"(\w+)[(].+[)]", str(equation))
-                    # print('calc h3')
+                    # print(self.n_indentation*'\t'+'calc h3')
                     for func_name in func_names:
-                        # print(0, equation)
-                        # print('calc h3 0', func_name)
+                        # print(self.n_indentation*'\t'+'calc h3.0', func_name)
                         if func_name in self.time_related_functions.keys():
                             func_args = re.findall(r"\w+[(](.+)[)]", str(equation))
-                            # print('1',func_args)
+                            # print(self.n_indentation*'\t'+'calc h3.0.0',func_args)
                             func_args_split = func_args[0].split(",")
-                            # print('2',func_names[0], func_args_split)
+                            # print(self.n_indentation*'\t'+'calc h3.0.1',func_names[0], func_args_split)
 
                             # pass args to the corresponding time-related function
                             func_args_full = [subscript] + func_args_split
@@ -1221,7 +1288,17 @@ class Structure(object):
                             func_value_str = str(func_value)
                             func_str = func_name+'('+func_args[0]+')'
                             equation = equation.replace(func_str, func_value_str) # in case init() is a part of an equation, substitue init() with its value
-                            # print('3', equation)
+                            # print(self.n_indentation*'\t'+'calc h3.0.2', equation)
+
+                # # check if the expression is abc__ele1__subscript__ele2__
+                # elif type(expression) is str and '__ele1__' in expression:
+                #     print('process b')
+                #     expression, subscript = expression.split('__ele1__', 1)
+                #     subscript, remaining = subscript.split('__ele2__', 1)
+                #     print('process b', expression, subscript, remaining)
+
+                # if type(equation) is str and '[' in equation:
+                #     equation = self.process_expression(equation)
 
                 '''
                 Until here, all we want to have is an modified equation suitable for evaluation.
@@ -1229,7 +1306,7 @@ class Structure(object):
 
                 try:
                     # print(self.n_indentation*'\t' + 'eval:', equation)
-                    value = eval(str(equation), self.custom_functions)
+                    value = eval(str(equation), self.custom_functions) # TODO: 'Beds' in 'TimeToAddBeds' got replaced by the value of var 'Beds'. Fix needed
                     # print(self.n_indentation*'\t'+'Evaluated {} = {}'.format(equation, value))
 
                 except NameError as e:
@@ -1250,16 +1327,26 @@ class Structure(object):
                 # Noted 21/8/2022: This is not OK. Positive check of non-negative stocks should be performed when updating the stock, not calculating flows. -10->[0]-10-> is legitimate but not pass here.
                 # non-negative control of flows
                 if self.sfd.nodes[expression]['element_type'] == 'flow':
+                    # when flow is not bi-flow, i.e., cannot go negative
                     if self.sfd.nodes[expression]['non_negative']:
                         if value < 0:
                             # print('Flow {} is non-negative but is going under 0 to {}.'.format(expression, value))
                             value = 0
-                
+                    # check if flow is constrained by the stock it is drawing from; this is not perfect - if 2 flows f1, f2 are drawing from the same stock, f2 is constrained by s-f1, not just s
+                    if self.sfd.nodes[expression]['flow_from'] is not None:
+                        stock_flow_from_level = self.__name_values[self.current_time][self.sfd.nodes[expression]['flow_from']][subscript]
+                        if value > stock_flow_from_level:
+                            value = stock_flow_from_level
+
                 # leak flows have eqn but it's not for value, but for leak fraction. Check before register
                 if self.sfd.nodes[expression]['leak']:
                     pass
+                # register calculated values to __name_values
                 else:
-                    self.__name_values[self.current_time][expression][subscript] = value
+                    if 'nosubscript' in self.sfd.nodes[expression]['equation'].keys(): # A variable is not subscripted but is used to calculate a subscripted variable
+                        self.__name_values[self.current_time][expression]['nosubscript'] = value
+                    else:
+                        self.__name_values[self.current_time][expression][subscript] = value
 
                 try:  # when initialising stock values, there's no 'self.visited' yet
                     # print('calc updating vidited', expression, subscript, value)
@@ -1270,6 +1357,9 @@ class Structure(object):
                             self.visited[expression][subscript] = value
                 except AttributeError:
                     pass
+            
+            if self.verbose:
+                print(self.n_indentation*'\t'+'calc-ed value:'+str(value))
             
             self.n_indentation -= 1
             return value
@@ -1283,8 +1373,10 @@ class Structure(object):
         self.current_step = 1
         self.current_time = self.initial_time
 
-        for name in self.__name_values.keys():
-            self.__name_values[name] = dict()
+        # for name in self.__name_values.keys():
+        #     self.__name_values[name] = dict()
+
+        self.__name_values = dict()
         
         self.__built_in_variables['TIME'] = list()
         
@@ -1405,11 +1497,17 @@ class Structure(object):
         # step 3: confirm connectors based on the new equation (only when the new equation is a function not a number
         # print("Engine: Replacing equation of {}".format(name))
         
-        if new_equation is not None:
-            new_equation_parsed = self.text_to_equation(new_equation)
-        else:
+        if new_equation is None:
+        #     new_equation_parsed = self.text_to_equation(new_equation)
+        # else:
             raise Exception("New equation for replacing could not be None.")
         
+        # step 0: consider DataFeeder
+        if type(new_equation) is DataFeeder:
+            self.sfd.nodes[name]['equation']['nosubscript'] = new_equation
+            self.sfd.nodes[name]['external'] = True
+            return
+
         # step 1:
         if self.sfd.nodes[name]['element_type'] != 'stock':
             to_remove = list()
@@ -1441,12 +1539,12 @@ class Structure(object):
             self.sfd.nodes[name]['equation'][ix] = new_equation
         
             # step 3:
-            if type(new_equation_parsed[0]) not in [int, float]:
-                # If new equation (parsed list) does not starts with a number, 
-                # it's not a constant value, but a function
-                if type(new_equation_parsed) is not str:
-                    self.__add_function_dependencies(name, new_equation_parsed, ix)
-                    # print("Engine: New edges created.")
+            # if type(new_equation) not in [int, float]:
+            #     # If new equation (parsed list) does not starts with a number, 
+            #     # it's not a constant value, but a function
+            #     if type(new_equation) is not str:
+            #         self.__add_function_dependencies(name, new_equation, ix)
+            #         # print("Engine: New edges created.")
 
     def remove_element(self, name):
         """
@@ -1465,16 +1563,25 @@ class Structure(object):
         self.sfd.clear()
 
     # Return a behavior
-    def get_element_simulation_result(self, name, subscripts=None):
-        if subscripts is None:
-            subscripts = self.__name_values[name].keys()
-        result = self.__name_values[name]
-        result_dict = dict()
-        for ix in subscripts:
-            result_dict[ix] = result[ix]  # return a list of values; not a pandas DataFrame
-        if len(result_dict) == 1:
-            result_dict = next(iter(result_dict.values()))
-        return result_dict
+    def get_element_simulation_result(self, name):
+        full_result = dict()
+        for time, values in self.__name_values.items():
+            time_result = dict()
+            time_result[self.time_units] = time
+            name_output = name.replace('_', ' ')
+            if name_output[0].isdigit():
+                name_output = '"{}"'.format(name_output)
+            
+            for ix in self.__name_values[time][name].keys():
+                if ix == 'nosubscript':
+                    time_result[name_output] = values[name]['nosubscript']
+                else:
+                    time_result[name_output+'[{}]'.format(ix.replace('__cmm__', ', ').replace('_', ' '))] = values[name][ix]
+            full_result[time] = time_result
+        # return full_result
+        df_full_result = pd.DataFrame.from_dict(full_result).transpose()
+        df_full_result.set_index(self.time_units, inplace=True)
+        return df_full_result[name]
 
     # Return all simulation results as a pandas DataFrame
     def export_simulation_result(self):
@@ -1494,7 +1601,7 @@ class Structure(object):
                     if ix == 'nosubscript':
                         time_result[node_output] = values[node]['nosubscript']
                     else:
-                        time_result[node_output+'[{}]'.format(ix.replace('_', ' '))] = values[node][ix]
+                        time_result[node_output+'[{}]'.format(ix.replace('__cmm__', ', ').replace('_', ' '))] = values[node][ix]
             full_result[time] = time_result
         df_full_result = pd.DataFrame.from_dict(full_result).transpose()
         df_full_result.set_index(self.time_units, inplace=True)
