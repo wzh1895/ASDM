@@ -8,7 +8,7 @@ This project is a Python-based tool that could be used for building, simulating,
 
 ### Python version
 
-The library is tested under Python 3.7.13 on Ubuntu Linux. It is supposed to work also on higher versions of Python. If you encounter problems using it please contact the author through email or open an issue.
+The library is tested under Python 3.9.0 on Ubuntu Linux and Windows. It is supposed to work also on higher versions of Python. If you encounter problems using it please open an issue.
 
 ### OS
 
@@ -18,26 +18,7 @@ Although the rest of the functionalities of ASDM still work on macOS, we recomme
 
 ### Dependencies
 
-We recommend that you ues anaconda to manage the dependencies and use a dedicated fresh environment for ASDM.
-
-To create such an environment:
-
-```
-conda create --name asdm
-```
-
-To clone this repository to your local environment, please make sure that ```git``` is installed in your system and use the following command:
-
-```
-git clone https://github.com/wzh1895/ASDM.git
-```
-
-To install all dependencies:
-
-```
-cd ASDM
-conda install --file requirements.txt -c conda-forge
-```
+We recommend that you use pip to install asdm but if you do wish to develop it further pipenv instructions are provided. 
 
 ## Tutorial Notebooks
 
@@ -53,7 +34,7 @@ We use a series of Jupyter Notebooks to provide functionality guidance for the u
 - Exporting and examing simulation outcomes
 - Displaying simulation outcomes as graph
 
-2. [Model Calibration](./2-SD_model_calibration.ipynb)
+2. [Model Calibration](./2-SD_model_calibration.ipynb) [STILL IN DEVELOPMENT]
 
 - Estimating SD model parameters using Markov Chain Monte Carlo (MCMC)
   - Support for MLE (maximum likelihood) and MAP (maximum a posteriori) approach
@@ -82,7 +63,11 @@ We have neither been working a lot on **the speed of simulation**. Although simu
 
 ASDM is made public under the MIT licence.
 
-## Author
+## Authors
 **Wang Zhao**  
 PhD candidate at University of Strathclyde, UK   
 <wang.zhao@strath.ac.uk>  
+
+**Matt Stammers**  
+MD candidate at University of Southampton, UK   
+<m.stammers@soton.ac.uk>  
