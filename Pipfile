@@ -19,10 +19,12 @@ ipywidgets = "==7.6.5"
 openpyxl = "==3.0.10"
 ipykernel = "==6.22.0"
 streamlit = "==1.20.0"
-setuptools = "==67.6.1"
-setuptools-scm = "==7.1.0"
 
 [dev-packages]
+setuptools = "==67.7.1"
+setuptools-scm = "==7.1.0"
+twine = "==4.0.2"
+build = "==0.10.0"
 
 [requires]
 python_version = "3.9"
