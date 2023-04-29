@@ -1,4 +1,4 @@
-from ASDM import Structure, DataFeeder
+from ASDM.ASDM import Structure, DataFeeder
 import matplotlib.pyplot as plt
 
 goal = DataFeeder(

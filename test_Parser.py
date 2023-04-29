@@ -1,4 +1,4 @@
-from ASDM import Parser
+from ASDM.ASDM import Parser
 
 if __name__ == '__main__':
 

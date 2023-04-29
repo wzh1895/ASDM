@@ -1,4 +1,4 @@
-from ASDM import Parser, Solver
+from ASDM.ASDM import Parser, Solver
 
 
 if __name__ == '__main__':
