@@ -45,16 +45,12 @@ if __name__ == '__main__':
     # model = Structure(from_xmile='BuiltInTestModels/Conveyor_initialisation.stmx')
 
     ### Production Models ###
-
-    # model = Structure(from_xmile='TestModels/Elective Recovery Model.stmx')
-    model = Structure(from_xmile='TestModels/Endoscopy v3b.stmx')
-    # model=Structure(from_xmile='TestModels/2022_07_14 no milk without meat.stmx')
-    # model=Structure(from_xmile='TestModels/TempTest1.stmx')
+    
 
     ### Controls ###
 
     # Dynamic simulation
-    model.simulate(debug_against=False, verbose=False)
+    model.simulate(debug_against=False, verbose=True)
     model.summary()
     ### Simulation inspections ###
 
