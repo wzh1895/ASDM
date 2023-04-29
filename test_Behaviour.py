@@ -3,7 +3,7 @@ import logging
 import pathlib
 import pandas as pd
 import numpy as np
-from ASDM import Structure
+from ASDM.ASDM import Structure
 
 ### Load the tests and outcomes ###
 

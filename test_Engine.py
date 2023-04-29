@@ -1,4 +1,4 @@
-from ASDM import Structure
+from ASDM.ASDM import Structure
 
 
 if __name__ == '__main__':
