@@ -8,8 +8,8 @@ from ASDM.ASDM import Structure
 ### Load the tests and outcomes ###
 
 # Run this script at the project's root directory
-path_tests = pathlib.Path('./BuiltinTestModels')
-path_test_results = pathlib.Path('./BuiltinTestModels/reference_outcomes')
+path_tests = pathlib.Path('./BuiltInTestModels')
+path_test_results = pathlib.Path('./BuiltInTestModels/reference_outcomes')
 tests = list()
 outcomes = list()
 for t in path_tests.iterdir():
