@@ -1,17 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <xmile version="1.0" xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0" xmlns:isee="http://iseesystems.com/XMILE">
 	<header>
-		<smile version="1.0" namespace="std, isee"/>
-		<name>Logic</name>
-		<uuid>7db31980-7552-48ec-8a47-bea97993d674</uuid>
+		<smile version="1.0" namespace="std, isee" uses_arrays="1"/>
+		<name>MOD_arrayed</name>
+		<uuid>39f62f55-44ee-4a01-bfd0-b83cd9607464</uuid>
 		<vendor>isee systems, inc.</vendor>
 		<product version="2.0" isee:build_number="2176" isee:saved_by_v1="true" lang="en">Stella Professional</product>
 	</header>
-	<sim_specs isee:sim_duration="0.5" isee:simulation_delay="0.25" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="true" isee:loop_exhaustive_allowed="1000">
+	<sim_specs isee:sim_duration="0.5" isee:simulation_delay="0.5" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="true" isee:loop_exhaustive_allowed="1000">
 		<start>1</start>
-		<stop>3</stop>
+		<stop>2</stop>
 		<dt reciprocal="true">4</dt>
 	</sim_specs>
+	<dimensions>
+		<dim name="Dimension_1">
+			<elem name="Element_1"/>
+			<elem name="Element_2"/>
+		</dim>
+	</dimensions>
 	<isee:prefs show_module_prefix="true" live_update_on_drag="true" show_restore_buttons="false" layer="model" interface_scale_ui="true" interface_max_page_width="10000" interface_max_page_height="10000" interface_min_page_width="0" interface_min_page_height="0" rerun_on_structure_change="false" saved_runs="1" keep="false" rifp="true"/>
 	<isee:multiplayer_settings include_chat="true" allow_observers="false" advance_time_increment="1" observer_start_page="home_page" enabled="false"/>
 	<isee:time_formats default_format="Builtin">
@@ -26,26 +32,38 @@
 	<model_units/>
 	<model>
 		<variables>
-			<aux name="in1">
-				<eqn>2&gt;1</eqn>
+			<aux name="MOD0 2">
+				<dimensions>
+					<dim name="Dimension_1"/>
+				</dimensions>
+				<eqn>TIME</eqn>
 			</aux>
-			<aux name="in2">
-				<eqn>3&gt;2</eqn>
+			<aux name="AMODB 2">
+				<dimensions>
+					<dim name="Dimension_1"/>
+				</dimensions>
+				<eqn>2</eqn>
 			</aux>
-			<aux name="out1">
-				<eqn>in1 AND in2</eqn>
+			<aux name="output 2">
+				<dimensions>
+					<dim name="Dimension_1"/>
+				</dimensions>
+				<eqn>MOD0_2 MOD AMODB_2</eqn>
 			</aux>
-			<aux name="in3">
-				<eqn>2=2</eqn>
+			<aux name="c 2">
+				<eqn>2</eqn>
 			</aux>
-			<aux name="in4">
-				<eqn>3&gt;4</eqn>
+			<aux name="output 3">
+				<dimensions>
+					<dim name="Dimension_1"/>
+				</dimensions>
+				<eqn>MOD0_2 MOD c_2</eqn>
 			</aux>
-			<aux name="out2">
-				<eqn>in3 AND in4</eqn>
-			</aux>
-			<aux name="out3">
-				<eqn>out1 OR out2</eqn>
+			<aux name="output 4">
+				<dimensions>
+					<dim name="Dimension_1"/>
+				</dimensions>
+				<eqn>c_2 MOD MOD0_2</eqn>
 			</aux>
 		</variables>
 		<views>
@@ -93,7 +111,7 @@
 				<isee:iframe color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt" border_width="thin" border_style="solid"/>
 				<isee:financial_table color="black" background="#E0E0E0" text_align="right" font_size="12pt" auto_fit="true" first_column_width="250" other_column_width="100" header_font_style="normal" header_font_weight="bold" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="14pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 			</style>
-			<view isee:show_pages="false" background="white" page_width="818" page_height="571" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
+			<view isee:show_pages="false" background="white" page_width="818" page_height="571" isee:page_rows="2" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
 				<style color="black" background="white" font_style="normal" font_weight="normal" text_decoration="none" text_align="center" vertical_text_align="center" font_color="black" font_family="Arial" font_size="10pt" padding="2" border_color="black" border_width="thin" border_style="none">
 					<stock color="blue" background="white" font_color="blue" font_size="9pt" label_side="top">
 						<shape type="rectangle" width="45" height="35"/>
@@ -130,37 +148,43 @@
 					</graph>
 					<table color="black" background="#E0E0E0" text_align="right" font_size="12pt" orientation="vertical" wrap_text="false" isee:auto_fit="true" isee:use_alternate_row_colors="false" isee:unlimited_table_length="false" blank_column_width="80" column_width="160" interval="1" report_balances="beginning" report_flows="instantaneous" header_font_style="normal" header_font_weight="normal" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="12pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 				</style>
-				<aux x="395" y="304" name="in1"/>
-				<aux x="477" y="304" name="in2"/>
-				<aux x="440" y="390" name="out1"/>
-				<connector uid="1" angle="297.621">
-					<from>in1</from>
-					<to>out1</to>
+				<aux x="168.5" y="177.75" name="MOD0 2"/>
+				<aux x="168.5" y="264" name="AMODB 2"/>
+				<aux x="370" y="177.75" name="output 2"/>
+				<connector uid="1" angle="0">
+					<from>MOD0_2</from>
+					<to>output_2</to>
 				</connector>
-				<connector uid="2" angle="246.721">
-					<from>in2</from>
-					<to>out1</to>
+				<connector uid="2" angle="23.1728">
+					<from>AMODB_2</from>
+					<to>output_2</to>
 				</connector>
-				<aux x="582" y="302" name="in3"/>
-				<aux x="664" y="302" name="in4"/>
-				<aux x="627" y="388" name="out2"/>
-				<connector uid="3" angle="297.621">
-					<from>in3</from>
-					<to>out2</to>
+				<aux label_side="right" label_angle="315" x="168.5" y="349" name="c 2"/>
+				<connector uid="3" angle="25.2422">
+					<from>c_2</from>
+					<to>output_3</to>
 				</connector>
-				<connector uid="4" angle="246.721">
-					<from>in4</from>
-					<to>out2</to>
+				<aux x="370" y="254" name="output 3"/>
+				<aux x="370" y="334" name="output 4"/>
+				<connector uid="4" angle="339.273">
+					<from>MOD0_2</from>
+					<to>output_3</to>
 				</connector>
-				<aux x="536" y="498" name="out3"/>
-				<connector uid="5" angle="309.806">
-					<from>out1</from>
-					<to>out3</to>
+				<connector uid="5" angle="4.25734">
+					<from>c_2</from>
+					<to>output_4</to>
 				</connector>
-				<connector uid="6" angle="225">
-					<from>out2</from>
-					<to>out3</to>
+				<connector uid="6" angle="322.209">
+					<from>MOD0_2</from>
+					<to>output_4</to>
 				</connector>
+				<stacked_container uid="7" x="514" y="584">
+					<graph width="350" height="250" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="output_4[*]"/>
+						</plot>
+					</graph>
+				</stacked_container>
 			</view>
 		</views>
 	</model>

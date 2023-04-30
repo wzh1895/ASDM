@@ -1,51 +1,84 @@
 <?xml version="1.0" encoding="utf-8"?>
 <xmile version="1.0" xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0" xmlns:isee="http://iseesystems.com/XMILE">
 	<header>
-		<smile version="1.0" namespace="std, isee"/>
-		<name>Logic</name>
-		<uuid>7db31980-7552-48ec-8a47-bea97993d674</uuid>
+		<smile version="1.0" namespace="std, isee" uses_conveyor=""/>
+		<name>Conveyor_leakage2</name>
+		<uuid>04a63222-a7cc-4175-99e0-ddcdacedd8cb</uuid>
 		<vendor>isee systems, inc.</vendor>
 		<product version="2.0" isee:build_number="2176" isee:saved_by_v1="true" lang="en">Stella Professional</product>
 	</header>
-	<sim_specs isee:sim_duration="0.5" isee:simulation_delay="0.25" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="true" isee:loop_exhaustive_allowed="1000">
-		<start>1</start>
-		<stop>3</stop>
-		<dt reciprocal="true">4</dt>
+	<sim_specs isee:sim_duration="0.5" isee:simulation_delay="0.0625" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="false" isee:loop_exhaustive_allowed="1000">
+		<start>0</start>
+		<stop>8</stop>
+		<dt reciprocal="true">1</dt>
 	</sim_specs>
 	<isee:prefs show_module_prefix="true" live_update_on_drag="true" show_restore_buttons="false" layer="model" interface_scale_ui="true" interface_max_page_width="10000" interface_max_page_height="10000" interface_min_page_width="0" interface_min_page_height="0" rerun_on_structure_change="false" saved_runs="1" keep="false" rifp="true"/>
 	<isee:multiplayer_settings include_chat="true" allow_observers="false" advance_time_increment="1" observer_start_page="home_page" enabled="false"/>
 	<isee:time_formats default_format="Builtin">
 		<isee:time_format name="Builtin" type="adaptive"/>
 	</isee:time_formats>
-	<default_format/>
+	<default_format precision="full" scale_by="1"/>
 	<data>
 		<export resource="/Users/jonker/Library/CloudStorage/OneDrive-UniversityofStrathclyde/ASDM/stella.csv" interval="DT" precomputed="false" isee:format="numbers">
 			<all/>
 		</export>
 	</data>
-	<model_units/>
+	<model_units>
+		<unit name="Months">
+			<eqn/>
+			<alias>mo</alias>
+			<alias>month</alias>
+		</unit>
+		<unit name="Per Month">
+			<eqn>1/Months</eqn>
+		</unit>
+	</model_units>
 	<model>
 		<variables>
-			<aux name="in1">
-				<eqn>2&gt;1</eqn>
+			<stock name="Conveyor 1">
+				<eqn>8</eqn>
+				<inflow>InFlow_1</inflow>
+				<outflow>OutFlow_1</outflow>
+				<outflow>LeakingFlow_1</outflow>
+				<conveyor>
+					<len>4</len>
+				</conveyor>
+			</stock>
+			<flow name="OutFlow 1">
+				<eqn>0</eqn>
+				<non_negative/>
+				<units>Per Month</units>
+			</flow>
+			<flow name="LeakingFlow 1">
+				<eqn>LeakFraction_1</eqn>
+				<non_negative/>
+				<leak/>
+				<units>Per Month</units>
+			</flow>
+			<stock name="AllLeaked 1">
+				<eqn>0.0001</eqn>
+				<inflow>LeakingFlow_1</inflow>
+			</stock>
+			<stock name="AllOutFlowed 1">
+				<eqn>0.0001</eqn>
+				<inflow>OutFlow_1</inflow>
+			</stock>
+			<aux name="LeakFraction 1">
+				<eqn>0.3</eqn>
 			</aux>
-			<aux name="in2">
-				<eqn>3&gt;2</eqn>
+			<aux name="LeakedFraction 1">
+				<eqn>AllLeaked_1/(AllLeaked_1+AllOutFlowed_1)</eqn>
 			</aux>
-			<aux name="out1">
-				<eqn>in1 AND in2</eqn>
+			<aux name="LeakFlowFraction 1">
+				<eqn>(LeakingFlow_1+0.0001)/(OutFlow_1+LeakingFlow_1+0.0001)</eqn>
 			</aux>
-			<aux name="in3">
-				<eqn>2=2</eqn>
-			</aux>
-			<aux name="in4">
-				<eqn>3&gt;4</eqn>
-			</aux>
-			<aux name="out2">
-				<eqn>in3 AND in4</eqn>
-			</aux>
-			<aux name="out3">
-				<eqn>out1 OR out2</eqn>
+			<flow name="InFlow 1">
+				<eqn>1</eqn>
+				<non_negative/>
+				<units>Per Month</units>
+			</flow>
+			<aux name="ConveyorDist 1">
+				<eqn>AllLeaked_1+AllOutFlowed_1</eqn>
 			</aux>
 		</variables>
 		<views>
@@ -93,7 +126,7 @@
 				<isee:iframe color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt" border_width="thin" border_style="solid"/>
 				<isee:financial_table color="black" background="#E0E0E0" text_align="right" font_size="12pt" auto_fit="true" first_column_width="250" other_column_width="100" header_font_style="normal" header_font_weight="bold" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="14pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 			</style>
-			<view isee:show_pages="false" background="white" page_width="818" page_height="571" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
+			<view isee:show_pages="false" background="white" page_width="818" page_height="571" isee:page_cols="3" isee:page_rows="2" isee:scroll_y="4" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
 				<style color="black" background="white" font_style="normal" font_weight="normal" text_decoration="none" text_align="center" vertical_text_align="center" font_color="black" font_family="Arial" font_size="10pt" padding="2" border_color="black" border_width="thin" border_style="none">
 					<stock color="blue" background="white" font_color="blue" font_size="9pt" label_side="top">
 						<shape type="rectangle" width="45" height="35"/>
@@ -130,36 +163,90 @@
 					</graph>
 					<table color="black" background="#E0E0E0" text_align="right" font_size="12pt" orientation="vertical" wrap_text="false" isee:auto_fit="true" isee:use_alternate_row_colors="false" isee:unlimited_table_length="false" blank_column_width="80" column_width="160" interval="1" report_balances="beginning" report_flows="instantaneous" header_font_style="normal" header_font_weight="normal" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="12pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
 				</style>
-				<aux x="395" y="304" name="in1"/>
-				<aux x="477" y="304" name="in2"/>
-				<aux x="440" y="390" name="out1"/>
-				<connector uid="1" angle="297.621">
-					<from>in1</from>
-					<to>out1</to>
+				<stock x="225" y="96" name="Conveyor 1"/>
+				<flow x="313" y="92" name="OutFlow 1">
+					<pts>
+						<pt x="247.5" y="92"/>
+						<pt x="390.5" y="92"/>
+					</pts>
+				</flow>
+				<flow x="225" y="159" name="LeakingFlow 1">
+					<pts>
+						<pt x="225" y="113.5"/>
+						<pt x="225" y="216.5"/>
+					</pts>
+				</flow>
+				<stock label_side="bottom" x="225" y="234" name="AllLeaked 1"/>
+				<stock x="413" y="96" name="AllOutFlowed 1"/>
+				<stacked_container uid="1" x="534" y="50" width="405" height="494">
+					<graph width="405" height="494" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="9" num_y_labels="17" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="InFlow_1"/>
+						</plot>
+						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="Conveyor_1"/>
+						</plot>
+						<plot color="fuchsia" pen_style="dotted" isee:keep_zero_visible="true" pen_width="1" index="2" show_y_axis="true">
+							<entity name="OutFlow_1"/>
+						</plot>
+						<plot color="#008F44" pen_style="dashed" isee:keep_zero_visible="true" pen_width="1" index="3" show_y_axis="true">
+							<entity name="LeakingFlow_1"/>
+						</plot>
+						<plot color="#FF7F00" isee:keep_zero_visible="true" pen_width="1" index="4" show_y_axis="true">
+							<entity name="AllLeaked_1"/>
+						</plot>
+						<plot color="#7F00FF" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="5" show_y_axis="true">
+							<entity name="AllOutFlowed_1"/>
+						</plot>
+					</graph>
+				</stacked_container>
+				<aux x="112" y="174" name="LeakFraction 1"/>
+				<connector uid="2" angle="7.56143">
+					<from>LeakFraction_1</from>
+					<to>LeakingFlow_1</to>
 				</connector>
-				<connector uid="2" angle="246.721">
-					<from>in2</from>
-					<to>out1</to>
+				<aux x="406" y="234" name="LeakedFraction 1"/>
+				<connector uid="3" angle="272.386">
+					<from>AllOutFlowed_1</from>
+					<to>LeakedFraction_1</to>
 				</connector>
-				<aux x="582" y="302" name="in3"/>
-				<aux x="664" y="302" name="in4"/>
-				<aux x="627" y="388" name="out2"/>
-				<connector uid="3" angle="297.621">
-					<from>in3</from>
-					<to>out2</to>
+				<connector uid="4" angle="6.20345">
+					<from>AllLeaked_1</from>
+					<to>LeakedFraction_1</to>
 				</connector>
-				<connector uid="4" angle="246.721">
-					<from>in4</from>
-					<to>out2</to>
+				<aux x="336" y="297" name="LeakFlowFraction 1"/>
+				<connector uid="5" angle="276.402">
+					<from>OutFlow_1</from>
+					<to>LeakFlowFraction_1</to>
 				</connector>
-				<aux x="536" y="498" name="out3"/>
-				<connector uid="5" angle="309.806">
-					<from>out1</from>
-					<to>out3</to>
+				<connector uid="6" angle="315">
+					<from>LeakingFlow_1</from>
+					<to>LeakFlowFraction_1</to>
 				</connector>
-				<connector uid="6" angle="225">
-					<from>out2</from>
-					<to>out3</to>
+				<stacked_container uid="7" x="57" y="391.5" width="434" height="274">
+					<graph width="434" height="274" type="time_series" isee:points_only="false" show_grid="false" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="9" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="LeakFlowFraction_1"/>
+						</plot>
+						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="LeakedFraction_1"/>
+						</plot>
+					</graph>
+				</stacked_container>
+				<flow x="136.25" y="92" name="InFlow 1">
+					<pts>
+						<pt x="70" y="92"/>
+						<pt x="202.5" y="92"/>
+					</pts>
+				</flow>
+				<aux x="477" y="184" name="ConveyorDist 1"/>
+				<connector uid="8" angle="25.1148">
+					<from>AllLeaked_1</from>
+					<to>ConveyorDist_1</to>
+				</connector>
+				<connector uid="9" angle="309.56">
+					<from>AllOutFlowed_1</from>
+					<to>ConveyorDist_1</to>
 				</connector>
 			</view>
 		</views>
