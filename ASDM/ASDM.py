@@ -986,7 +986,7 @@ class Solver(object):
                 
                 # historical time
                 historical_time = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[1][2], subscript=subscript, verbose=verbose)
-                if historical_time > self.sim_specs['current_time']:
+                if historical_time > self.sim_specs['current_time'] or historical_time < self.sim_specs['initial_time']:
                     value = 0
                 else:
                     historical_steps = (historical_time - self.sim_specs['initial_time']) / self.sim_specs['dt']
