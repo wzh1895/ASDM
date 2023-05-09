@@ -24,7 +24,7 @@ We recommend that you use pip to install asdm but if you do wish to develop it f
 
 We use a series of Jupyter Notebooks to provide functionality guidance for the users.
 
-1. [SD Modelling](./1-SD_modelling.ipynb)
+1. [SD Modelling](https://github.com/wzh1895/ASDM/blob/main/Demo_SD_modelling.ipynb)
 
 - Creating an SD model from scratch
   - Adding stocks, flows, auxiliaries
@@ -33,19 +33,6 @@ We use a series of Jupyter Notebooks to provide functionality guidance for the u
 - Running simulations
 - Exporting and examing simulation outcomes
 - Displaying simulation outcomes as graph
-
-2. [Model Calibration](./2-SD_model_calibration.ipynb) [STILL IN DEVELOPMENT]
-
-- Estimating SD model parameters using Markov Chain Monte Carlo (MCMC)
-  - Support for MLE (maximum likelihood) and MAP (maximum a posteriori) approach
-  - Support for different modellings of payoff (squared error, Poisson, etc.) that are used in the likelihood function
-  - Support for different sampling methods (Slice, Metropolis, NUTS, Hamiltonian, etc.), enabled by [PyMC3](https://docs.pymc.io/en/v3/)
-- Diagnostic analyses of MCMC samples, enabled by [Arviz](https://arviz-devs.github.io/arviz/)
-  - Trace plot
-  - Autocorrelation plot
-- Comparison between Historical data and simulation data
-
-3. More to come...
 
 ## Why ASDM?
 
@@ -58,6 +45,10 @@ The long-term goal ASDM intends to achieve is an approach for **data-informed st
 The main drawback at the moment is that we have not been working a lot on **translating Vensim/Stella models** into the format that ASDM uses, although [PySD](https://github.com/JamesPHoughton/pysd) has proved this fully doable. This functionality is in our development roadmap.
 
 We have neither been working a lot on **the speed of simulation**. Although simulating large SD models given mordern computer specs would not be extremely time-consuming, in tasks involing Monte Carlo simulation (such as parameter estimation) the speed of running a model can matter a lot more. Acceleration is in our development roadmap too.
+
+## Docs
+
+Full docs are incoming
 
 ## Licence
 
