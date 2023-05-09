@@ -1,4 +1,4 @@
-from ASDM import Structure
+from ASDM.ASDM import Structure
 
 class Infection(Structure):
     def __init__(self):
