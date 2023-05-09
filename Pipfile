@@ -19,6 +19,7 @@ ipywidgets = "==7.6.5"
 openpyxl = "==3.0.10"
 ipykernel = "==6.22.0"
 asdm = "==0.0.1"
+requests_toolbelt = "==1.0.0"
 
 [dev-packages]
 setuptools = "==67.7.1"

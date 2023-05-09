@@ -33,10 +33,10 @@ dependencies = [
 dynamic = ["version"]
 
 [tool.setuptools]
-packages = ["src.ASDM"]
+packages = ["ASDM"]
 
 [tool.setuptools.dynamic]
-version = {attr = "src.ASDM.__version__"}
+version = {attr = "ASDM.__version__"}
 
 [project.urls]
 Homepage = "https://github.com/wzh1895/ASDM.git"
