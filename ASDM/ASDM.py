@@ -1233,7 +1233,8 @@ class Structure(object):
             'current_time': 0,
             'dt': 0.25,
             'simulation_time': 13,
-            'time_units' :'Weeks'
+            'time_units' :'Weeks',
+            'running': False,
         }
 
         # dimensions
@@ -1296,7 +1297,7 @@ class Structure(object):
 
         # If the model is based on an XMILE file
         if from_xmile is not None:
-            print(self.HEAD, 'Reading XMILE model from {}'.format(from_xmile))
+            # print(self.HEAD, 'Reading XMILE model from {}'.format(from_xmile))
             from pathlib import Path
             xmile_path = Path(from_xmile)
             if xmile_path.exists():
@@ -1557,6 +1558,19 @@ class Structure(object):
             self.aux_equations[name] = new_equation
         else:
             raise Exception('Unable to find {} in the current model'.format(name))
+    
+    # def overwrite_stock_value(self, name, new_value):
+    #     print(self.name_space)
+    #     if name not in self.name_space:
+    #         if name in self.stock_equations:
+    #             raise Exception("Stock {} exists, but able to find in the current model's namespace. Not simulated?".format(name))
+    #         else:
+    #             raise Exception('Unable to find Stock {} in the current model.'.format(name))
+        
+    #     if type(self.name_space[name]) is dict and type(new_value) in [int, float, np.int_, np.float_]:
+    #         raise Exception('Unable to overwrite arrayed stock value of {} with {} of type {}'.format(name, new_value, type(new_value)))
+        
+    #     self.name_space[name] = new_value
 
     def parse_1(self, var, equation):
         if type(equation) is GraphFunc:
@@ -1994,6 +2008,9 @@ class Structure(object):
             dt = self.sim_specs['dt']
         steps = int(time/dt)
 
+        if self.sim_specs['running']: # Continue simulation
+            steps -= 1
+
         def step(debug=False):
             if verbose:
                 # print('--time {} --'.format(self.sim_specs['current_time']))
@@ -2069,6 +2086,8 @@ class Structure(object):
             else:
                 step()
             self.current_step += 1
+        
+        self.sim_specs['running'] = True
 
     def trace_error(self, var_with_error, sub=None):
         self.debug_level += 1
@@ -2147,6 +2166,8 @@ class Structure(object):
             name_space=self.name_space,
             graph_functions=self.graph_functions,
             )
+
+        self.sim_specs['running'] = False
 
     def summary(self):
         print('\nSummary:\n')
@@ -2254,3 +2275,45 @@ class Structure(object):
         ax.legend()
         plt.show()
 
+    def get_dependent_graph(self, var, graph=None):
+        if graph is None:
+            graph = nx.DiGraph()
+
+        # parse equations of the model into ast
+        self.parse()
+        all_equations = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)
+        if var in self.env_variables: # like 'TIME'
+            return graph
+        parsed_equation = all_equations[var]
+        
+        # get all dependent variables
+        dependent_nodes = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
+        dependent_variables = list()
+        for node in dependent_nodes:
+            operands = parsed_equation.nodes[node]['operands']
+            for operand in operands:
+                if operand[0] == 'NAME':
+                    dependent_variables.append(operand[1])
+        
+        # print(dependent_variables)
+        if len(dependent_variables) == 0:
+            return graph
+        else:
+            for dependent_var in dependent_variables:
+                graph.add_edge(dependent_var, var)
+                self.get_dependent_graph(dependent_var, graph)
+            return graph
+
+    def generate_dependent_graph(self, vars=None):
+        if vars is None:
+            vars = list(self.flow_equations.keys())
+        elif type(vars) is str:
+            vars = [vars]
+        
+        dg = nx.DiGraph()
+
+        for var in vars:
+            dg_var = self.get_dependent_graph(var)
+            dg = nx.compose(dg, dg_var)
+        
+        return dg
