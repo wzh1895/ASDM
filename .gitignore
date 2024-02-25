@@ -84,3 +84,8 @@ tests/
 
 # IDE
 .vscode/
+
+# Data files
+*.csv
+*.xls
+*.xlsx
