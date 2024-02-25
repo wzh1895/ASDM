@@ -78,10 +78,16 @@ ASDM is made public under the MIT licence.
 ## Contributors
 **Wang Zhao** `main author`
 
-PhD candidate & research assistant at University of Strathclyde, UK   
-<wang.zhao@strath.ac.uk>
+PhD candidate & research assistant at University of Strathclyde, UK
+
+Wang has given multiple talks on ASDM at different gatherings and conferences of modellers, operational researchers, and healthcare experts. This is the YouTube link to [one of the talks](https://www.youtube.com/watch?v=I_0YpIKc3yI&t=2321s).
+
+Wang can be reached at <wang.zhao@strath.ac.uk>.
 
 **Matt Stammers** `contributor`
 
-Consultant Gastroenterologist & open-source software developer at University Hospital Southampton
-[GitHub](https://github.com/MattStammers)
+Consultant Gastroenterologist & open-source software developer at University Hospital Southampton, UK
+
+Matt created a webapp using streamlit to allow users to interact with a simulation dashboard in their web browsers or on smartphones, such as in this [demo](https://github.com/ReallyUsefulModels/Donanumab_Model). The simulation of the SD model in the backend is powered by ASDM. This is a part of an initiative [Really Useful Models](https://opendatasaveslives.org/news/2022-01-05-really-useful-models).
+
+Matt's [GitHub Homepage](https://github.com/MattStammers)
