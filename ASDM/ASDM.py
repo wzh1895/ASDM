@@ -4,6 +4,7 @@ import re
 from itertools import product
 from pprint import pprint
 from scipy import stats
+from scipy.interpolate import interp1d
 from copy import deepcopy
 
 
@@ -46,6 +47,7 @@ class Parser(object):
         self.functions = { # use lookahead (?=\() to ensure only match INIT( not INITIAL
             'MIN': r'MIN(?=\()',
             'MAX': r'MAX(?=\()',
+            'SAFEDIV': r'SAFEDIV(?=\()',
             'RBINOM': r'RBINOM(?=\()',
             'INIT': r'INIT(?=\()',
             'DELAY': r'DELAY(?=\()',
@@ -57,11 +59,13 @@ class Parser(object):
             'HISTORY': r'HISTORY(?=\()',
             'LOOKUP': r'LOOKUP(?=\()',
             'SUM': r'SUM(?=\()',
+            'PULSE': r'PULSE(?=\()',
         }
 
         self.names = {
             'ABSOLUTENAME': r'"[\s\S]*?"',
-            'NAME': r'[a-zA-Z0-9_\?]*',
+            # 'NAME': r'[a-zA-Z0-9_\?]*',
+            'NAME': r'[a-zA-Z0-9_£$\?]*', # add support for £ and $ in variable names
         }
 
         self.node_id = 0
@@ -156,6 +160,17 @@ class Parser(object):
                 'operator':['MAX'],
                 'operand':['FUNC']
             },
+            # SAFEDIV x 2
+            'SAFEDIV__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'SAFEDIV'],
+                'operator':['SAFEDIV'],
+                'operand':['FUNC']
+            },
+            'SAFEDIV__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'SAFEDIV'],
+                'operator':['SAFEDIV'],
+                'operand':['FUNC']
+            },
             'RBINOM__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'RBINOM'],
                 'operator':['RBINOM'],
@@ -166,6 +181,7 @@ class Parser(object):
                 'operator':['INIT'],
                 'operand':['FUNC']
             },
+            # DELAY x 2
             'DELAY__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'DELAY'],
                 'operator':['DELAY'],
@@ -176,6 +192,7 @@ class Parser(object):
                 'operator':['DELAY'],
                 'operand':['FUNC']
             },
+            # DELAY1 x 2
             'DELAY1__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'DELAY1'],
                 'operator':['DELAY1'],
@@ -186,6 +203,7 @@ class Parser(object):
                 'operator':['DELAY1'],
                 'operand':['FUNC']
             },
+            # DELAY3 x 2
             'DELAY3__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'DELAY3'],
                 'operator':['DELAY3'],
@@ -196,6 +214,7 @@ class Parser(object):
                 'operator':['DELAY3'],
                 'operand':['FUNC']
             },
+            # SMTH1 x 2
             'SMTH1__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'SMTH1'],
                 'operator':['SMTH1'],
@@ -206,6 +225,7 @@ class Parser(object):
                 'operator':['SMTH1'],
                 'operand':['FUNC']
             },
+            # SMTH3 x 2
             'SMTH3__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
                 'token':['FUNC', 'SMTH3'],
                 'operator':['SMTH3'],
@@ -235,7 +255,23 @@ class Parser(object):
                 'token':['FUNC', 'SUM'],
                 'operator':['SUM'],
                 'operand':['FUNC']
-            }
+            },
+            # PULSE x 3
+            'PULSE__LPAREN__FUNC__RPAREN':{
+                'token':['FUNC', 'PULSE'],
+                'operator':['PULSE'],
+                'operand':['FUNC']
+            },
+            'PULSE__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'PULSE'],
+                'operator':['PULSE'],
+                'operand':['FUNC']
+            },
+            'PULSE__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
+                'token':['FUNC', 'PULSE'],
+                'operator':['PULSE'],
+                'operand':['FUNC']
+            },
         }
         
         self.patterns_logic = {
@@ -478,7 +514,7 @@ class Parser(object):
 class Solver(object):
     def __init__(self, sim_specs=None, dimension_elements=None, name_space=None, graph_functions=None):
         
-        self.sim_specs = sim_specs
+        self.sim_specs = sim_specs # current_time, initial_time, dt, simulation_time, time_units, running,
         self.dimension_elements = dimension_elements
         self.name_space = name_space
         self.graph_functions = graph_functions
@@ -637,7 +673,13 @@ class Solver(object):
                     return o
                 else:
                     raise e
-                
+        
+        def safe_div(a, b, c=0):
+            if b == 0:
+                return c
+            else:
+                return a / b
+
         def mod(a, b):
             try:
                 return a % b
@@ -676,6 +718,25 @@ class Solver(object):
                 # print('step out:', 0)
                 return 0
             
+        def pulse(volume, first_pulse=None, interval=None):
+            if first_pulse is None:
+                    first_pulse = sim_specs['initial_time']
+            if interval is None:
+                if sim_specs['current_time'] >= first_pulse: # pulse for all dt after fist pulse
+                    return volume / sim_specs['dt']
+                else:
+                    return 0
+            elif interval == 0 or interval > sim_specs['simulation_time']: # only one pulse
+                if sim_specs['current_time'] == first_pulse:
+                    return volume / sim_specs['dt']
+                else:
+                    return 0
+            else:
+                if (sim_specs['current_time'] >= first_pulse) and (sim_specs['current_time'] - first_pulse) % interval == 0: # pulse every interval
+                    return volume / sim_specs['dt']
+                else:
+                    return 0
+            
         def rbinom(n, p):
             s = stats.binom.rvs(int(n), p, size=1)[0]
             return float(s) # TODO: something is wrong here - the dimension of s goes high like [[[[30]]]] if not float()ed.
@@ -698,10 +759,12 @@ class Solver(object):
             'FLOORDIVIDE': floor_divide,
             'MIN':      min,
             'MAX':      max,
+            'SAFEDIV':  safe_div,
             'CON':      con,
             'STEP':     step,
             'MOD':      mod,
             'RBINOM':   rbinom,
+            'PULSE':    pulse,
         }
 
         self.time_related_functions = [
@@ -842,7 +905,7 @@ class Solver(object):
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v4.2 Sparen with sub:', value)
         
         elif operator[0] == 'PAREN':
-            value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[0][2], verbose=verbose)
+            value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[0][2], subscript=subscript, verbose=verbose)
             if verbose:
                 print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v6 Paren:', value)
 
@@ -874,7 +937,7 @@ class Solver(object):
             for operand in operands:
                 if verbose:
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'oprd', operand)
-                v = self.calculate_node(parsed_equation=parsed_equation, node_id=operand[2], verbose=verbose)
+                v = self.calculate_node(parsed_equation=parsed_equation, node_id=operand[2], subscript=subscript, verbose=verbose)
                 if verbose:
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'value', v)
                 oprds.append(v)
@@ -991,6 +1054,7 @@ class Solver(object):
                 else:
                     historical_steps = (historical_time - self.sim_specs['initial_time']) / self.sim_specs['dt']
                     value = self.time_expr_register[tuple(operands[0])][int(historical_steps)]
+            
             elif func_name == 'SMTH1':
                 # arg values
                 order = 1
@@ -1058,6 +1122,7 @@ class Solver(object):
                     self.time_expr_register[tuple(operands[0])][i] += outflows[i-1]
 
                 return outflows[-1] / self.sim_specs['dt']
+
             else:
                 raise Exception('Unknown time-related operator {}'.format(operator[0]))
             if verbose:
@@ -1082,7 +1147,7 @@ class Solver(object):
                 look_up_func_node = operands[0][2]
                 look_up_func_name = parsed_equation.nodes[look_up_func_node]['operands'][0][1]
                 look_up_func = self.graph_functions[look_up_func_name]
-                input_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[1][2], verbose=verbose)
+                input_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[1][2], subscript=subscript, verbose=verbose)
                 value = look_up_func(input_value)
             else:
                 raise Exception('Unknown Lookup function {}'.format(operator[0]))
@@ -1098,27 +1163,53 @@ class Solver(object):
 
 
 class GraphFunc(object):
-    def __init__(self, yscale, ypts, xscale=None, xpts=None):
+    def __init__(self, out_of_bound_type, yscale, ypts, xscale=None, xpts=None):
+        self.out_of_bound_type = out_of_bound_type
         self.yscale = yscale
+        self.xscale = xscale
+        self.xpts = xpts
         self.ypts = ypts
         self.eqn = None
-        
-        if xpts:
-            self.xpts = xpts
-        else:
-            self.xscale = xscale
+        self.initialise()
+    
+    def initialise(self):
+        if self.xpts is None:
             self.xpts = np.linspace(self.xscale[0], self.xscale[1], num=len(self.ypts))
-        
-        from scipy.interpolate import interp1d
-
         self.interp_func = interp1d(self.xpts, self.ypts, kind='linear')
+        self.interp_func_above = interp1d(self.xpts[-2:], self.ypts[-2:], kind='linear', fill_value='extrapolate')
+        self.interp_func_below = interp1d(self.xpts[:2], self.ypts[:2], kind='linear', fill_value='extrapolate')
 
     def __call__(self, input):
         # input out of xscale treatment:
-        input = max(input, self.xpts[0])
-        input = min(input, self.xpts[-1])
-        output = float(self.interp_func(input)) # the output (like array([1.])) needs to be converted to float to avoid dimension explosion
-        return output
+        if self.out_of_bound_type is None:
+            input = max(input, self.xpts[0])
+            input = min(input, self.xpts[-1])
+            output = float(self.interp_func(input)) # the output (like array([1.])) needs to be converted to float to avoid dimension explosion
+            return output
+        elif self.out_of_bound_type in ['extrapolate', 'discrete']:
+            if input < self.xpts[0]:
+                output = float(self.interp_func_below(input))
+            elif input > self.xpts[-1]:
+                output = float(self.interp_func_above(input))
+            else:
+                output = float(self.interp_func(input))
+            return output
+        else:
+            raise Exception('Unknown out_of_bound_type {}'.format(self.out_of_bound_type))
+    
+    def overwrite_xpts(self, xpts):
+        # if len(self.xpts) != len(xpts):
+            # print("Warning: new set of x points have a different length to the old set.")
+        self.xpts = xpts
+        
+    def overwrite_xscale(self, xscale):
+        self.xscale = xscale
+        self.xpts = None # to auto-infer self.xpts from self.xscale, self.xpts must set to None
+
+    def overwrite_ypts(self, ypts):
+        # if len(self.ypts) != len(ypts):
+            # print("Warning: new set of y points have a different length to the old set.")
+        self.ypts = ypts
 
 
 class Conveyor(object):
@@ -1192,17 +1283,19 @@ class Stock(object):
 
 
 class DataFeeder(object):
-    def __init__(self, data, from_time=0, data_dt=1):
+    def __init__(self, data, from_time=0, data_dt=1, interpolate=False):
         """
         data: a list
 
         """
+        self.interpolate = interpolate
+        self.data_dt = data_dt
         self.from_time =from_time
         self.time_data = dict()
         time = self.from_time
         for d in data:
             self.time_data[time] = d
-            time += data_dt
+            time += self.data_dt
         # print(self.time_data)
         self.last_success_time = None
 
@@ -1216,11 +1309,20 @@ class DataFeeder(object):
             elif current_time > list(self.time_data.keys())[-1]:
                 raise Exception("Current time > external data ending time.")
             else:
-                d = self.time_data[self.last_success_time]
+                if self.interpolate:
+                    d_0 = self.time_data[self.last_success_time]
+                    d_1 = self.time_data[self.last_success_time + self.data_dt]
+                    interp_func_2pts = interp1d(
+                        [self.last_success_time, self.last_success_time + self.data_dt],
+                        [d_0, d_1]
+                        )
+                    d = interp_func_2pts(current_time)
+                else:
+                    d = self.time_data[self.last_success_time]
         return(np.float64(d))
 
 
-class Structure(object):
+class sdmodel(object):
     # equations
     def __init__(self, from_xmile=None):
         # Debug
@@ -1278,7 +1380,8 @@ class Structure(object):
 
         # env variables
         self.env_variables = {
-            'TIME': 0
+            'TIME': 0,
+            'DT': 0.25
         }
 
         # parser
@@ -1321,6 +1424,7 @@ class Structure(object):
                 self.sim_specs['current_time'] = sim_start
                 self.env_variables['TIME'] = sim_start
                 self.sim_specs['dt'] = sim_dt
+                self.env_variables['DT'] =sim_dt
                 self.sim_specs['simulation_time'] = sim_duration
                 self.sim_specs['time_units'] = time_units
 
@@ -1354,6 +1458,7 @@ class Structure(object):
                 # read graph functions
                 def read_graph_func(var):
                     gf = var.find('gf')
+                    out_of_bound_type = gf.get('type')
                     if gf.find('xscale'):
                         xscale = [
                             float(gf.find('xscale').get('min')),
@@ -1376,7 +1481,7 @@ class Structure(object):
                     ]
                     ypts = [float(t) for t in gf.find('ypts').text.split(',')]
 
-                    equation = GraphFunc(yscale=yscale, ypts=ypts, xscale=xscale, xpts=xpts)
+                    equation = GraphFunc(out_of_bound_type=out_of_bound_type, yscale=yscale, ypts=ypts, xscale=xscale, xpts=xpts)
                     return equation
 
                 # create var subscripted equation
@@ -1547,6 +1652,8 @@ class Structure(object):
             pass
         elif type(new_equation) in [int, float, np.int_, np.float_]:
             new_equation = str(new_equation)
+        elif type(new_equation) is DataFeeder:
+            pass
         else:
             raise Exception('Unsupported new equation {} type {}'.format(new_equation, type(new_equation)))
         
@@ -1571,6 +1678,36 @@ class Structure(object):
     #         raise Exception('Unable to overwrite arrayed stock value of {} with {} of type {}'.format(name, new_value, type(new_value)))
         
     #     self.name_space[name] = new_value
+        
+    def overwrite_graph_function_points(self, name, new_xpts=None, new_xscale=None, new_ypts=None):
+        if new_xpts is None and new_xscale is None and new_ypts is None:
+            raise Exception("Inputs cannot all be None.")
+
+        if name in self.stock_equations:
+            graph_func_equation = self.stock_equations[name]
+        elif name in self.flow_equations:
+            graph_func_equation = self.flow_equations[name]
+        elif name in self.aux_equations:
+            graph_func_equation = self.aux_equations[name]
+        else:
+            raise Exception('Unable to find {} in the current model'.format(name))
+        
+        if new_xpts is not None:
+            # print('Old xpts:', graph_func_equation.xpts)
+            graph_func_equation.overwrite_xpts(new_xpts)
+            # print('New xpts:', graph_func_equation.xpts)
+        
+        if new_xscale is not None:
+            # print('Old xscale:', graph_func_equation.xscale)
+            graph_func_equation.overwrite_xscale(new_xscale)
+            # print('New xscale:', graph_func_equation.xscale)
+        
+        if new_ypts is not None:
+            # print('Old ypts:', graph_func_equation.ypts)
+            graph_func_equation.overwrite_ypts(new_ypts)
+            # print('New ypts:', graph_func_equation.ypts)
+        
+        graph_func_equation.initialise()
 
     def parse_1(self, var, equation):
         if type(equation) is GraphFunc:
@@ -1713,7 +1850,7 @@ class Structure(object):
         # print("\nEngine Calculating: {:<15} on subscript {}".format(var, subscript), '\n', 'name_space:', self.name_space, '\n', 'flow_effects', self.stock_shadow_values)
         # print("Engine Calculating: {:<15} on subscript {}".format(var, subscript))
         # debug
-        if var == 'TIME':
+        if var in self.env_variables.keys():
             return
         
         if subscript is not None:
@@ -2055,7 +2192,7 @@ class Structure(object):
                     for invalid_var in invalid_vars:
                         print('Result of {} at Time [{}], Step [{}] invalid'.format(invalid_var, self.sim_specs['current_time'], self.current_step))
                         asdm_result = self.name_space[invalid_var]
-                        print('ASDM   result:', asdm_result)
+                        print('asdm   result:', asdm_result)
                         if type(asdm_result) is dict:
                             for sub, subval in asdm_result.items():
                                 print('Stella result:', debug[self.var_name_to_csv_entry(invalid_var+'[{}]'.format(', '.join(sub)))])
@@ -2077,7 +2214,9 @@ class Structure(object):
             for stock, stock_value in self.stock_shadow_values.items():
                 self.name_space[stock] = stock_value
             self.stock_shadow_values.clear()
+            
             self.name_space['TIME'] = self.sim_specs['current_time']
+            self.name_space['DT'] = self.sim_specs['dt']
         
         self.current_step = 0
         for s in range(steps+1):
@@ -2093,7 +2232,7 @@ class Structure(object):
         self.debug_level += 1
 
         print(self.debug_level*'\t', 'Tracing error on {} ...'.format(var_with_error))
-        print(self.debug_level*'\t', 'ASDM value    :', self.name_space[var_with_error])
+        print(self.debug_level*'\t', 'asdm value    :', self.name_space[var_with_error])
         print(self.debug_level*'\t', 'Expected value:', self.df_debug_against.iloc[self.current_step][self.var_name_to_csv_entry(var_with_error)])
         
         if sub is not None:
@@ -2113,7 +2252,7 @@ class Structure(object):
                 elif operands[0][0] == 'NAME': # this refers to a variable like 'a'
                     var_dependent = operands[0][1]
                     print(self.debug_level*'\t', '-- Dependent:', var_dependent)
-                    print(self.debug_level*'\t', '   ASDM value    :', self.name_space[var_dependent])
+                    print(self.debug_level*'\t', '   asdm value    :', self.name_space[var_dependent])
                     print(self.debug_level*'\t', '   Expected value:', self.df_debug_against.iloc[self.current_step][self.var_name_to_csv_entry(var_dependent)])
         
                 elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
@@ -2121,14 +2260,14 @@ class Structure(object):
                     var_dependent_node_id = operands[0][2]
                     var_dependent = parsed_equation.nodes[var_dependent_node_id]['operands'][0][1]
                     print(self.debug_level*'\t', '-- Dependent:', var_dependent)
-                    print(self.debug_level*'\t', '   ASDM value    :', self.name_space[var_dependent])
+                    print(self.debug_level*'\t', '   asdm value    :', self.name_space[var_dependent])
                     print(self.debug_level*'\t', '   Expected value:', self.df_debug_against.iloc[self.current_step][self.var_name_to_csv_entry(var_dependent)])
         
         if var_with_error in self.flow_stocks:
             connected_stocks = self.flow_stocks[var_with_error]
             for direction, connected_stock in connected_stocks.items():
                 print(self.debug_level*'\t', '-- Connected stock: {:<4} {}'.format(direction, connected_stock))
-                print(self.debug_level*'\t', '   ASDM value    :', self.name_space[connected_stock])
+                print(self.debug_level*'\t', '   asdm value    :', self.name_space[connected_stock])
                 print(self.debug_level*'\t', '   Expected value:', self.df_debug_against.iloc[self.current_step][self.var_name_to_csv_entry(connected_stock)])
         
         print()
@@ -2203,9 +2342,13 @@ class Structure(object):
                 result.append(slice[name][subscript])
             return result
             
-    def export_simulation_result(self, flatten=False, format='dict', to_csv=False):
+    def export_simulation_result(self, flatten=False, format='dict', to_csv=False, dt=False):
         self.full_result = dict()
+        if dt:
+            self.full_result['TIME'] = list()
         for time, slice in self.time_slice.items():
+            if dt:
+                self.full_result['TIME'].append(time)
             for var, value in slice.items():
                 if type(value) is dict:
                     for sub, subvalue in value.items():

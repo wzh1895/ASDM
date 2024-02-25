@@ -1,4 +1,4 @@
-# ASDM
+# asdm
 
 ## **Agile System Dynamics Modelling**
 
@@ -14,11 +14,11 @@ The library is tested under Python 3.7.13 on Ubuntu Linux. It is supposed to wor
 
 It has been noticed that on macOS, the multi-thread sampling of PyMC3 does not work well. This is due to the fact that macOS handles multiprocess in a different way. The impact is that we can only use one thread to do multi-chain MCMC sampling which is much slower.
 
-Although the rest of the functionalities of ASDM still work on macOS, we recommend that you switch to Linux for the optimal parameter estimation experience.
+Although the rest of the functionalities of asdm still work on macOS, we recommend that you switch to Linux for the optimal parameter estimation experience.
 
 ### Dependencies
 
-We recommend that you ues anaconda to manage the dependencies and use a dedicated fresh environment for ASDM.
+We recommend that you ues anaconda to manage the dependencies and use a dedicated fresh environment for asdm.
 
 To create such an environment:
 
@@ -29,13 +29,13 @@ conda create --name asdm
 To clone this repository to your local environment, please make sure that ```git``` is installed in your system and use the following command:
 
 ```
-git clone https://github.com/wzh1895/ASDM.git
+git clone https://github.com/wzh1895/asdm.git
 ```
 
 To install all dependencies:
 
 ```
-cd ASDM
+cd asdm
 conda install --file requirements.txt -c conda-forge
 ```
 
@@ -66,21 +66,21 @@ We use a series of Jupyter Notebooks to provide functionality guidance for the u
 
 3. More to come...
 
-## Why ASDM?
+## Why asdm?
 
-Acknowledging that there are a number of SD tools that enable simulating SD models in a Python environment (see [PySD](https://github.com/JamesPHoughton/pysd) and [venpy](https://github.com/pbreach/venpy.git)), we build ASDM to bring the capability of **structure modelling** to the Python SD community. ASDM allows users to create an SD model from scratch and edit model structure as needed. With a native Python implementation of stock-and-flow structure, ASDM allows building SD models without software like [Vensim](https://vensim.com/) and [Stella](https://www.iseesystems.com/store/products/stella-architect.aspx).
+Acknowledging that there are a number of SD tools that enable simulating SD models in a Python environment (see [PySD](https://github.com/JamesPHoughton/pysd) and [venpy](https://github.com/pbreach/venpy.git)), we build asdm to bring the capability of **sdmodel modelling** to the Python SD community. asdm allows users to create an SD model from scratch and edit model sdmodel as needed. With a native Python implementation of stock-and-flow sdmodel, asdm allows building SD models without software like [Vensim](https://vensim.com/) and [Stella](https://www.iseesystems.com/store/products/stella-architect.aspx).
 
-The long-term goal ASDM intends to achieve is an approach for **data-informed structure modelling** where data can be used to finetune SD model structure automatically. This is both an extension of data-informed SD model parameter estimation, and an innovative way to discover feedback structures from data.
+The long-term goal asdm intends to achieve is an approach for **data-informed sdmodel modelling** where data can be used to finetune SD model sdmodel automatically. This is both an extension of data-informed SD model parameter estimation, and an innovative way to discover feedback sdmodels from data.
 
 ## Limitations
 
-The main drawback at the moment is that we have not been working a lot on **translating Vensim/Stella models** into the format that ASDM uses, although [PySD](https://github.com/JamesPHoughton/pysd) has proved this fully doable. This functionality is in our development roadmap.
+The main drawback at the moment is that we have not been working a lot on **translating Vensim/Stella models** into the format that asdm uses, although [PySD](https://github.com/JamesPHoughton/pysd) has proved this fully doable. This functionality is in our development roadmap.
 
 We have neither been working a lot on **the speed of simulation**. Although simulating large SD models given mordern computer specs would not be extremely time-consuming, in tasks involing Monte Carlo simulation (such as parameter estimation) the speed of running a model can matter a lot more. Acceleration is in our development roadmap too.
 
 ## Licence
 
-ASDM is made public under the MIT licence.
+asdm is made public under the MIT licence.
 
 ## Author
 **Wang Zhao**  

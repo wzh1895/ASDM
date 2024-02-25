@@ -1,0 +1,1840 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xmile version="1.0" xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0" xmlns:isee="http://iseesystems.com/XMILE">
+	<header>
+		<smile version="1.0" namespace="std, isee" uses_arrays="2"/>
+		<name>Endoscopy_v3b</name>
+		<uuid>56e48884-18a4-40f7-9600-7e57f8739fd9</uuid>
+		<vendor>isee systems, inc.</vendor>
+		<product version="2.1.5" isee:build_number="2629" isee:saved_by_v1="true" lang="en">Stella Architect</product>
+	</header>
+	<sim_specs isee:sim_duration="1.5" isee:simulation_delay="0.015625" isee:restore_on_start="false" method="Euler" time_units="Months" isee:instantaneous_flows="false" isee:loop_scores="false" isee:loop_exhaustive_allowed="1000">
+		<start>0</start>
+		<stop>96</stop>
+		<dt reciprocal="true">32</dt>
+	</sim_specs>
+	<dimensions>
+		<dim name="Activity_routes">
+			<elem name="Routine"/>
+			<elem name="Urgent"/>
+			<elem name="NE"/>
+		</dim>
+		<dim name="Colonoscopies">
+			<elem name="Screening_programme"/>
+			<elem name="Routine_diagnostic"/>
+		</dim>
+		<dim name="Modality_points">
+			<elem name="Upper_GI"/>
+			<elem name="Sigmoidoscopies"/>
+			<elem name="Colonoscopies"/>
+		</dim>
+		<dim name="Pre_assess_outcome">
+			<elem name="Proceed"/>
+			<elem name="Not_suitable"/>
+			<elem name="Not_ready"/>
+		</dim>
+		<dim name="Referral_routes">
+			<elem name="Routine_diagnosis"/>
+			<elem name="Urgent_diagnosis"/>
+			<elem name="Screening"/>
+			<elem name="Surveillance"/>
+		</dim>
+		<dim name="Referrals">
+			<elem name="Bowel"/>
+			<elem name="Upper_GI"/>
+		</dim>
+		<dim name="Triage_outcomes">
+			<elem name="Colonoscopy"/>
+			<elem name="Sigmoidoscopy"/>
+			<elem name="Neither"/>
+		</dim>
+	</dimensions>
+	<isee:prefs show_module_prefix="true" live_update_on_drag="true" show_restore_buttons="false" layer="map" interface_scale_ui="true" interface_max_page_width="10000" interface_max_page_height="10000" interface_min_page_width="0" interface_min_page_height="0" rerun_on_structure_change="false" saved_runs="5" keep="false" rifp="true"/>
+	<isee:multiplayer_settings include_chat="true" allow_observers="false" advance_time_increment="1" max_advance_time_in_ms="0" observer_start_page="home_page" enabled="false"/>
+	<isee:time_formats default_format="Mths">
+		<isee:time_format name="Builtin" type="adaptive"/>
+		<isee:time_format name="Mths" type="grouped" start_offset="2019.25" start_offset_units="years">
+			<isee:time_format_groupings>
+				<isee:time_format_grouping unit="years" prefix="Yr "/>
+				<isee:time_format_grouping unit="months" prefix=" " as_word="true"/>
+			</isee:time_format_groupings>
+		</isee:time_format>
+	</isee:time_formats>
+	<default_format precision="1" scale_by="1" delimit_000s="true"/>
+	<data>
+		<import enabled="false" frequency="on_demand" isee:overwrite="true" orientation="horizontal" resource="r../Endoscopy data/ScopeActivityControlPanel.xlsx" type="Excel" worksheet="Import"/>
+	</data>
+	<model_units>
+		<unit name="My Per Hour">
+			<eqn>Per Hour</eqn>
+		</unit>
+	</model_units>
+	<model>
+		<variables>
+			<stock name="Waiting for\ncolonoscopy">
+				<dimensions>
+					<dim name="Colonoscopies"/>
+				</dimensions>
+				<element subscript="Screening_programme">
+					<eqn>0</eqn>
+				</element>
+				<element subscript="Routine_diagnostic">
+					<eqn>INIT(New_colonoscopy_referrals_added_to_waiting_list[Routine_diagnostic])</eqn>
+				</element>
+				<inflow>New_colonoscopy_referrals_added_to_waiting_list</inflow>
+				<outflow>Proceeding_to_treatment</outflow>
+				<non_negative/>
+			</stock>
+			<flow name="Proceeding to treatment">
+				<dimensions>
+					<dim name="Colonoscopies"/>
+				</dimensions>
+				<element subscript="Screening_programme">
+					<eqn>Routine_colonoscopies*Split_of_colonoscopies[Screening_programme]</eqn>
+				</element>
+				<element subscript="Routine_diagnostic">
+					<eqn>DELAY(Routine_colonoscopies*Split_of_colonoscopies[Routine_diagnostic], delay_for_routine_colonoscopy)</eqn>
+				</element>
+				<non_negative/>
+			</flow>
+			<stock name="Monthly lists colonoscopy">
+				<eqn>INIT(Change_in_lists)</eqn>
+				<inflow>Change_in_lists</inflow>
+				<outflow>Urgent_colonoscopies</outflow>
+				<outflow>Routine_colonoscopies</outflow>
+				<non_negative/>
+			</stock>
+			<aux name="Number eligible for\nbowel (FIT) screening pcm">
+				<doc>Estimate of people becoming 50 pw based on c.3,000,000 50-54 year olds in England / 60 (i.e. per million) 5yrs / 52wks = c.200 a week</doc>
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="200"/>
+					<ypts>0,0,0.171875,4.23125,7.025,11.8953125,21.03125,30.4,50.275,75.9984375,90.71875,97.5,102.86875,108.7921875,113.19375,115.828125,119.1,120.2859375,122.1125,123.4,125.5,126.359375,127.7,128.7,129.8,130.9,131.9,132.2953125,133,134,134.928125,136.2,137.2,137.2,138.3,138.3,139.4,139.4,140.4,142.153125,142.85,143.6,144.21875,144.7,144.7,145.7,145.7,146.7140625,146.8,147.9,147.9,148.634375,148.96875,150,150.48125,151.464583333333,152.925,153.646875,154.3,155.3,155.4375,156.4,157.24375,158.5,158.5,159.6,160.6,160.6,161.2875,161.7,162.8,163.664583333333,163.9375,164.9,166,166.739583333334,167,168.1,168.1,169.021875,169.1,170.2,170.2,171.3,171.3,172.08125,172.3,173.4,174.5,174.5,175.1875,176.6,176.7375,177.7078125,178.371875,179.192708333333,181.9</ypts>
+				</gf>
+			</aux>
+			<flow name="FIT samples">
+				<eqn>&quot;Number_eligible_for_bowel_(FIT)_screening_pcm&quot;*(Percentage_participation_in_Bowel_Screening_programme/100)</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Percentage participation in Bowel Screening programme">
+				<eqn>80</eqn>
+			</aux>
+			<stock name="Bowel screening">
+				<eqn>0</eqn>
+				<inflow>FIT_samples</inflow>
+				<outflow>Requiring_colonoscopy_from_FIT</outflow>
+				<outflow>Negative_FIT</outflow>
+				<non_negative/>
+			</stock>
+			<aux name="Percent of FIT tests requiring\ncolonoscopy follow up">
+				<eqn>10</eqn>
+			</aux>
+			<flow name="Requiring\ncolonoscopy from FIT">
+				<eqn>FIT_samples*(Percent_of_FIT_tests_requiring_colonoscopy_follow_up/100)</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Negative FIT">
+				<eqn>FIT_samples-Requiring_colonoscopy_from_FIT</eqn>
+				<non_negative/>
+			</flow>
+			<stock name="People requiring bowel surveillance">
+				<eqn>1000</eqn>
+				<inflow>Net_change_of_people_requiring_bowel_surveillance</inflow>
+				<non_negative/>
+			</stock>
+			<flow name="Net change of people\nrequiring bowel surveillance">
+				<eqn>People_added_to_bowel_surveillance_cohort-People_leaving_bowel_surveillance_cohort</eqn>
+			</flow>
+			<aux name="People added to\nbowel surveillance cohort">
+				<eqn>100</eqn>
+			</aux>
+			<aux name="People leaving\nbowel surveillance cohort">
+				<eqn>100</eqn>
+			</aux>
+			<aux name="Surveillance procedures pa per person">
+				<eqn>1</eqn>
+			</aux>
+			<aux name="Actual surveillance\ntests per month">
+				<eqn>((People_requiring_bowel_surveillance*Surveillance_procedures_pa_per_person)/12)*(1-(COVID_capacity_deflator_for_colonoscopies/100))</eqn>
+			</aux>
+			<aux name="Bowel symptom referrals\ntriage outcomes split">
+				<dimensions>
+					<dim name="Triage_outcomes"/>
+				</dimensions>
+				<element subscript="Colonoscopy">
+					<gf>
+						<xscale min="0" max="96"/>
+						<yscale min="0" max="100"/>
+						<ypts>80,80,90,95,95,90,80,80,80</ypts>
+					</gf>
+				</element>
+				<element subscript="Sigmoidoscopy">
+					<gf>
+						<xscale min="0" max="96"/>
+						<yscale min="0" max="100"/>
+						<ypts>90,90,90,100,100,90,90,90,90</ypts>
+					</gf>
+				</element>
+				<element subscript="Neither">
+					<gf>
+						<xscale min="0" max="96"/>
+						<yscale min="0" max="100"/>
+						<ypts>80,80,90,95,80,70,70,70,70</ypts>
+					</gf>
+				</element>
+				<eqn>TIME</eqn>
+			</aux>
+			<flow name="Change in lists">
+				<eqn>IF TIME &lt;36 THEN Actual_colonoscopy_lists_per_month ELSE Expected_colonoscopies_per_month</eqn>
+				<non_negative/>
+			</flow>
+			<stock name="Assessment">
+				<dimensions>
+					<dim name="Colonoscopies"/>
+				</dimensions>
+				<eqn>0</eqn>
+				<inflow>Proceeding_to_treatment</inflow>
+				<outflow>Treatment</outflow>
+				<non_negative/>
+			</stock>
+			<flow name="Treatment">
+				<dimensions>
+					<dim name="Colonoscopies"/>
+				</dimensions>
+				<eqn>Proceeding_to_treatment</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="COVID capacity deflator for colonoscopies">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>0,0,0,0,0,0,0,0,0,0,50,50,49.5,49.5,49.5,49.5,49.5,48.4,47.9,45.7,42.6,38.8,33,30.3,30.3,30.9,31.4,32.4,34.6,38.8,39.9,40.4,40.4,39.9,39.4,38.3,36.7,34.6,32.4,29.3,25.5,22.3,20.7,17.6,12.2,8.5,6.9,5.9,4.3,4.3,3.2,2.7,2.1,1.6,0.5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+				</gf>
+			</aux>
+			<aux name="Points">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<element subscript="Upper_GI">
+					<eqn>1</eqn>
+				</element>
+				<element subscript="Sigmoidoscopies">
+					<eqn>1</eqn>
+				</element>
+				<element subscript="Colonoscopies">
+					<eqn>2</eqn>
+				</element>
+			</aux>
+			<flow name="New colonoscopy referrals added to waiting list">
+				<dimensions>
+					<dim name="Colonoscopies"/>
+				</dimensions>
+				<element subscript="Screening_programme">
+					<eqn>0</eqn>
+				</element>
+				<element subscript="Routine_diagnostic">
+					<eqn>Actual_and_forecast_referrals_for_triage[Colonoscopies]*(Bowel_symptom_referrals_triage_outcomes_split[Colonoscopy]/100)+Planned_activity_demand_Lower_GI</eqn>
+				</element>
+				<non_negative/>
+			</flow>
+			<stock name="Waiting for\nSigmoidoscopy">
+				<eqn>INIT(New_sigmoidoscopy_referrals_added_to_waiting_list)</eqn>
+				<inflow>New_sigmoidoscopy_referrals_added_to_waiting_list</inflow>
+				<outflow>Proceeding_to_sigmoidoscopy</outflow>
+				<outflow>Urgent_need_for_sigmoidoscopies_from_waiting_list</outflow>
+				<non_negative/>
+			</stock>
+			<flow name="Proceeding to sigmoidoscopy">
+				<eqn>IF TIME &lt;= 35 THEN Actual_Flexi_list_per_month ELSE Expected_FS_per_month</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Urgent need for sigmoidoscopies from waiting list">
+				<eqn>Waiting_for_Sigmoidoscopy*((Percent_becoming_urgent_pa_by_length_of_wait_1/100)/52)</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Average mths waiting\nfor sigmoidoscopy">
+				<eqn>Waiting_for_Sigmoidoscopy//Proceeding_to_sigmoidoscopy</eqn>
+			</aux>
+			<aux name="Percent becoming urgent pa\nby length of wait 1">
+				<eqn>Average_mths_waiting_for_sigmoidoscopy</eqn>
+				<gf>
+					<xscale min="0" max="30"/>
+					<yscale min="0" max="20"/>
+					<ypts>1.91,2.02,2.45,3.62,5.32,7.98,11.81,16.81,19.36,20,20</ypts>
+				</gf>
+			</aux>
+			<stock name="Assessment for sigmoidoscopy">
+				<eqn>0</eqn>
+				<inflow>Proceeding_to_sigmoidoscopy</inflow>
+				<outflow>Sigmoidoscopy_procedure</outflow>
+				<non_negative/>
+			</stock>
+			<flow name="Sigmoidoscopy procedure">
+				<eqn>Proceeding_to_sigmoidoscopy</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="New sigmoidoscopy referrals added to waiting list">
+				<eqn>(Actual_and_forecast_referrals_for_triage[Sigmoidoscopies]+urgent_actual_and_expected_FS)*(Bowel_symptom_referrals_triage_outcomes_split[Sigmoidoscopy]/100)</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Capacity split for procedures">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<element subscript="Upper_GI">
+					<gf>
+						<xscale min="0" max="96"/>
+						<yscale min="0" max="1"/>
+						<ypts>0.493421052631579,0.436205016357688,0.45928338762215,0.443339960238569,0.47198275862069,0.47906976744186,0.453403141361257,0.462897526501767,0.462068965517241,0.463048498845266,0.455434782608696,0.466981132075472,0.466981132075472,0.466981132075472,0.466981132075472,0.408602150537634,0.393835616438356,0.443181818181818,0.332859174964438,0.461068702290076,0.462480857580398,0.498550724637681,0.45,0.485260770975057,0.496551724137931,0.456375838926175,0.502427184466019,0.490909090909091,0.471142520612485,0.515894641235241,0.483257918552036,0.48413344182262,0.432048681541582,0.484509466437177,0.439090909090909,0.471081307627829,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44,0.44</ypts>
+					</gf>
+				</element>
+				<element subscript="Sigmoidoscopies">
+					<gf>
+						<xscale min="0" max="96"/>
+						<yscale min="0" max="1"/>
+						<ypts>0.142543859649123,0.14721919302072,0.121606948968512,0.131212723658052,0.119612068965517,0.130232558139535,0.159162303664921,0.11660777385159,0.108045977011494,0.138568129330254,0.133695652173913,0.108490566037736,0.108490566037736,0.108490566037736,0.108490566037736,0.159498207885305,0.128424657534247,0.112215909090909,0.103840682788051,0.0931297709923664,0.110260336906585,0.0681159420289855,0.08,0.104308390022676,0.0910344827586207,0.124832214765101,0.0946601941747573,0.113286713286713,0.0871613663133098,0.0617620345140781,0.065158371040724,0.0699755899104963,0.0730223123732252,0.0903614457831325,0.0881818181818182,0.0989103101424979,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1</ypts>
+					</gf>
+				</element>
+				<element subscript="Colonoscopies">
+					<gf>
+						<xscale min="0" max="96"/>
+						<yscale min="0" max="1"/>
+						<ypts>0.364035087719298,0.416575790621592,0.419109663409338,0.42544731610338,0.408405172413793,0.390697674418605,0.387434554973822,0.420494699646643,0.429885057471264,0.39838337182448,0.410869565217391,0.424528301886792,0.424528301886792,0.424528301886792,0.424528301886792,0.431899641577061,0.477739726027397,0.444602272727273,0.563300142247511,0.445801526717557,0.427258805513017,0.433333333333333,0.47,0.410430839002268,0.412413793103448,0.418791946308725,0.402912621359223,0.395804195804196,0.441696113074205,0.422343324250681,0.45158371040724,0.445890968266884,0.494929006085193,0.42512908777969,0.472727272727273,0.430008382229673,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46,0.46</ypts>
+					</gf>
+				</element>
+				<eqn>TIME</eqn>
+			</aux>
+			<aux name="Split of colonoscopies">
+				<dimensions>
+					<dim name="Colonoscopies"/>
+				</dimensions>
+				<element subscript="Screening_programme">
+					<eqn>0</eqn>
+				</element>
+				<element subscript="Routine_diagnostic">
+					<eqn>New_colonoscopy_referrals_added_to_waiting_list[Routine_diagnostic]//SUM(New_colonoscopy_referrals_added_to_waiting_list)</eqn>
+				</element>
+			</aux>
+			<aux name="Routine referrals with\nupper GI symptoms pcm">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="200"/>
+					<ypts>87.2,87.2,87.2,87.2,87.2,87.2,87.2,87.2,87.2,86.7,84.6111111111111,74.1333333333333,36.8666666666667,33.8333333333333,29.5555555555555,26.6,25.3888888888889,23.5833333333333,22.3,21.6333333333333,21.3,21.3,21.3,21.3,21.3,22.3,23.4,24.5,25.6833333333333,26.9666666666667,29.8,31.0666666666667,33.6666666666667,36.2,40.1777777777778,43.4333333333333,46.4333333333333,51.0666666666667,54.8555555555556,60.1,69.1333333333333,76.9666666666667,83.5,89.4,94.7,98.9,103.383333333333,106.944444444444,111.7,113.8,114.9,116,117,118.1,118.6,119.1,120.2,120.2,120.2,119.466666666667,119.1,119.1,118.877777777778,118.1,117,117,117,116,115.083333333333,114.166666666667,112.8,112.188888888889,110.6,110.6,109.6,108.94,108.5,108.5,107.84,107.4,106.866666666667,106.4,106.4,105.391666666667,105.3,105.3,105.3,105.3,104.3,104.3,104.3,104.3,104.3,104.3,104.347619047619,104.966666666667,105.3</ypts>
+				</gf>
+			</aux>
+			<stock name="Waiting for Gastroscopy">
+				<eqn>INIT(New_gastroscopy_referrals_added_to_waiting_list_pcm)</eqn>
+				<inflow>New_gastroscopy_referrals_added_to_waiting_list_pcm</inflow>
+				<outflow>Proceeding_to_gastroscopy</outflow>
+				<outflow>Urgent_need_for_gastroscopy_from_waiting_list</outflow>
+				<non_negative/>
+			</stock>
+			<flow name="Proceeding to gastroscopy">
+				<eqn>IF TIME &lt;= 35 THEN Actual_gastroscopy_lists_per_month ELSE IF TIME &gt;= 35 THEN Expected_gastroscopy_lists_per_month ELSE 0</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Urgent need for gastroscopy\nfrom waiting list">
+				<eqn>Waiting_for_Gastroscopy*((Percent_becoming_urgent_pa_by_length_of_wait_2/100)/52)</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Average mths waiting\nfor Gastroscopy">
+				<eqn>Waiting_for_Gastroscopy//Proceeding_to_gastroscopy</eqn>
+			</aux>
+			<aux name="Percent becoming urgent pa\nby length of wait 2">
+				<eqn>Average_mths_waiting_for_Gastroscopy</eqn>
+				<gf>
+					<xscale min="0" max="30"/>
+					<yscale min="0" max="20"/>
+					<ypts>1.91,2.02,2.45,3.62,5.32,7.98,11.81,16.81,19.36,20,20</ypts>
+				</gf>
+			</aux>
+			<stock name="Assessment for Gastroscopy">
+				<eqn>0</eqn>
+				<inflow>Proceeding_to_gastroscopy</inflow>
+				<outflow>Gastroscopy_procedure</outflow>
+				<non_negative/>
+			</stock>
+			<flow name="Gastroscopy procedure">
+				<eqn>Proceeding_to_gastroscopy</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="New gastroscopy referrals\nadded to waiting list pcm">
+				<eqn>((urgent_actual_and_expected_Gastro+Actual_and_forecast_referrals_for_triage[Upper_GI])*(Upper_GI_triage_outcome_percent_to_procedure/100))+Planned_and_NE_Upper_GI_demand</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Upper GI triage outcome percent to procedure">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>80,80,80,95,65,65,65,65,65</ypts>
+				</gf>
+			</aux>
+			<stock name="Virtual backlog of COVID suppressed referrals">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<eqn>0</eqn>
+				<inflow>Referrals_not_materialising</inflow>
+				<outflow>Returning_referrals</outflow>
+				<outflow>COVID_suppressed_non_returning_referrals</outflow>
+				<non_negative/>
+			</stock>
+			<flow name="Referrals made">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<eqn>IF TIME&lt;=35 THEN Actual_referrals[Modality_points,Routine]
+ELSE IF TIME &gt;=35 THEN   Expected_referrals[Modality_points,Routine] ELSE 0</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Referrals not\nmaterialising">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<eqn>Expected_referrals[Modality_points,Routine]-Referrals_made[Modality_points]</eqn>
+				<non_negative/>
+			</flow>
+			<stock name="COVID release">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<eqn>INIT(Referrals_made[Modality_points])</eqn>
+				<inflow>Referrals_made</inflow>
+				<inflow>Returning_referrals</inflow>
+				<outflow>Actual_and_forecast_referrals_for_triage</outflow>
+				<non_negative/>
+			</stock>
+			<flow name="Returning referrals">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<eqn>SMTH3(Returning_referrals_without_smth, 6, 0)</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Actual and\nforecast referrals for triage">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<eqn>Referrals_made+Returning_referrals</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Average months for COVID\nrelated backlog to return">
+				<eqn>12</eqn>
+			</aux>
+			<flow name="COVID suppressed non returning referrals">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<eqn>Virtual_backlog_of_COVID_suppressed_referrals*((Percent_pa_of_backlog_not_returning/100)/12)</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Percent pa of backlog\nnot returning">
+				<eqn>10</eqn>
+			</aux>
+			<aux name="Returning referrals without smth">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<eqn>IF TIME&lt;36 THEN 0 ELSE (Virtual_backlog_of_COVID_suppressed_referrals/Average_months_for_COVID_related_backlog_to_return)</eqn>
+			</aux>
+			<stock name="Monthly lists colonoscopy 1">
+				<eqn>430</eqn>
+				<inflow>Additional_lists_added_1</inflow>
+				<non_negative/>
+			</stock>
+			<aux name="Inpatient list colonoscopies pcm 1">
+				<eqn>40</eqn>
+			</aux>
+			<stock name="People requiring bowel surveillance 1">
+				<eqn>1000</eqn>
+				<inflow>Net_change_of_people_requiring_bowel_surveillance_1</inflow>
+				<non_negative/>
+			</stock>
+			<flow name="Net change of people\nrequiring bowel surveillance 1">
+				<eqn>People_added_to_bowel_surveillance_cohort_1-People_leaving_bowel_surveillance_cohort_1</eqn>
+			</flow>
+			<aux name="People added to\nbowel surveillance cohort 1">
+				<eqn>100</eqn>
+			</aux>
+			<aux name="People leaving\nbowel surveillance cohort 1">
+				<eqn>100</eqn>
+			</aux>
+			<aux name="Surveillance procedures pa per person 1">
+				<eqn>1</eqn>
+			</aux>
+			<aux name="Actual surveillance\ntests per month 1">
+				<eqn>(People_requiring_bowel_surveillance_1*Surveillance_procedures_pa_per_person_1)/12</eqn>
+			</aux>
+			<flow name="Additional lists added 1">
+				<eqn>Monthly_change_capacity_1/12</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Monthly change\ncapacity 1">
+				<eqn>5</eqn>
+			</aux>
+			<aux name="Capacity available for\nroutine and BCSP colonoscopies 1">
+				<eqn>(Monthly_lists_colonoscopy_1*((Capacity_split_for_procedures_1[Colonoscopies]+Capacity_split_for_procedures_1[Colonoscopies])/100)*(1-(COVID_capacity_deflator_for_colonoscopies_1/100)))-Inpatient_list_colonoscopies_pcm_1-Actual_surveillance_tests_per_month_1</eqn>
+			</aux>
+			<aux name="COVID capacity deflator for colonoscopies 1">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>0,0,0,0,0,0,0,0,0,0,50,50,49.5,49.5,49.5,49.5,49.5,48.4,47.9,45.7,42.6,38.8,33,30.3,30.3,30.9,31.4,32.4,34.6,38.8,39.9,40.4,40.4,39.9,39.4,38.3,36.7,34.6,32.4,29.3,25.5,22.3,20.7,17.6,12.2,8.5,6.9,5.9,4.3,4.3,3.2,2.7,2.1,1.6,0.5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+				</gf>
+			</aux>
+			<aux name="Points 1">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<element subscript="Upper_GI">
+					<eqn>1</eqn>
+				</element>
+				<element subscript="Sigmoidoscopies">
+					<eqn>1</eqn>
+				</element>
+				<element subscript="Colonoscopies">
+					<eqn>2</eqn>
+				</element>
+			</aux>
+			<aux name="Capacity split for procedures 1">
+				<dimensions>
+					<dim name="Modality_points"/>
+				</dimensions>
+				<element subscript="Upper_GI">
+					<eqn>30</eqn>
+				</element>
+				<element subscript="Sigmoidoscopies">
+					<eqn>10</eqn>
+				</element>
+				<element subscript="Colonoscopies">
+					<eqn>50</eqn>
+				</element>
+			</aux>
+			<aux name="Split of referrals">
+				<dimensions>
+					<dim name="Referrals"/>
+				</dimensions>
+				<element subscript="Bowel">
+					<gf>
+						<xscale min="0" max="96"/>
+						<yscale min="0" max="100"/>
+						<ypts>0.506578947368421,0.563794983642312,0.54071661237785,0.556660039761431,0.52801724137931,0.52093023255814,0.546596858638743,0.537102473498233,0.537931034482759,0.536951501154734,0.544565217391304,0.533018867924528,0.0882352941176471,0.261194029850746,0.484240687679083,0.591397849462366,0.606164383561644,0.556818181818182,0.667140825035562,0.538931297709924,0.537519142419602,0.501449275362319,0.55,0.514739229024943,0.503448275862069,0.543624161073825,0.497572815533981,0.509090909090909,0.528857479387515,0.484105358764759,0.516742081447964,0.51586655817738,0.567951318458418,0.515490533562823,0.560909090909091,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171,0.528918692372171</ypts>
+					</gf>
+				</element>
+				<element subscript="Upper_GI">
+					<gf>
+						<xscale min="0" max="96"/>
+						<yscale min="0" max="100"/>
+						<ypts>0.493421052631579,0.436205016357688,0.45928338762215,0.443339960238569,0.47198275862069,0.47906976744186,0.453403141361257,0.462897526501767,0.462068965517241,0.463048498845266,0.455434782608696,0.466981132075472,0.911764705882353,0.738805970149254,0.515759312320917,0.408602150537634,0.393835616438356,0.443181818181818,0.332859174964438,0.461068702290076,0.462480857580398,0.498550724637681,0.45,0.485260770975057,0.496551724137931,0.456375838926175,0.502427184466019,0.490909090909091,0.471142520612485,0.515894641235241,0.483257918552036,0.48413344182262,0.432048681541582,0.484509466437177,0.439090909090909,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829,0.471081307627829</ypts>
+					</gf>
+				</element>
+				<eqn>TIME</eqn>
+			</aux>
+			<aux name="Percent\nreferrals routine">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>0.391447368421053,0.412213740458015,0.37785016286645,0.357852882703777,0.382543103448276,0.367441860465116,0.394764397905759,0.372202591283863,0.285057471264368,0.346420323325635,0.421739130434783,0.35377358490566,0.0147058823529412,0.0373134328358209,0.103151862464183,0.247311827956989,0.258561643835616,0.223011363636364,0.372688477951636,0.265648854961832,0.200612557427259,0.402898550724638,0.27,0.316326530612245,0.212413793103448,0.161073825503356,0.174757281553398,0.197202797202797,0.293286219081272,0.408719346049046,0.409049773755656,0.423108218063466,0.347870182555781,0.364027538726334,0.312727272727273,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433,0.345347862531433</ypts>
+				</gf>
+			</aux>
+			<aux name="Actual C referrals">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>307,331,277,323,282,283,329,285,255,326,321,196,40,70,100,118,125,141,157,111,171,147,160,227,192,191,204,221,178,197,165,172,139,186,145,260,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+				</gf>
+			</aux>
+			<aux name="Actual R referrals">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>294,287,273,300,254,281,293,241,190,294,270,182,131,173,326,212,200,197,219,174,164,169,181,219,212,180,204,209,202,225,239,264,242,279,215,282,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+				</gf>
+			</aux>
+			<aux name="Actual U referrals">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>231,268,197,262,235,259,335,278,251,324,269,185,75,75,183,250,192,207,227,226,238,230,243,316,229,204,254,252,278,241,208,225,186,256,291,334,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+				</gf>
+			</aux>
+			<aux name="Expected R\nreferrals">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="400"/>
+					<ypts>294,287,273,300,254,281,293,241,190,294,270,182,287.973282400926,264.969021412917,281.320952644374,267.178318244522,312.270224953467,309.52302555432,264.459899330729,308.260319810326,294.864797847169,245.54757256995,316.460144103543,270.598502964891,287.123061704544,264.969021412917,281.320952644374,267.178318244522,312.270224953467,309.52302555432,264.459899330729,308.260319810326,294.864797847169,245.54757256995,316.460144103543,270.598502964891,287.123061704544,264.969021412917,281.320952644374,267.178318244522,312.270224953467,309.52302555432,264.459899330729,308.260319810326,294.864797847169,245.54757256995,316.460144103543,270.598502964891,287.123061704544,264.969021412917,281.320952644374,267.178318244522,312.270224953467,309.52302555432,264.459899330729,308.260319810326,294.864797847169,245.54757256995,316.460144103543,270.598502964891,287.123061704544,264.969021412917,281.320952644374,267.178318244522,312.270224953467,309.52302555432,264.459899330729,308.260319810326,294.864797847169,245.54757256995,316.460144103543,270.598502964891,287.123061704544,264.969021412917,281.320952644374,267.178318244522,312.270224953467,309.52302555432,264.459899330729,308.260319810326,294.864797847169,245.54757256995,316.460144103543,270.598502964891,287.123061704544,264.969021412917,281.320952644374,267.178318244522,312.270224953467,309.52302555432,264.459899330729,308.260319810326,294.864797847169,245.54757256995,316.460144103543,270.598502964891,287.123061704544</ypts>
+				</gf>
+			</aux>
+			<aux name="Expected U referrals">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="600"/>
+					<ypts>231,268,197,262,235,259,335,278,251,324,269,185,301.902677626351,296.83695398746,303.67597978448,296.651886208523,314.319894534518,291.745822250147,285.325092343318,311.827919872699,305.63007183222,259.475353751235,299.085089835048,275.299370121733,301.902677626351,296.83695398746,303.67597978448,296.651886208523,314.319894534518,291.745822250147,285.325092343318,311.827919872699,305.63007183222,259.475353751235,299.085089835048,275.299370121733,301.902677626351,296.83695398746,303.67597978448,296.651886208523,314.319894534518,291.745822250147,285.325092343318,311.827919872699,305.63007183222,259.475353751235,299.085089835048,275.299370121733,301.902677626351,296.83695398746,303.67597978448,296.651886208523,314.319894534518,291.745822250147,285.325092343318,311.827919872699,305.63007183222,259.475353751235,299.085089835048,275.299370121733,301.902677626351,296.83695398746,303.67597978448,296.651886208523,314.319894534518,291.745822250147,285.325092343318,311.827919872699,305.63007183222,259.475353751235,299.085089835048,275.299370121733,301.902677626351,296.83695398746,303.67597978448,296.651886208523,314.319894534518,291.745822250147,285.325092343318,311.827919872699,305.63007183222,259.475353751235,299.085089835048,275.299370121733,301.902677626351,296.83695398746,303.67597978448,296.651886208523,314.319894534518,291.745822250147,285.325092343318,311.827919872699,305.63007183222,259.475353751235,299.085089835048,275.299370121733,301.902677626351</ypts>
+				</gf>
+			</aux>
+			<flow name="Urgent colonoscopies\ncomplete">
+				<eqn>Waiting_for_urgent_colonoscopy//TAT_for_urgent_colonoscopies</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Actual colonoscopy lists\nper month">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>305,357,367,401,350,305,331,325,337,316,340,253,0,4,122,216,260,281,361,270,258,258,255,316,256,273,285,241,345,430,456,510,447,458,482,469,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+				</gf>
+			</aux>
+			<flow name="Urgent\ncolonoscopies">
+				<eqn>Urgent_colonoscopies_complete</eqn>
+				<non_negative/>
+			</flow>
+			<flow name="Routine\ncolonoscopies">
+				<eqn>Monthly_lists_colonoscopy-Urgent_colonoscopies</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Split of activity type">
+				<dimensions>
+					<dim name="Activity_routes"/>
+				</dimensions>
+				<element subscript="Routine">
+					<gf>
+						<xscale min="0" max="96"/>
+						<yscale min="0" max="100"/>
+						<ypts>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+					</gf>
+				</element>
+				<element subscript="Urgent">
+					<gf>
+						<xscale min="0" max="96"/>
+						<yscale min="0" max="100"/>
+						<ypts>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+					</gf>
+				</element>
+				<element subscript="NE">
+					<gf>
+						<xscale min="0" max="96"/>
+						<yscale min="0" max="100"/>
+						<ypts>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+					</gf>
+				</element>
+				<eqn>TIME</eqn>
+			</aux>
+			<aux name="Expected colonoscopies per month">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="600"/>
+					<ypts>400,400,400,400,400,400,400,400,400</ypts>
+				</gf>
+			</aux>
+			<aux name="Percent leaving urgent colonoscopy WL without scope">
+				<eqn>.1</eqn>
+			</aux>
+			<flow name="Direct urgent referrals">
+				<eqn>IF TIME&lt;=35 THEN Actual_referrals[Colonoscopies,Urgent]*(Bowel_symptom_referrals_triage_outcomes_split[Colonoscopy]/100) ELSE Expected_referrals[Colonoscopies,Urgent]*(Bowel_symptom_referrals_triage_outcomes_split[Colonoscopy]/100)</eqn>
+				<non_negative/>
+			</flow>
+			<aux name="Expected C referrals">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="600"/>
+					<ypts>307,331,277,323,282,283,329,285,255,326,321,196,329.492898882965,328.227936389088,331.470783978289,323.928197801602,348.809955477371,318.792558198639,321.997006347685,354.190671734254,340.26292896813,304.142618359002,358.455997571457,350.159267233585,365.57789098551,364.312928491633,367.555776080833,360.013189904147,384.894947579915,354.877550301184,358.081998450229,390.275663836798,376.347921070675,340.227610461546,394.540989674001,386.24425933613,401.662883088054,400.397920594177,403.640768183378,396.098182006691,420.97993968246,390.962542403728,394.166990552774,426.360655939343,412.432913173219,376.312602564091,430.625981776546,422.329251438674,437.747875190599,436.482912696722,439.725760285922,432.183174109236,457.064931785004,427.047534506273,430.251982655318,462.445648041887,448.517905275764,412.397594666635,466.71097387909,458.414243541219,473.832867293143,472.567904799266,475.810752388467,468.268166211781,493.149923887549,463.132526608817,466.336974757863,498.530640144432,484.602897378308,448.48258676918,502.795965981635,494.499235643763,509.917859395688,508.652896901811,511.895744491011,504.353158314325,529.234915990093,499.217518711362,502.421966860408,534.615632246976,520.687889480853,484.567578871725,538.88095808418,530.584227746308,546.002851498232,544.737889004355,547.980736593556,540.43815041687,565.319908092638,535.302510813906,538.506958962952,570.700624349521,556.772881583397,520.652570974269,574.965950186724,566.669219848852,582.087843600777</ypts>
+				</gf>
+			</aux>
+			<stock name="Waiting for urgent\ncolonoscopy">
+				<eqn>INIT(Direct_urgent_referrals)</eqn>
+				<inflow>Direct_urgent_referrals</inflow>
+				<outflow>Urgent_colonoscopies_complete</outflow>
+				<non_negative/>
+			</stock>
+			<aux name="Expected referrals">
+				<dimensions>
+					<dim name="Modality_points"/>
+					<dim name="Activity_routes"/>
+				</dimensions>
+				<element subscript="Upper_GI, Routine">
+					<eqn>Expected_R_referrals*Capacity_split_for_procedures[Upper_GI]</eqn>
+				</element>
+				<element subscript="Upper_GI, Urgent">
+					<eqn>((Expected_C_referrals*Cancer_ref_dampener)+Expected_U_referrals)*Capacity_split_for_procedures[Upper_GI]</eqn>
+				</element>
+				<element subscript="Upper_GI, NE">
+					<eqn>0</eqn>
+				</element>
+				<element subscript="Sigmoidoscopies, Routine">
+					<eqn>Expected_R_referrals*Capacity_split_for_procedures[Sigmoidoscopies]</eqn>
+				</element>
+				<element subscript="Sigmoidoscopies, Urgent">
+					<eqn>((Expected_C_referrals*Cancer_ref_dampener)+Expected_U_referrals)*Capacity_split_for_procedures[Sigmoidoscopies]</eqn>
+				</element>
+				<element subscript="Sigmoidoscopies, NE">
+					<eqn>0</eqn>
+				</element>
+				<element subscript="Colonoscopies, Routine">
+					<eqn>Expected_R_referrals*Capacity_split_for_procedures[Colonoscopies]</eqn>
+				</element>
+				<element subscript="Colonoscopies, Urgent">
+					<eqn>(Expected_U_referrals+(Expected_C_referrals*Cancer_ref_dampener))*Capacity_split_for_procedures[Colonoscopies]</eqn>
+				</element>
+				<element subscript="Colonoscopies, NE">
+					<eqn>0</eqn>
+				</element>
+			</aux>
+			<aux name="Actual referrals">
+				<dimensions>
+					<dim name="Modality_points"/>
+					<dim name="Activity_routes"/>
+				</dimensions>
+				<element subscript="Upper_GI, Routine">
+					<eqn>Actual_R_referrals*Capacity_split_for_procedures[Upper_GI]</eqn>
+				</element>
+				<element subscript="Upper_GI, Urgent">
+					<eqn>(Actual_U_referrals+Actual_C_referrals)*Capacity_split_for_procedures[Upper_GI]</eqn>
+				</element>
+				<element subscript="Upper_GI, NE">
+					<eqn>0</eqn>
+				</element>
+				<element subscript="Sigmoidoscopies, Routine">
+					<eqn>Actual_R_referrals*Capacity_split_for_procedures[Sigmoidoscopies]</eqn>
+				</element>
+				<element subscript="Sigmoidoscopies, Urgent">
+					<eqn>(Actual_U_referrals+Actual_C_referrals)*Capacity_split_for_procedures[Sigmoidoscopies]</eqn>
+				</element>
+				<element subscript="Sigmoidoscopies, NE">
+					<eqn>0</eqn>
+				</element>
+				<element subscript="Colonoscopies, Routine">
+					<eqn>Actual_R_referrals*Capacity_split_for_procedures[Colonoscopies]</eqn>
+				</element>
+				<element subscript="Colonoscopies, Urgent">
+					<eqn>(Actual_U_referrals+Actual_C_referrals)*Capacity_split_for_procedures[Colonoscopies]</eqn>
+				</element>
+				<element subscript="Colonoscopies, NE">
+					<eqn>0</eqn>
+				</element>
+			</aux>
+			<group name="Included in WL referrals" run="false">
+				<format precision="auto" scale_by="-1" delimit_000s="false"/>
+				<entity name="Surveillance_procedures_pa_per_person"/>
+				<entity name="Net_change_of_people_requiring_bowel_surveillance"/>
+				<entity name="People_added_to_bowel_surveillance_cohort"/>
+				<entity name="People_requiring_bowel_surveillance"/>
+				<entity name="Actual_surveillance_tests_per_month"/>
+				<entity name="People_leaving_bowel_surveillance_cohort"/>
+				<entity name="Negative_FIT"/>
+			</group>
+			<group name="Included in NE and Planned" run="false">
+				<format precision="auto" scale_by="-1" delimit_000s="false"/>
+				<entity name="Percentage_participation_in_Bowel_Screening_programme"/>
+				<entity name="Bowel_screening"/>
+				<entity name="Requiring_colonoscopy_from_FIT"/>
+				<entity name='"Number_eligible_for_bowel_(FIT)_screening_pcm"'/>
+				<entity name="Percent_of_FIT_tests_requiring_colonoscopy_follow_up"/>
+				<entity name="FIT_samples"/>
+				<entity name="Negative_FIT"/>
+			</group>
+			<aux name="TAT for urgent\ncolonoscopies">
+				<eqn>1</eqn>
+			</aux>
+			<aux name="Cancer ref\ndampener">
+				<eqn>IF TIME &lt;= 35 THEN 1 ELSE .7</eqn>
+			</aux>
+			<aux name="Actual Flexi list\nper month">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>130,135,112,132,111,112,152,99,94,120,123,69,6,31,46,89,75,79,73,61,72,47,48,92,66,93,78,81,74,68,72,86,72,105,97,118,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+				</gf>
+			</aux>
+			<aux name="Actual gastroscopy lists\nper month">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>450,400,423,446,438,412,433,393,402,401,419,297,62,99,180,228,230,312,234,302,302,344,270,428,360,340,414,351,400,568,534,595,426,563,483,562,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+				</gf>
+			</aux>
+			<group name="Not included yet" run="false">
+				<format precision="auto" scale_by="-1" delimit_000s="false"/>
+				<entity name="Actual_surveillance_tests_per_month_1"/>
+				<entity name="People_added_to_bowel_surveillance_cohort_1"/>
+				<entity name="People_requiring_bowel_surveillance_1"/>
+				<entity name="People_leaving_bowel_surveillance_cohort_1"/>
+				<entity name="Monthly_lists_colonoscopy_1"/>
+				<entity name="Points_1"/>
+				<entity name="Monthly_change_capacity_1"/>
+				<entity name="Inpatient_list_colonoscopies_pcm_1"/>
+				<entity name="Net_change_of_people_requiring_bowel_surveillance_1"/>
+				<entity name="Capacity_split_for_procedures_1"/>
+				<entity name="COVID_capacity_deflator_for_colonoscopies_1"/>
+				<entity name="Capacity_available_for_routine_and_BCSP_colonoscopies_1"/>
+				<entity name="Additional_lists_added_1"/>
+				<entity name="Surveillance_procedures_pa_per_person_1"/>
+			</group>
+			<aux name="Expected FS\nper month">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="200"/>
+					<ypts>90,90,90,90,90,90,90,90,90</ypts>
+				</gf>
+			</aux>
+			<aux name="urgent actual\nand expected FS">
+				<eqn>IF TIME &lt;= 35 THEN Actual_referrals[Sigmoidoscopies,Urgent] ELSE Expected_referrals[Sigmoidoscopies,Urgent]</eqn>
+			</aux>
+			<aux name="total waiting">
+				<eqn>Waiting_for_urgent_colonoscopy+Waiting_for_colonoscopy[Routine_diagnostic]+Waiting_for_Sigmoidoscopy+Waiting_for_Gastroscopy</eqn>
+			</aux>
+			<aux name="urgent actual\nand expected Gastro">
+				<eqn>IF TIME &lt;= 35 THEN Actual_referrals[Upper_GI,Urgent] ELSE Expected_referrals[Upper_GI,Urgent]</eqn>
+			</aux>
+			<aux name="Expected gastroscopy lists\nper month">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="600"/>
+					<ypts>400,400,400,400,400,400,420,420,420</ypts>
+				</gf>
+			</aux>
+			<aux name="Planned activity demand Upper GI">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>125,108,99,109,124,106,106,112,120,123,117,106,45,89,96,101,123,101,111,113,101,103,130,145,124,127,128,137,227,215,237,171,210,149,277,103,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+				</gf>
+			</aux>
+			<aux name="Planned activity\ndemand Lower GI">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>110,120,129,120,94,65,93,76,69,95,77,99,3,24,62,82,72,157,73,44,45,40,62,66,68,59,53,103,158,194,257,127,124,152,126,19,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</ypts>
+				</gf>
+			</aux>
+			<aux name="Future planned\nUpper GI">
+				<eqn>TIME</eqn>
+				<gf>
+					<xscale min="0" max="96"/>
+					<yscale min="0" max="100"/>
+					<ypts>120,120,120,120,120,130,130,130,130</ypts>
+				</gf>
+			</aux>
+			<aux name="Planned and NE\nUpper GI demand">
+				<eqn>IF TIME &lt;= 35 THEN Planned_activity_demand_Upper_GI ELSE Future_planned_Upper_GI</eqn>
+			</aux>
+			<aux name="delay for routine colonoscopy">
+				<eqn>1</eqn>
+			</aux>
+			<aux name="Total referrals for triage">
+				<eqn>SUM(Actual_and_forecast_referrals_for_triage)</eqn>
+			</aux>
+			<aux name="Total expected referrals">
+				<eqn>SUM(Expected_referrals)</eqn>
+			</aux>
+			<aux name="Total actual referrals">
+				<eqn>SUM(Actual_referrals)</eqn>
+			</aux>
+		</variables>
+		<views>
+			<style color="black" background="white" font_style="normal" font_weight="normal" text_decoration="none" text_align="center" vertical_text_align="center" font_color="black" font_family="Arial" font_size="10pt" padding="2" border_color="black" border_width="thin" border_style="none">
+				<text_box color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt"/>
+				<isee:loop_indicator color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt"/>
+				<numeric_display color="blue" background="white" font_size="9pt" border_width="thin" border_style="solid" isee:transparent="false"/>
+				<graph color="black" background="white" font_size="12pt" axis_color="#666666" grid_color="#C8C8C8" isee:graph_area_color="white" legend_position="bottom" isee:transparent="false" isee:hide_border="false" axis_title_font_style="normal" axis_title_font_weight="normal" axis_title_text_decoration="none" axis_title_text_align="center" axis_title_vertical_text_align="center" axis_title_font_color="black" axis_title_font_family="Arial" axis_title_font_size="12pt" axis_title_text_padding="2" axis_title_text_border_color="black" axis_title_text_border_width="thin" axis_title_text_border_style="none" axis_label_font_style="normal" axis_label_font_weight="normal" axis_label_text_decoration="none" axis_label_text_align="center" axis_label_vertical_text_align="center" axis_label_font_color="black" axis_label_font_family="Arial" axis_label_font_size="9pt" axis_label_text_padding="2" axis_label_text_border_color="black" axis_label_text_border_width="thin" axis_label_text_border_style="none">
+					<isee:series_styles>
+						<isee:series_style color="blue" thickness="1"/>
+						<isee:series_style color="red" thickness="1" pen_style="dot_dashed"/>
+						<isee:series_style color="fuchsia" thickness="1" pen_style="dotted"/>
+						<isee:series_style color="#008F44" thickness="1" pen_style="dashed"/>
+						<isee:series_style color="#FF7F00" thickness="1"/>
+						<isee:series_style color="#7F00FF" thickness="1" pen_style="dot_dashed"/>
+						<isee:series_style color="#0CA0FF" thickness="1" pen_style="dotted"/>
+						<isee:series_style color="lime" thickness="1" pen_style="dashed"/>
+						<isee:series_style color="#FF007F" thickness="1"/>
+						<isee:series_style color="aqua" thickness="1" pen_style="dot_dashed"/>
+						<isee:series_style color="#F586FF" thickness="1" pen_style="dotted"/>
+						<isee:series_style color="black" thickness="1" pen_style="dashed"/>
+						<isee:series_style color="#C8C8C8" thickness="1"/>
+					</isee:series_styles>
+				</graph>
+				<table color="black" background="#E0E0E0" text_align="right" font_size="12pt" orientation="vertical" wrap_text="false" isee:auto_fit="true" isee:use_alternate_row_colors="false" isee:unlimited_table_length="false" blank_column_width="80" column_width="160" interval="1" report_balances="beginning" report_flows="instantaneous" header_font_style="normal" header_font_weight="normal" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="12pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
+				<button color="black" background="#E0E0E0" font_size="12pt" border_width="thin" border_style="solid" transparent="false" corner_radius="0" isee:flat="false" icon_side="top" isee:highlight_on_hover="false" isee:highlight_color="#959595"/>
+				<isee:annotation color="black" background="#E0E0E0" font_size="12pt" border_width="thin" border_style="solid" transparent="false" corner_radius="0" isee:flat="false" icon_side="top" isee:highlight_on_hover="false" isee:highlight_color="#959595" popup_corner_radius="0" popup_background_color="#FFFECF"/>
+				<slider color="#66CC66" background="#E0E0E0" font_size="12pt" num_ticks="3" label_side="top" wrap_title="true" vertical="false" isee:fancy_appearance="false" isee:show_hover_tip="when_deciding" input_expands="true" input_width="100"/>
+				<isee:dual_slider color="#66CC66" background="silver" font_size="12pt" num_ticks="3" label_side="top" wrap_title="true" isee:show_hover_tip="when_deciding" input_expands="true" input_width="100"/>
+				<isee:sim_speed_slider color="black" background="white"/>
+				<isee:time_slider color="#E95F74" background="silver"/>
+				<isee:pie_input color="black" background="white" font_size="12pt" legend_position="bottom" isee:transparent="false"/>
+				<knob color="#66CC66" background="#E0E0E0" font_size="12pt" label_side="bottom" wrap_title="true"/>
+				<numeric_input color="black" background="#E0E0E0" font_size="12pt" label_side="left" wrap_title="true" input_expands="false" input_width="100"/>
+				<switch color="black" background="#E0E0E0" font_size="12pt" label_side="top" wrap_title="true" isee:appearance="switch" isee:on_color="green"/>
+				<options color="black" background="white" appearance="radio-buttons" arrangement="vertical"/>
+				<graphical_input color="black" background="#E0E0E0" font_size="12pt" isee:show_hover_tip="true"/>
+				<group_input color="black" background="#E0E0E0" font_size="12pt"/>
+				<lamp color="black" background="white" font_size="9pt"/>
+				<gauge color="black" background="white" font_size="9pt" needle_color="#F09F72" bar_color="#EEEEEE" bar_progress_color="black" appearance="radial" num_major_ticks="11" num_minor_ticks="11" show_numeric_value="true"/>
+				<isee:spatial_map color="black" background="white" font_size="12pt"/>
+				<isee:animation_object color="black" background="white" font_size="12pt"/>
+				<isee:navigation_widget color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt" padding="6 8" border_color="#999999" border_width="thin" border_style="solid" item_spacing="6" appearance="tabs" corner_radius="4" selected_item_color="black" selected_item_background="white" item_background="#DDDDDD"/>
+				<isee:shape color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt" border_width="thin" border_style="solid" opacity="1" transparent_background="true"/>
+				<isee:selector color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt"/>
+				<isee:iframe color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt" border_width="thin" border_style="solid"/>
+				<isee:financial_table color="black" background="#E0E0E0" text_align="right" font_size="12pt" hide_border="false" auto_fit="true" first_column_width="250" other_column_width="100" header_font_style="normal" header_font_weight="bold" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="14pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
+			</style>
+			<view isee:show_pages="false" background="white" page_width="1123" page_height="793" isee:page_cols="5" isee:page_rows="5" isee:popup_graphs_are_comparative="true" isee:enable_non_negative_highlights="false" type="stock_flow">
+				<style color="black" background="white" font_style="normal" font_weight="normal" text_decoration="none" text_align="center" vertical_text_align="center" font_color="black" font_family="Arial" font_size="10pt" padding="2" border_color="black" border_width="thin" border_style="none">
+					<stock color="blue" background="white" font_color="blue" font_size="12pt" label_side="top">
+						<shape type="rectangle" width="45" height="35"/>
+					</stock>
+					<flow color="blue" background="white" font_color="blue" font_size="12pt" label_side="bottom"/>
+					<isee:placeholder color="#228B22" background="white" font_color="#228B22" font_size="12pt" label_side="bottom"/>
+					<module color="blue" background="white" font_color="blue" font_size="12pt" label_side="top">
+						<shape type="rectangle" width="55" height="45"/>
+					</module>
+					<aux color="blue" background="white" font_color="blue" font_size="12pt" label_side="bottom">
+						<shape type="circle" radius="18"/>
+					</aux>
+					<group color="red" background="white" font_color="red" font_size="12pt"/>
+					<connector color="#FF007F" background="white" font_color="#FF007F" font_size="9pt" isee:thickness="1"/>
+					<text_box color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt"/>
+					<isee:loop_indicator color="black" background="white" text_align="left" vertical_text_align="top" font_size="12pt"/>
+					<numeric_display color="blue" background="white" font_size="9pt" border_width="thin" border_style="solid" isee:transparent="false"/>
+					<graph color="black" background="white" font_size="12pt" axis_color="#666666" grid_color="#C8C8C8" isee:graph_area_color="white" legend_position="bottom" isee:transparent="false" isee:hide_border="false" axis_title_font_style="normal" axis_title_font_weight="normal" axis_title_text_decoration="none" axis_title_text_align="center" axis_title_vertical_text_align="center" axis_title_font_color="black" axis_title_font_family="Arial" axis_title_font_size="12pt" axis_title_text_padding="2" axis_title_text_border_color="black" axis_title_text_border_width="thin" axis_title_text_border_style="none" axis_label_font_style="normal" axis_label_font_weight="normal" axis_label_text_decoration="none" axis_label_text_align="center" axis_label_vertical_text_align="center" axis_label_font_color="black" axis_label_font_family="Arial" axis_label_font_size="9pt" axis_label_text_padding="2" axis_label_text_border_color="black" axis_label_text_border_width="thin" axis_label_text_border_style="none">
+						<isee:series_styles>
+							<isee:series_style color="blue" thickness="1"/>
+							<isee:series_style color="red" thickness="1" pen_style="dot_dashed"/>
+							<isee:series_style color="fuchsia" thickness="1" pen_style="dotted"/>
+							<isee:series_style color="#008F44" thickness="1" pen_style="dashed"/>
+							<isee:series_style color="#FF7F00" thickness="1"/>
+							<isee:series_style color="#7F00FF" thickness="1" pen_style="dot_dashed"/>
+							<isee:series_style color="#0CA0FF" thickness="1" pen_style="dotted"/>
+							<isee:series_style color="lime" thickness="1" pen_style="dashed"/>
+							<isee:series_style color="#FF007F" thickness="1"/>
+							<isee:series_style color="aqua" thickness="1" pen_style="dot_dashed"/>
+							<isee:series_style color="#F586FF" thickness="1" pen_style="dotted"/>
+							<isee:series_style color="black" thickness="1" pen_style="dashed"/>
+							<isee:series_style color="#C8C8C8" thickness="1"/>
+						</isee:series_styles>
+					</graph>
+					<table color="black" background="#E0E0E0" text_align="right" font_size="12pt" orientation="vertical" wrap_text="false" isee:auto_fit="true" isee:use_alternate_row_colors="false" isee:unlimited_table_length="false" blank_column_width="80" column_width="160" interval="1" report_balances="beginning" report_flows="instantaneous" header_font_style="normal" header_font_weight="normal" header_text_decoration="none" header_text_align="center" header_vertical_text_align="center" header_font_color="black" header_font_family="Arial" header_font_size="12pt" header_text_padding="2" header_text_border_color="black" header_text_border_width="thin" header_text_border_style="none"/>
+				</style>
+				<stock x="1264" y="495" name="Waiting for\ncolonoscopy"/>
+				<flow x="1367" y="498" name="Proceeding to treatment">
+					<pts>
+						<pt x="1286.5" y="498"/>
+						<pt x="1459.5" y="498"/>
+					</pts>
+				</flow>
+				<stock label_side="top" x="1319.42" y="831.333" name="Monthly lists colonoscopy"/>
+				<stacked_container uid="21" x="2747.75" y="1484.67" width="653" height="382" visible_index="3">
+					<graph width="653" height="382" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="total_waiting"/>
+						</plot>
+					</graph>
+					<graph width="653" height="382" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Waiting_for_colonoscopy[Routine_diagnostic]"/>
+						</plot>
+						<plot color="fuchsia" pen_style="dotted" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="Waiting_for_urgent_colonoscopy"/>
+						</plot>
+					</graph>
+					<graph width="653" height="382" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Urgent_colonoscopies"/>
+						</plot>
+						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="Routine_colonoscopies"/>
+						</plot>
+					</graph>
+					<graph width="653" height="382" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Waiting_for_Sigmoidoscopy"/>
+						</plot>
+					</graph>
+					<graph width="653" height="382" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="New_colonoscopy_referrals_added_to_waiting_list[*]"/>
+						</plot>
+						<plot color="fuchsia" pen_style="dotted" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="Proceeding_to_treatment[*]"/>
+						</plot>
+					</graph>
+				</stacked_container>
+				<aux label_side="left" x="3128.83" y="1644.67" name="Number eligible for\nbowel (FIT) screening pcm"/>
+				<flow x="3350.08" y="1757.67" name="FIT samples">
+					<pts>
+						<pt x="3295.33" y="1757.67"/>
+						<pt x="3404.83" y="1757.67"/>
+					</pts>
+				</flow>
+				<aux label_side="top" x="3414.33" y="1661.67" name="Percentage participation in Bowel Screening programme"/>
+				<stock label_side="top" x="3427.33" y="1757.67" name="Bowel screening"/>
+				<connector uid="23" angle="8.74616">
+					<from>&quot;Number_eligible_for_bowel_(FIT)_screening_pcm&quot;</from>
+					<to>FIT_samples</to>
+				</connector>
+				<connector uid="24" angle="188.13">
+					<from>Percentage_participation_in_Bowel_Screening_programme</from>
+					<to>FIT_samples</to>
+				</connector>
+				<aux label_side="left" x="3498.33" y="1567.67" name="Percent of FIT tests requiring\ncolonoscopy follow up"/>
+				<flow label_side="bottom" x="3554.83" y="1679.67" name="Requiring\ncolonoscopy from FIT">
+					<pts>
+						<pt x="3449.83" y="1759.67"/>
+						<pt x="3491.33" y="1759.67"/>
+						<pt x="3491.33" y="1679.67"/>
+						<pt x="3642.33" y="1679.67"/>
+					</pts>
+				</flow>
+				<flow x="3384.33" y="2240.67" name="Negative FIT">
+					<pts>
+						<pt x="3425.33" y="1775.17"/>
+						<pt x="3425.33" y="2240.67"/>
+						<pt x="3319.33" y="2240.67"/>
+					</pts>
+				</flow>
+				<connector uid="25" angle="20.8545">
+					<from>FIT_samples</from>
+					<to>Requiring_colonoscopy_from_FIT</to>
+				</connector>
+				<connector uid="26" angle="253.095">
+					<from>Requiring_colonoscopy_from_FIT</from>
+					<to>Negative_FIT</to>
+				</connector>
+				<connector uid="27" angle="254.707">
+					<from>FIT_samples</from>
+					<to>Negative_FIT</to>
+				</connector>
+				<connector uid="28" angle="327.529">
+					<from>Percent_of_FIT_tests_requiring_colonoscopy_follow_up</from>
+					<to>Requiring_colonoscopy_from_FIT</to>
+				</connector>
+				<stock label_side="top" x="2680.33" y="1767.67" name="People requiring bowel surveillance"/>
+				<flow x="2594.08" y="1767.67" name="Net change of people\nrequiring bowel surveillance">
+					<pts>
+						<pt x="2518.33" y="1767.67"/>
+						<pt x="2657.83" y="1767.67"/>
+					</pts>
+				</flow>
+				<aux x="2616.08" y="1877.67" name="People added to\nbowel surveillance cohort"/>
+				<aux label_side="bottom" x="2481.83" y="1862.67" name="People leaving\nbowel surveillance cohort"/>
+				<connector uid="29" angle="51.2345">
+					<from>People_leaving_bowel_surveillance_cohort</from>
+					<to>Net_change_of_people_requiring_bowel_surveillance</to>
+				</connector>
+				<connector uid="30" angle="89.6021">
+					<from>People_added_to_bowel_surveillance_cohort</from>
+					<to>Net_change_of_people_requiring_bowel_surveillance</to>
+				</connector>
+				<aux label_side="right" x="2669.33" y="1569.67" name="Surveillance procedures pa per person"/>
+				<aux label_side="left" x="2716.33" y="1668.67" name="Actual surveillance\ntests per month"/>
+				<connector uid="31" angle="52.0284">
+					<from>People_requiring_bowel_surveillance</from>
+					<to>Actual_surveillance_tests_per_month</to>
+				</connector>
+				<connector uid="32" angle="19.6538">
+					<from>Surveillance_procedures_pa_per_person</from>
+					<to>Actual_surveillance_tests_per_month</to>
+				</connector>
+				<aux label_side="top" x="1099" y="282" name="Bowel symptom referrals\ntriage outcomes split"/>
+				<flow x="1222.79" y="831.333" name="Change in lists">
+					<pts>
+						<pt x="1148.67" y="831.333"/>
+						<pt x="1296.92" y="831.333"/>
+					</pts>
+				</flow>
+				<stock x="1482" y="495" name="Assessment"/>
+				<flow x="1587.75" y="496" name="Treatment">
+					<pts>
+						<pt x="1504.5" y="496"/>
+						<pt x="1695" y="496"/>
+					</pts>
+				</flow>
+				<connector uid="56" angle="40.7636">
+					<from>Proceeding_to_treatment</from>
+					<to>Treatment</to>
+				</connector>
+				<aux label_side="left" x="2300.46" y="1675.67" width="10" height="10" name="COVID capacity deflator for colonoscopies"/>
+				<aux label_side="bottom" x="2464.67" y="1186.33" name="Points"/>
+				<flow x="1166.75" y="495" name="New colonoscopy referrals added to waiting list">
+					<pts>
+						<pt x="1092" y="495"/>
+						<pt x="1241.5" y="495"/>
+					</pts>
+				</flow>
+				<stock label_side="bottom" x="2219" y="320" name="Waiting for\nSigmoidoscopy"/>
+				<flow x="2361.5" y="322" name="Proceeding to sigmoidoscopy">
+					<pts>
+						<pt x="2241.5" y="322"/>
+						<pt x="2493.5" y="322"/>
+					</pts>
+				</flow>
+				<flow x="2352.08" y="86.5" name="Urgent need for sigmoidoscopies from waiting list">
+					<pts>
+						<pt x="2219.17" y="302.5"/>
+						<pt x="2219.17" y="86.5"/>
+						<pt x="2509" y="86.5"/>
+					</pts>
+				</flow>
+				<aux label_side="right" x="2353" y="243" name="Average mths waiting\nfor sigmoidoscopy"/>
+				<connector uid="61" angle="96.1411">
+					<from>Proceeding_to_sigmoidoscopy</from>
+					<to>Average_mths_waiting_for_sigmoidoscopy</to>
+				</connector>
+				<aux label_side="right" x="2449.5" y="210" name="Percent becoming urgent pa\nby length of wait 1"/>
+				<connector uid="62" angle="86.5318">
+					<from>Average_mths_waiting_for_sigmoidoscopy</from>
+					<to>Percent_becoming_urgent_pa_by_length_of_wait_1</to>
+				</connector>
+				<connector uid="63" angle="94.2892">
+					<from>Waiting_for_Sigmoidoscopy</from>
+					<to>Urgent_need_for_sigmoidoscopies_from_waiting_list</to>
+				</connector>
+				<connector uid="64" angle="50.8446">
+					<from>Percent_becoming_urgent_pa_by_length_of_wait_1</from>
+					<to>Urgent_need_for_sigmoidoscopies_from_waiting_list</to>
+				</connector>
+				<stock x="2516" y="331" name="Assessment for sigmoidoscopy"/>
+				<flow label_side="bottom" x="2646.75" y="327" name="Sigmoidoscopy procedure">
+					<pts>
+						<pt x="2538.5" y="327"/>
+						<pt x="2779" y="327"/>
+					</pts>
+				</flow>
+				<connector uid="65" angle="40.7636">
+					<from>Proceeding_to_sigmoidoscopy</from>
+					<to>Sigmoidoscopy_procedure</to>
+				</connector>
+				<connector uid="67" angle="309.806">
+					<from>Bowel_symptom_referrals_triage_outcomes_split</from>
+					<to>New_colonoscopy_referrals_added_to_waiting_list</to>
+				</connector>
+				<flow x="2093.25" y="320" name="New sigmoidoscopy referrals added to waiting list">
+					<pts>
+						<pt x="1990" y="320"/>
+						<pt x="2196.5" y="320"/>
+					</pts>
+				</flow>
+				<aux color="black" font_color="black" label_side="left" x="281" y="215" name="Capacity split for procedures"/>
+				<aux x="1239" y="583" name="Split of colonoscopies"/>
+				<connector uid="71" angle="296.237">
+					<from>New_colonoscopy_referrals_added_to_waiting_list</from>
+					<to>Split_of_colonoscopies</to>
+				</connector>
+				<connector uid="72" angle="11.3099">
+					<from>Split_of_colonoscopies</from>
+					<to>Proceeding_to_treatment</to>
+				</connector>
+				<aux color="black" font_color="black" label_side="left" x="1529.67" y="2000" name="Routine referrals with\nupper GI symptoms pcm"/>
+				<stock x="2277" y="901" name="Waiting for Gastroscopy"/>
+				<flow x="2418" y="900.5" name="Proceeding to gastroscopy">
+					<pts>
+						<pt x="2299.5" y="900.5"/>
+						<pt x="2548.5" y="900.5"/>
+					</pts>
+				</flow>
+				<flow x="2410.75" y="732" name="Urgent need for gastroscopy\nfrom waiting list">
+					<pts>
+						<pt x="2277.5" y="883.5"/>
+						<pt x="2277.5" y="732"/>
+						<pt x="2568" y="732"/>
+					</pts>
+				</flow>
+				<aux label_side="right" x="2375" y="829" name="Average mths waiting\nfor Gastroscopy"/>
+				<connector uid="73" angle="60.8324">
+					<from>Waiting_for_Gastroscopy</from>
+					<to>Average_mths_waiting_for_Gastroscopy</to>
+				</connector>
+				<connector uid="74" angle="121.023">
+					<from>Proceeding_to_gastroscopy</from>
+					<to>Average_mths_waiting_for_Gastroscopy</to>
+				</connector>
+				<aux label_side="right" x="2441.5" y="791" name="Percent becoming urgent pa\nby length of wait 2"/>
+				<connector uid="75" angle="86.5318">
+					<from>Average_mths_waiting_for_Gastroscopy</from>
+					<to>Percent_becoming_urgent_pa_by_length_of_wait_2</to>
+				</connector>
+				<connector uid="76" angle="94.2892">
+					<from>Waiting_for_Gastroscopy</from>
+					<to>Urgent_need_for_gastroscopy_from_waiting_list</to>
+				</connector>
+				<connector uid="77" angle="50.8446">
+					<from>Percent_becoming_urgent_pa_by_length_of_wait_2</from>
+					<to>Urgent_need_for_gastroscopy_from_waiting_list</to>
+				</connector>
+				<stock x="2571" y="900" name="Assessment for Gastroscopy"/>
+				<flow label_side="bottom" x="2667.25" y="898" name="Gastroscopy procedure">
+					<pts>
+						<pt x="2593.5" y="898"/>
+						<pt x="2765" y="898"/>
+					</pts>
+				</flow>
+				<connector uid="78" angle="40.7636">
+					<from>Proceeding_to_gastroscopy</from>
+					<to>Gastroscopy_procedure</to>
+				</connector>
+				<flow x="2177.25" y="901" name="New gastroscopy referrals\nadded to waiting list pcm">
+					<pts>
+						<pt x="2100" y="901"/>
+						<pt x="2254.5" y="901"/>
+					</pts>
+				</flow>
+				<aux label_side="top" x="2167" y="745" name="Upper GI triage outcome percent to procedure"/>
+				<connector uid="80" angle="301.827">
+					<from>Upper_GI_triage_outcome_percent_to_procedure</from>
+					<to>New_gastroscopy_referrals_added_to_waiting_list_pcm</to>
+				</connector>
+				<stock x="572.667" y="314.333" name="Virtual backlog of COVID suppressed referrals"/>
+				<flow x="565.167" y="220.333" name="Referrals made">
+					<pts>
+						<pt x="434.167" y="220.333"/>
+						<pt x="696.167" y="220.333"/>
+					</pts>
+				</flow>
+				<flow x="457.917" y="314.333" name="Referrals not\nmaterialising">
+					<pts>
+						<pt x="365.667" y="314.333"/>
+						<pt x="550.167" y="314.333"/>
+					</pts>
+				</flow>
+				<stock x="718.667" y="219.833" name="COVID release"/>
+				<connector uid="103" angle="221.233">
+					<from>Referrals_made</from>
+					<to>Referrals_not_materialising</to>
+				</connector>
+				<flow x="658.417" y="310.833" name="Returning referrals">
+					<pts>
+						<pt x="595.167" y="310.833"/>
+						<pt x="721.667" y="310.833"/>
+						<pt x="721.667" y="237.333"/>
+					</pts>
+				</flow>
+				<flow label_side="bottom" x="813.917" y="220.333" name="Actual and\nforecast referrals for triage">
+					<pts>
+						<pt x="741.167" y="220.333"/>
+						<pt x="910.667" y="220.333"/>
+					</pts>
+				</flow>
+				<connector uid="106" angle="68.5523">
+					<from>Referrals_made</from>
+					<to>Actual_and_forecast_referrals_for_triage</to>
+				</connector>
+				<connector uid="107" angle="2.43665">
+					<from>Returning_referrals</from>
+					<to>Actual_and_forecast_referrals_for_triage</to>
+				</connector>
+				<aux label_side="right" x="715.417" y="391.333" name="Average months for COVID\nrelated backlog to return"/>
+				<flow label_side="bottom" x="473.167" y="430.333" name="COVID suppressed non returning referrals">
+					<pts>
+						<pt x="568.667" y="331.833"/>
+						<pt x="568.667" y="430.333"/>
+						<pt x="353.667" y="430.333"/>
+					</pts>
+				</flow>
+				<aux label_side="right" x="644.667" y="440.333" name="Percent pa of backlog\nnot returning"/>
+				<connector uid="110" angle="205.084">
+					<from>Virtual_backlog_of_COVID_suppressed_referrals</from>
+					<to>COVID_suppressed_non_returning_referrals</to>
+				</connector>
+				<connector uid="111" angle="163.811">
+					<from>Percent_pa_of_backlog_not_returning</from>
+					<to>COVID_suppressed_non_returning_referrals</to>
+				</connector>
+				<stacked_container uid="112" x="1565.58" y="1776.67" width="347.5" height="227" visible_index="4">
+					<graph width="347.5" height="227" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Actual_and_forecast_referrals_for_triage[*]"/>
+						</plot>
+					</graph>
+					<graph width="347.5" height="227" type="time_series" isee:points_only="true" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true"/>
+					<graph width="347.5" height="227" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="New_colonoscopy_referrals_added_to_waiting_list[*]"/>
+						</plot>
+					</graph>
+					<graph width="347.5" height="227" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Direct_urgent_referrals"/>
+						</plot>
+					</graph>
+					<graph width="347.5" height="227" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Returning_referrals[*]"/>
+						</plot>
+					</graph>
+				</stacked_container>
+				<aux label_side="right" x="733.417" y="352.333" name="Returning referrals without smth"/>
+				<connector uid="115" angle="321.953">
+					<from>Virtual_backlog_of_COVID_suppressed_referrals</from>
+					<to>Returning_referrals_without_smth</to>
+				</connector>
+				<connector uid="116" angle="61.8656">
+					<from>Average_months_for_COVID_related_backlog_to_return</from>
+					<to>Returning_referrals_without_smth</to>
+				</connector>
+				<connector uid="117" angle="153.275">
+					<from>Returning_referrals_without_smth</from>
+					<to>Returning_referrals</to>
+				</connector>
+				<connector uid="120" angle="321.957">
+					<from>Actual_and_forecast_referrals_for_triage</from>
+					<to>New_colonoscopy_referrals_added_to_waiting_list</to>
+				</connector>
+				<stock label_side="top" x="2396.08" y="2402.67" name="Monthly lists colonoscopy 1"/>
+				<aux color="black" font_color="black" label_side="right" x="2516.58" y="2013.67" name="Inpatient list colonoscopies pcm 1"/>
+				<stock label_side="top" x="2685.33" y="2184.67" name="People requiring bowel surveillance 1"/>
+				<flow x="2599.08" y="2184.67" name="Net change of people\nrequiring bowel surveillance 1">
+					<pts>
+						<pt x="2523.33" y="2184.67"/>
+						<pt x="2662.83" y="2184.67"/>
+					</pts>
+				</flow>
+				<aux x="2622.08" y="2294.67" name="People added to\nbowel surveillance cohort 1"/>
+				<aux label_side="bottom" x="2486.83" y="2279.67" name="People leaving\nbowel surveillance cohort 1"/>
+				<connector uid="122" angle="51.2345">
+					<from>People_leaving_bowel_surveillance_cohort_1</from>
+					<to>Net_change_of_people_requiring_bowel_surveillance_1</to>
+				</connector>
+				<connector uid="123" angle="89.6021">
+					<from>People_added_to_bowel_surveillance_cohort_1</from>
+					<to>Net_change_of_people_requiring_bowel_surveillance_1</to>
+				</connector>
+				<aux label_side="right" x="2730.33" y="2021.67" name="Surveillance procedures pa per person 1"/>
+				<aux label_side="left" x="2722.33" y="2086.67" name="Actual surveillance\ntests per month 1"/>
+				<connector uid="124" angle="52.0284">
+					<from>People_requiring_bowel_surveillance_1</from>
+					<to>Actual_surveillance_tests_per_month_1</to>
+				</connector>
+				<connector uid="125" angle="262.983">
+					<from>Surveillance_procedures_pa_per_person_1</from>
+					<to>Actual_surveillance_tests_per_month_1</to>
+				</connector>
+				<flow x="2299.46" y="2401.67" name="Additional lists added 1">
+					<pts>
+						<pt x="2225.33" y="2401.67"/>
+						<pt x="2373.58" y="2401.67"/>
+					</pts>
+				</flow>
+				<aux label_side="left" x="2249.83" y="2311.67" name="Monthly change\ncapacity 1"/>
+				<connector uid="126" angle="332.784">
+					<from>Monthly_change_capacity_1</from>
+					<to>Additional_lists_added_1</to>
+				</connector>
+				<aux label_side="left" x="2430.33" y="2127.67" name="Capacity available for\nroutine and BCSP colonoscopies 1"/>
+				<connector uid="127" angle="94.7636">
+					<from>Monthly_lists_colonoscopy_1</from>
+					<to>Capacity_available_for_routine_and_BCSP_colonoscopies_1</to>
+				</connector>
+				<connector uid="128" angle="205.641">
+					<from>Inpatient_list_colonoscopies_pcm_1</from>
+					<to>Capacity_available_for_routine_and_BCSP_colonoscopies_1</to>
+				</connector>
+				<connector uid="129" angle="149.621">
+					<from>Actual_surveillance_tests_per_month_1</from>
+					<to>Capacity_available_for_routine_and_BCSP_colonoscopies_1</to>
+				</connector>
+				<aux label_side="left" x="2224.33" y="2206.67" name="COVID capacity deflator for colonoscopies 1"/>
+				<connector uid="130" angle="20.9816">
+					<from>COVID_capacity_deflator_for_colonoscopies_1</from>
+					<to>Capacity_available_for_routine_and_BCSP_colonoscopies_1</to>
+				</connector>
+				<aux x="2510.33" y="2394.67" name="Points 1"/>
+				<aux label_side="left" x="2296.33" y="2254.17" name="Capacity split for procedures 1"/>
+				<connector uid="131" angle="30.0333">
+					<from>Capacity_split_for_procedures_1</from>
+					<to>Capacity_available_for_routine_and_BCSP_colonoscopies_1</to>
+				</connector>
+				<aux color="black" font_color="black" label_side="left" x="1489.67" y="1680" name="Split of referrals"/>
+				<aux color="black" font_color="black" label_side="left" x="1479.67" y="2052" name="Percent\nreferrals routine"/>
+				<connector uid="136" angle="22.6199">
+					<from>
+						<alias uid="133"/>
+					</from>
+					<to>New_gastroscopy_referrals_added_to_waiting_list_pcm</to>
+				</connector>
+				<aux color="black" font_color="black" label_side="left" x="153" y="382" name="Actual C referrals"/>
+				<aux color="black" font_color="black" label_side="left" x="153" y="314" name="Actual R referrals"/>
+				<aux color="black" font_color="black" label_side="left" x="158" y="349.5" name="Actual U referrals"/>
+				<aux color="black" font_color="black" label_side="left" x="200.75" y="130" name="Expected R\nreferrals"/>
+				<aux color="black" font_color="black" label_side="left" x="284" y="59" name="Expected U referrals"/>
+				<connector uid="141" angle="301.218">
+					<from>
+						<alias uid="142"/>
+					</from>
+					<to>New_sigmoidoscopy_referrals_added_to_waiting_list</to>
+				</connector>
+				<connector uid="143" angle="349.992">
+					<from>
+						<alias uid="144"/>
+					</from>
+					<to>New_sigmoidoscopy_referrals_added_to_waiting_list</to>
+				</connector>
+				<flow x="1597.75" y="228" name="Urgent colonoscopies\ncomplete">
+					<pts>
+						<pt x="1478.5" y="228"/>
+						<pt x="1741" y="228"/>
+					</pts>
+				</flow>
+				<connector uid="149" angle="29.8828">
+					<from>Waiting_for_Sigmoidoscopy</from>
+					<to>Average_mths_waiting_for_sigmoidoscopy</to>
+				</connector>
+				<aux color="black" font_color="black" label_side="left" x="1160.67" y="725.333" name="Actual colonoscopy lists\nper month"/>
+				<connector uid="150" angle="336.038">
+					<from>Actual_colonoscopy_lists_per_month</from>
+					<to>Change_in_lists</to>
+				</connector>
+				<flow x="1422.79" y="832.333" name="Urgent\ncolonoscopies">
+					<pts>
+						<pt x="1341.92" y="832.333"/>
+						<pt x="1527.67" y="832.333"/>
+					</pts>
+				</flow>
+				<flow x="1323.67" y="904.083" name="Routine\ncolonoscopies">
+					<pts>
+						<pt x="1323.67" y="848.833"/>
+						<pt x="1323.67" y="980.333"/>
+					</pts>
+				</flow>
+				<connector uid="151" angle="164.745">
+					<from>
+						<alias uid="152"/>
+					</from>
+					<to>Urgent_colonoscopies</to>
+				</connector>
+				<connector uid="153" angle="225.343">
+					<from>Monthly_lists_colonoscopy</from>
+					<to>Routine_colonoscopies</to>
+				</connector>
+				<connector uid="154" angle="189.972">
+					<from>Urgent_colonoscopies</from>
+					<to>Routine_colonoscopies</to>
+				</connector>
+				<aux x="2464.67" y="1114.33" name="Split of activity type"/>
+				<aux x="1135.67" y="923.333" name="Expected colonoscopies per month"/>
+				<aux label_side="right" x="2486" y="1227.83" name="Percent leaving urgent colonoscopy WL without scope"/>
+				<flow label_side="top" x="1371.75" y="228" name="Direct urgent referrals">
+					<pts>
+						<pt x="1322" y="104"/>
+						<pt x="1322" y="228"/>
+						<pt x="1433.5" y="228"/>
+					</pts>
+				</flow>
+				<aux color="black" font_color="black" label_side="left" x="223" y="166" name="Expected C referrals"/>
+				<stock label_side="bottom" x="1456" y="228" name="Waiting for urgent\ncolonoscopy"/>
+				<aux label_side="right" label_angle="45" x="309" y="130" name="Expected referrals"/>
+				<connector uid="181" angle="54.2461">
+					<from>Capacity_split_for_procedures</from>
+					<to>Expected_referrals</to>
+				</connector>
+				<connector uid="183" angle="6.70984">
+					<from>Expected_referrals</from>
+					<to>Referrals_made</to>
+				</connector>
+				<connector uid="184" angle="328.299">
+					<from>Expected_referrals</from>
+					<to>Referrals_not_materialising</to>
+				</connector>
+				<aux label_side="right" label_angle="315" x="263" y="349.5" name="Actual referrals"/>
+				<connector uid="185" angle="12.7244">
+					<from>Actual_R_referrals</from>
+					<to>Actual_referrals</to>
+				</connector>
+				<connector uid="188" angle="292.751">
+					<from>Capacity_split_for_procedures</from>
+					<to>Actual_referrals</to>
+				</connector>
+				<connector uid="189" angle="36.076">
+					<from>Actual_referrals</from>
+					<to>Referrals_made</to>
+				</connector>
+				<connector uid="190" angle="298.072">
+					<from>
+						<alias uid="191"/>
+					</from>
+					<to>Direct_urgent_referrals</to>
+				</connector>
+				<connector uid="192" angle="276.34">
+					<from>
+						<alias uid="193"/>
+					</from>
+					<to>Direct_urgent_referrals</to>
+				</connector>
+				<connector uid="195" angle="16.8584">
+					<from>
+						<alias uid="196"/>
+					</from>
+					<to>Actual_surveillance_tests_per_month</to>
+				</connector>
+				<group locked="true" x="2359.33" y="1544.67" width="538" height="390" name="Included in WL referrals">
+					<item uid="196"/>
+				</group>
+				<connector uid="197" angle="25.3197">
+					<from>Expected_R_referrals</from>
+					<to>Expected_referrals</to>
+				</connector>
+				<connector uid="198" angle="306.327">
+					<from>Expected_U_referrals</from>
+					<to>Expected_referrals</to>
+				</connector>
+				<connector uid="199" angle="32.0054">
+					<from>Expected_C_referrals</from>
+					<to>Expected_referrals</to>
+				</connector>
+				<connector uid="200" angle="25.2405">
+					<from>Actual_U_referrals</from>
+					<to>Actual_referrals</to>
+				</connector>
+				<connector uid="201" angle="12.875">
+					<from>Actual_C_referrals</from>
+					<to>Actual_referrals</to>
+				</connector>
+				<group locked="true" x="2943.33" y="1539.67" width="743" height="390" name="Included in NE and Planned"/>
+				<aux label_side="top" x="1579.75" y="164" name="TAT for urgent\ncolonoscopies"/>
+				<connector uid="202" angle="23.5523">
+					<from>Waiting_for_urgent_colonoscopy</from>
+					<to>Urgent_colonoscopies_complete</to>
+				</connector>
+				<connector uid="203" angle="314.379">
+					<from>TAT_for_urgent_colonoscopies</from>
+					<to>Urgent_colonoscopies_complete</to>
+				</connector>
+				<connector uid="204" angle="82.1467">
+					<from>Expected_colonoscopies_per_month</from>
+					<to>Change_in_lists</to>
+				</connector>
+				<aux label_side="right" label_angle="45" x="449" y="50" name="Cancer ref\ndampener"/>
+				<connector uid="205" angle="162.646">
+					<from>Cancer_ref_dampener</from>
+					<to>Expected_referrals</to>
+				</connector>
+				<connector uid="206" angle="86.7295">
+					<from>
+						<alias uid="156"/>
+					</from>
+					<to>Proceeding_to_treatment</to>
+				</connector>
+				<aux color="black" font_color="black" label_side="left" x="2286" y="485" name="Actual Flexi list\nper month"/>
+				<connector uid="207" angle="93.1798">
+					<from>Actual_Flexi_list_per_month</from>
+					<to>Proceeding_to_sigmoidoscopy</to>
+				</connector>
+				<aux color="black" font_color="black" label_side="left" x="2412" y="1005" name="Actual gastroscopy lists\nper month"/>
+				<group locked="true" x="2032.33" y="1991.67" width="876" height="473" name="Not included yet"/>
+				<aux x="2371" y="461" name="Expected FS\nper month"/>
+				<connector uid="208" angle="73.3008">
+					<from>Expected_FS_per_month</from>
+					<to>Proceeding_to_sigmoidoscopy</to>
+				</connector>
+				<aux label_side="right" x="1962.67" y="387.333" name="urgent actual\nand expected FS"/>
+				<connector uid="209" angle="21.2505">
+					<from>
+						<alias uid="210"/>
+					</from>
+					<to>urgent_actual_and_expected_FS</to>
+				</connector>
+				<connector uid="211" angle="53.4475">
+					<from>
+						<alias uid="212"/>
+					</from>
+					<to>urgent_actual_and_expected_FS</to>
+				</connector>
+				<connector uid="213" angle="40.7321">
+					<from>urgent_actual_and_expected_FS</from>
+					<to>New_sigmoidoscopy_referrals_added_to_waiting_list</to>
+				</connector>
+				<aux label_side="left" x="1996" y="519" name="total waiting"/>
+				<connector uid="214" angle="81.2538">
+					<from>
+						<alias uid="215"/>
+					</from>
+					<to>total_waiting</to>
+				</connector>
+				<connector uid="216" angle="317.936">
+					<from>Waiting_for_urgent_colonoscopy</from>
+					<to>total_waiting</to>
+				</connector>
+				<connector uid="217" angle="251.565">
+					<from>Waiting_for_Sigmoidoscopy</from>
+					<to>total_waiting</to>
+				</connector>
+				<aux label_side="right" x="2232" y="1046" name="urgent actual\nand expected Gastro"/>
+				<connector uid="218" angle="21.2505">
+					<from>
+						<alias uid="219"/>
+					</from>
+					<to>urgent_actual_and_expected_Gastro</to>
+				</connector>
+				<connector uid="220" angle="23.8059">
+					<from>
+						<alias uid="221"/>
+					</from>
+					<to>urgent_actual_and_expected_Gastro</to>
+				</connector>
+				<connector uid="222" angle="63.4349">
+					<from>urgent_actual_and_expected_Gastro</from>
+					<to>New_gastroscopy_referrals_added_to_waiting_list_pcm</to>
+				</connector>
+				<connector uid="223" angle="137.726">
+					<from>Actual_gastroscopy_lists_per_month</from>
+					<to>Proceeding_to_gastroscopy</to>
+				</connector>
+				<stacked_container uid="224" x="2194.33" y="1913.67">
+					<graph width="350" height="250" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Waiting_for_Gastroscopy"/>
+						</plot>
+					</graph>
+					<graph width="350" height="250" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Proceeding_to_gastroscopy"/>
+						</plot>
+					</graph>
+					<graph width="350" height="250" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="New_gastroscopy_referrals_added_to_waiting_list_pcm"/>
+						</plot>
+						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="Proceeding_to_gastroscopy"/>
+						</plot>
+					</graph>
+				</stacked_container>
+				<aux x="2468" y="1011" name="Expected gastroscopy lists\nper month"/>
+				<connector uid="225" angle="77.4712">
+					<from>Expected_gastroscopy_lists_per_month</from>
+					<to>Proceeding_to_gastroscopy</to>
+				</connector>
+				<aux color="black" font_color="black" x="1818" y="1068" name="Planned activity demand Upper GI"/>
+				<aux color="black" font_color="black" x="1076" y="632" name="Planned activity\ndemand Lower GI"/>
+				<aux x="1952" y="1068" name="Future planned\nUpper GI"/>
+				<aux label_side="left" x="1970" y="998" name="Planned and NE\nUpper GI demand"/>
+				<connector uid="226" angle="14.0362">
+					<from>Planned_activity_demand_Upper_GI</from>
+					<to>Planned_and_NE_Upper_GI_demand</to>
+				</connector>
+				<connector uid="227" angle="48.4682">
+					<from>Future_planned_Upper_GI</from>
+					<to>Planned_and_NE_Upper_GI_demand</to>
+				</connector>
+				<connector uid="228" angle="35.8377">
+					<from>Planned_and_NE_Upper_GI_demand</from>
+					<to>New_gastroscopy_referrals_added_to_waiting_list_pcm</to>
+				</connector>
+				<connector uid="229" angle="80.5377">
+					<from>Planned_activity_demand_Lower_GI</from>
+					<to>New_colonoscopy_referrals_added_to_waiting_list</to>
+				</connector>
+				<connector uid="230" angle="351.027">
+					<from>Bowel_symptom_referrals_triage_outcomes_split</from>
+					<to>Direct_urgent_referrals</to>
+				</connector>
+				<connector uid="231" angle="119.284">
+					<from>
+						<alias uid="232"/>
+					</from>
+					<to>total_waiting</to>
+				</connector>
+				<aux label_side="right" label_angle="45" x="1367" y="420" name="delay for routine colonoscopy"/>
+				<connector uid="233" angle="245.225">
+					<from>delay_for_routine_colonoscopy</from>
+					<to>Proceeding_to_treatment</to>
+				</connector>
+				<stacked_container uid="234" x="173.334" y="512.5" width="672.916" height="398.75" visible_index="4">
+					<graph width="672.916" height="398.75" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Actual_and_forecast_referrals_for_triage[*]"/>
+						</plot>
+						<plot color="#008F44" pen_style="dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="Expected_referrals[*, Routine]"/>
+						</plot>
+					</graph>
+					<graph width="672.916" height="398.75" type="time_series" show_grid="true" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="9" num_y_grid_lines="6" num_x_labels="9" num_y_labels="6" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Actual_referrals[Sigmoidoscopies, Routine]"/>
+						</plot>
+						<plot color="fuchsia" pen_style="dotted" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="Expected_referrals[Sigmoidoscopies, Routine]"/>
+						</plot>
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="2" show_y_axis="true">
+							<entity name="Actual_and_forecast_referrals_for_triage[Sigmoidoscopies]"/>
+						</plot>
+					</graph>
+					<graph width="672.916" height="398.75" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Waiting_for_Sigmoidoscopy"/>
+						</plot>
+					</graph>
+					<graph width="672.916" height="398.75" type="time_series" show_grid="true" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="9" num_y_grid_lines="11" num_x_labels="9" num_y_labels="11" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Expected_referrals[Upper_GI, Routine]"/>
+						</plot>
+						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="Actual_referrals[Upper_GI, Routine]"/>
+						</plot>
+						<plot color="fuchsia" pen_style="dotted" isee:keep_zero_visible="true" pen_width="1" index="2" show_y_axis="true">
+							<entity name="Actual_and_forecast_referrals_for_triage[Upper_GI]"/>
+						</plot>
+					</graph>
+					<graph width="672.916" height="398.75" type="time_series" show_grid="true" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="9" num_y_grid_lines="6" num_x_labels="9" num_y_labels="6" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="false" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Actual_referrals[Colonoscopies, Routine]"/>
+							<scale min="0" max="300"/>
+						</plot>
+						<plot color="red" pen_style="dot_dashed" isee:keep_zero_visible="true" pen_width="1" index="1" show_y_axis="true">
+							<entity name="Expected_referrals[Colonoscopies, Routine]"/>
+						</plot>
+						<plot color="fuchsia" pen_style="dotted" isee:keep_zero_visible="true" pen_width="1" index="2" show_y_axis="true">
+							<entity name="Actual_and_forecast_referrals_for_triage[Colonoscopies]"/>
+						</plot>
+						<plot color="#008F44" pen_style="dashed" isee:keep_zero_visible="false" pen_width="1" index="0" right_axis="true" show_y_axis="true">
+							<entity name="Waiting_for_colonoscopy[Routine_diagnostic]"/>
+							<scale min="0" max="3000"/>
+						</plot>
+					</graph>
+					<graph width="672.916" height="398.75" type="time_series" show_grid="false" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="0" num_y_grid_lines="0" num_x_labels="5" num_y_labels="3" isee:fill_intensity="0.1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Waiting_for_colonoscopy[*]"/>
+						</plot>
+					</graph>
+				</stacked_container>
+				<aux label_side="top" x="956.667" y="155" name="Total referrals for triage"/>
+				<connector uid="235" angle="40.3603">
+					<from>Actual_and_forecast_referrals_for_triage</from>
+					<to>Total_referrals_for_triage</to>
+				</connector>
+				<aux label_side="right" x="513.333" y="91" name="Total expected referrals"/>
+				<aux x="223" y="395.833" name="Total actual referrals"/>
+				<connector uid="236" angle="234.31">
+					<from>Actual_referrals</from>
+					<to>Total_actual_referrals</to>
+				</connector>
+				<connector uid="237" angle="20.642">
+					<from>Expected_referrals</from>
+					<to>Total_expected_referrals</to>
+				</connector>
+				<alias font_style="italic" label_side="left" uid="133" x="1990" y="892" width="18" height="18">
+					<of>Actual_and_forecast_referrals_for_triage</of>
+				</alias>
+				<alias font_style="italic" label_side="top" uid="142" x="2102" y="151" width="18" height="18">
+					<of>Bowel_symptom_referrals_triage_outcomes_split</of>
+				</alias>
+				<alias font_style="italic" label_side="top" uid="144" x="2024" y="244" width="18" height="18">
+					<of>Actual_and_forecast_referrals_for_triage</of>
+				</alias>
+				<alias color="blue" background="white" font_style="italic" label_side="right" uid="152" x="1524.67" y="740.333" width="18" height="18">
+					<of>Urgent_colonoscopies_complete</of>
+				</alias>
+				<alias color="blue" background="white" font_style="italic" label_side="right" label_angle="45" uid="156" x="1449" y="581" width="18" height="18">
+					<of>Routine_colonoscopies</of>
+				</alias>
+				<alias font_style="italic" label_side="left" uid="191" x="1193" y="119" width="18" height="18">
+					<of>Expected_referrals</of>
+				</alias>
+				<alias font_style="italic" label_side="right" label_angle="45" uid="193" x="1398" y="82" width="18" height="18">
+					<of>Actual_referrals</of>
+				</alias>
+				<alias font_style="italic" uid="196" x="2493.33" y="1606.67" width="18" height="18">
+					<of>COVID_capacity_deflator_for_colonoscopies</of>
+				</alias>
+				<alias font_style="italic" uid="212" x="1925" y="417" width="18" height="18">
+					<of>Expected_referrals</of>
+				</alias>
+				<alias font_style="italic" uid="210" x="1870.33" y="355" width="18" height="18">
+					<of>Actual_referrals</of>
+				</alias>
+				<alias font_style="italic" label_side="left" uid="215" x="1982.5" y="602.5" width="45" height="35">
+					<of>Waiting_for_colonoscopy</of>
+				</alias>
+				<alias font_style="italic" uid="221" x="2179" y="1074" width="18" height="18">
+					<of>Expected_referrals</of>
+				</alias>
+				<alias font_style="italic" uid="219" x="2118" y="1050" width="18" height="18">
+					<of>Actual_referrals</of>
+				</alias>
+				<alias font_style="italic" label_side="right" label_angle="315" uid="232" x="2073" y="610.5" width="45" height="35">
+					<of>Waiting_for_Gastroscopy</of>
+				</alias>
+			</view>
+			<view background="white" page_width="1066" page_height="600" home_view="true" type="interface">
+				<style/>
+				<graphics_frame fill="none" x="12.5" y="12.3333" width="170.5" height="67.6667">
+					<image width="142" height="45" size_to_parent="true" isee:fixed_aspect_ratio="false">data:image/png;base64,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</image>
+				</graphics_frame>
+				<graphical_input x="57" y="152" title="Percent colonoscopy passing triage" isee:navigate_to="false" show_name="true" isee:fill_intensity="0" isee:series_color="black" isee:input_precision="0">
+					<entity name="Bowel_symptom_referrals_triage_outcomes_split[Colonoscopy]"/>
+					<reset_to after="never">0</reset_to>
+				</graphical_input>
+				<graphical_input x="160" y="152" title="Percent sigmoidoscopy passing triage" isee:navigate_to="false" show_name="true" isee:fill_intensity="0" isee:series_color="black" isee:input_precision="0">
+					<entity name="Bowel_symptom_referrals_triage_outcomes_split[Sigmoidoscopy]"/>
+					<reset_to after="never">0</reset_to>
+				</graphical_input>
+				<graphical_input x="57" y="262" title="Percent gastroscopy passing triage" isee:navigate_to="false" show_name="true" isee:fill_intensity="0" isee:series_color="black" isee:input_precision="0">
+					<entity name="Upper_GI_triage_outcome_percent_to_procedure"/>
+					<reset_to after="never">0</reset_to>
+				</graphical_input>
+				<stacked_container x="214" y="24" width="844.811" height="566.191" z_index="-2" isee:appearance="tabs">
+					<graph width="844.811" height="566.191" comparative="true" isee:comparative_override_thickness="3" type="time_series" isee:time_format_id="Mths" show_grid="true" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="9" num_y_grid_lines="11" num_x_labels="11" num_y_labels="11" title="Total endoscopy waiting list" isee:page_title="Total endoscopy" isee:fill_intensity="0.1" to="96" from="0" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="false" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="total_waiting"/>
+						</plot>
+					</graph>
+					<graph width="844.811" height="566.191" comparative="true" isee:comparative_override_thickness="3" type="time_series" show_grid="true" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="9" num_y_grid_lines="11" num_x_labels="11" num_y_labels="11" title="Awaiting urgent colonoscopy" isee:page_title="Urgent colonoscopy" isee:fill_intensity="0.1" to="96" from="0" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot isee:immediately_update_on_user_input="true" color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Waiting_for_urgent_colonoscopy"/>
+						</plot>
+					</graph>
+					<graph font_weight="bold" font_size="16pt" axis_title_font_weight="bold" axis_title_font_size="14pt" axis_label_font_weight="bold" axis_label_font_size="14pt" width="844.811" height="566.191" comparative="true" isee:comparative_override_thickness="3" type="time_series" isee:time_format_id="Mths" show_grid="true" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="9" num_y_grid_lines="9" num_x_labels="9" num_y_labels="9" title="Awaiting routine colonoscopy " isee:page_title="Routine colonoscopy " isee:fill_intensity="0.1" to="96" from="0" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot isee:immediately_update_on_user_input="true" color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Waiting_for_colonoscopy[Routine_diagnostic]"/>
+						</plot>
+					</graph>
+					<graph font_weight="bold" font_size="16pt" axis_title_font_weight="bold" axis_title_font_size="14pt" axis_label_font_weight="bold" axis_label_font_size="14pt" width="844.811" height="566.191" comparative="true" isee:comparative_override_thickness="3" type="time_series" show_grid="true" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="9" num_y_grid_lines="9" num_x_labels="9" num_y_labels="9" title="Awaiting gastroscopy" isee:page_title="Gastroscopy" isee:fill_intensity="0.1" to="96" from="0" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot isee:immediately_update_on_user_input="true" color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Waiting_for_Gastroscopy"/>
+						</plot>
+					</graph>
+					<graph font_weight="bold" font_size="16pt" axis_title_font_weight="bold" axis_title_font_size="14pt" axis_label_font_weight="bold" axis_label_font_size="14pt" width="844.811" height="566.191" comparative="true" isee:comparative_override_thickness="3" type="time_series" show_grid="true" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="9" num_y_grid_lines="11" num_x_labels="9" num_y_labels="11" title="Awaiting Sigmoidoscopy" isee:page_title="Sigmoidoscopy" isee:fill_intensity="0.1" to="96" from="0" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true">
+						<plot isee:immediately_update_on_user_input="true" color="blue" isee:keep_zero_visible="true" pen_width="1" index="0" show_y_axis="true">
+							<entity name="Waiting_for_Sigmoidoscopy"/>
+						</plot>
+					</graph>
+					<graph width="844.811" height="566.191" type="time_series" isee:points_only="true" show_grid="true" isee:tick_type="none" include_units_in_legend="false" plot_numbers="false" isee:label_pie_slices="false" num_x_grid_lines="11" num_y_grid_lines="7" num_x_labels="0" num_y_labels="7" title="xy" isee:fill_intensity="0.1" to="96" from="1" isee:allow_zero_axis="true" left_axis_multi_scale="false" left_axis_auto_scale="true" left_include_units="true" right_axis_multi_scale="false" right_axis_auto_scale="true" right_include_units="true"/>
+				</stacked_container>
+				<graphical_input x="160" y="262" isee:navigate_to="false" show_name="true" isee:fill_intensity="0" isee:series_color="black" isee:input_precision="0">
+					<entity name="Expected_colonoscopies_per_month"/>
+					<reset_to after="never">0</reset_to>
+				</graphical_input>
+				<graphical_input x="160" y="374" isee:navigate_to="false" show_name="true" isee:fill_intensity="0" isee:series_color="black" isee:input_precision="0">
+					<entity name="Expected_gastroscopy_lists_per_month"/>
+					<reset_to after="never">0</reset_to>
+				</graphical_input>
+				<graphical_input x="57" y="374" isee:navigate_to="false" show_name="true" isee:fill_intensity="0" isee:series_color="black" isee:input_precision="0">
+					<entity name="Expected_FS_per_month"/>
+					<reset_to after="never">0</reset_to>
+				</graphical_input>
+			</view>
+			<isee:templates>
+				<view background="white" page_width="1066" page_height="600" type="template">
+					<style/>
+				</view>
+			</isee:templates>
+			<isee:stories/>
+		</views>
+	</model>
+</xmile>
+
