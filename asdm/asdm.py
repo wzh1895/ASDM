@@ -2198,6 +2198,9 @@ class sdmodel(object):
             
     def export_simulation_result(self, flatten=False, format='dict', to_csv=False, dt=False):
         self.full_result = dict()
+        self.full_result_df = None
+        
+        # generate full_result
         if dt:
             self.full_result['TIME'] = list()
         for time, slice in self.time_slice.items():
@@ -2220,33 +2223,33 @@ class sdmodel(object):
                         self.full_result[var].append(value)
                     except:
                         self.full_result[var] = [value]
-        if to_csv or flatten or format == 'df':
-            self.full_result_flattened = dict()
-            for var, result in self.full_result.items():
-                if type(result) is dict:
-                    for sub, subresult in result.items():
-                        self.full_result_flattened[var+'[{}]'.format(', '.join(sub))] = subresult
-                else:
-                    self.full_result_flattened[var] = result
-        if to_csv or format == 'df':
-            import pandas as pd
-            from pprint import pprint
-            df_full_result = pd.DataFrame.from_dict(self.full_result_flattened)
-            df_full_result.drop([self.sim_specs['time_units']],axis=1, inplace=True)
-            if type(to_csv) is not str:
-                df_full_result.to_csv('asdm.csv', index=False)
+        
+        # flatten the full_result
+        self.full_result_flattened = dict()
+        for var, result in self.full_result.items():
+            if type(result) is dict:
+                for sub, subresult in result.items():
+                    self.full_result_flattened[var+'[{}]'.format(', '.join(sub))] = subresult
             else:
-                df_full_result.to_csv(to_csv)
-
+                self.full_result_flattened[var] = result
+        
         if format == 'dict':
             if flatten:
                 return self.full_result_flattened
             else:
                 return self.full_result
         elif format == 'df':
-            return df_full_result
-        else:
-            raise Exception("Invalid value for arg 'format': {}".format(format))
+            import pandas as pd
+            self.full_result_df = pd.DataFrame.from_dict(self.full_result_flattened)
+            self.full_result_df.drop([self.sim_specs['time_units']],axis=1, inplace=True)
+            
+            if to_csv:
+                if type(to_csv) is not str:
+                    self.full_result_df.to_csv('asdm.csv', index=False)
+                else:
+                    self.full_result_df.to_csv(to_csv, index=False)
+                
+            return self.full_result_df
     
     def display_results(self, variables=None):
         if type(variables) is list and len(variables) == 0:
