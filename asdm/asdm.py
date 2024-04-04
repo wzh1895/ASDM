@@ -282,8 +282,22 @@ class Parser:
         """Parse an expression for '+' and '-' with lower precedence."""
         if self.verbose:
             print('parse_arith_expr   ', self.tokens[self.current_index:])
-        nodes = [self.parse_term()]
+        nodes = [self.parse_mod()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['PLUS', 'MINUS']:
+            op = self.tokens[self.current_index]
+            self.current_index += 1
+            left = nodes.pop()
+            right = self.parse_mod()
+            self.node_id += 1
+            nodes.append(Node(node_id=self.node_id, operator=op[0], operands=[left, right]))
+        return nodes[0]
+    
+    def parse_mod(self):
+        """Parse a mod operation."""
+        if self.verbose:
+            print('parse_mod          ', self.tokens[self.current_index:])
+        nodes = [self.parse_term()]
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'MOD':
             op = self.tokens[self.current_index]
             self.current_index += 1
             left = nodes.pop()
@@ -297,7 +311,7 @@ class Parser:
         if self.verbose:
             print('parse_term         ', self.tokens[self.current_index:])
         nodes = [self.parse_exponent()]
-        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['TIMES', 'DIVIDE', 'FLOORDIVIDE', 'MOD']:
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['TIMES', 'DIVIDE', 'FLOORDIVIDE']:
             op = self.tokens[self.current_index]
             self.current_index += 1
             left = nodes.pop()
@@ -760,14 +774,14 @@ class Solver(object):
                         subscript_from_definition = node_subscripts[:]
                         subscript_from_operands_with_replacement = list()
                         for i in range(len(subscript_from_definition)):
-                            if subscript_from_definition[i][1] in self.dimension_elements.keys(): # it's sth like Dimension_1
+                            if subscript_from_definition[i] in self.dimension_elements.keys(): # it's sth like Dimension_1
                                 # if verbose:
                                 #     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.2.2.1')
                                 subscript_from_operands_with_replacement.append(subscript[i]) # take the element from context subscript in the same position to replace Dimension_1
                             else: # it's sth like Element_1
                                 # if verbose:
                                 #     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.2.2.2')
-                                subscript_from_operands_with_replacement.append(subscript_from_definition[i][1]) # add to list directly
+                                subscript_from_operands_with_replacement.append(subscript_from_definition[i]) # add to list directly
                         subscript_from_operands_with_replacement = tuple(subscript_from_operands_with_replacement)
                         if verbose:
                             print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.2.2', subscript_from_operands_with_replacement)
@@ -1007,7 +1021,7 @@ class Solver(object):
                 print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'array-related func. operator:', node_operator, 'operands:', node_operands)
             func_name = node_operator
             if func_name == 'SUM':
-                arrayed_var_name = parsed_equation.nodes[node_operands[0]]['operands'][0][1]
+                arrayed_var_name = parsed_equation.nodes[node_operands[0]]['value']
                 sum_array = 0
                 for _, sub_val in self.name_space[arrayed_var_name].items():
                     sum_array += sub_val
@@ -1020,8 +1034,8 @@ class Solver(object):
                 print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'Lookup func. operator:', node_operator, 'operands:', node_operands)
             func_name = node_operator
             if func_name == 'LOOKUP':
-                look_up_func_node = node_operands[0]
-                look_up_func_name = parsed_equation.nodes[look_up_func_node]['operands'][0][1]
+                look_up_func_node_id = node_operands[0]
+                look_up_func_name = parsed_equation.nodes[look_up_func_node_id]['value']
                 look_up_func = self.graph_functions[look_up_func_name]
                 input_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript, verbose=verbose)
                 value = look_up_func(input_value)
@@ -2207,6 +2221,8 @@ class sdmodel(object):
             if dt:
                 self.full_result['TIME'].append(time)
             for var, value in slice.items():
+                if var == 'DT':
+                    continue
                 if type(value) is dict:
                     for sub, subvalue in value.items():
                         try:
