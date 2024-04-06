@@ -6,10 +6,28 @@ from pprint import pprint
 from scipy import stats
 from scipy.interpolate import interp1d
 from copy import deepcopy
+import matplotlib.pyplot as plt
 
+class Node:
+    def __init__(self, node_id, operator=None, value=None, operands=None, subscripts=None):
+        self.node_id = node_id
+        self.operator = operator
+        self.value = value
+        self.subscripts = subscripts if subscripts is not None else []
+        self.operands = operands if operands is not None else []
 
-class Parser(object):
+    def __str__(self):
+        if self.operands:
+            return f'{self.operator}({", ".join(str(operand) for operand in self.operands)})' 
+        else: 
+            if self.subscripts:
+                return f'{self.operator}({self.value}{self.subscripts})'
+            else:
+                return f'{self.operator}({self.value})'
+
+class Parser:
     def __init__(self):
+        
         self.numbers = {
             'NUMBER': r'(?<![a-zA-Z0-9)])[-]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?'
         }
@@ -42,6 +60,7 @@ class Parser(object):
             'FLOORDIVIDE': r'\/\/',
             'DIVIDE': r'\/',
             'MOD': r'MOD(?=\s)', # there are spaces surronding MOD, but the front space is strip()-ed
+            'EXP': r'\^',
         }
 
         self.functions = { # use lookahead (?=\() to ensure only match INIT( not INITIAL
@@ -60,279 +79,22 @@ class Parser(object):
             'LOOKUP': r'LOOKUP(?=\()',
             'SUM': r'SUM(?=\()',
             'PULSE': r'PULSE(?=\()',
+            'INT': r'INT(?=\()',
         }
 
         self.names = {
             'ABSOLUTENAME': r'"[\s\S]*?"',
-            # 'NAME': r'[a-zA-Z0-9_\?]*',
             'NAME': r'[a-zA-Z0-9_£$\?]*', # add support for £ and $ in variable names
-        }
-
-        self.node_id = 0
-
-        self.patterns_sub_var = {
-            # token: to put as placeholder in 'items'
-            # operator and operands: to put into parsed_equation 
-
-            ### Subscripted Variables ###
-
-            'NAME__LSPAREN__DOT+__RSPAREN':{
-                'token':['FUNC', 'SPAREN'],
-                'operator':['SPAREN'],
-                'operand':['NUMBER', 'NAME']
-            },
-        }
-        self.patterns_num = {
-            ### Numbers ###
-
-            'NUMBER':{
-                'token':['FUNC', 'IS'],
-                'operator':['IS'],
-                'operand':['NUMBER']
-            },
-        }
-        self.patterns_var = {
-            ### User-defined Variables ###
-
-            'NAME': {
-                'token':['FUNC', 'EQUALS'],
-                'operator':['EQUALS'],
-                'operand':['NAME']
-                },
-        }
-        self.patterns_custom_func = {}
-        self.patterns_brackets = {
-            ### Brackets ###
-
-            'LPAREN__FUNC__RPAREN':{
-                'token':['FUNC', 'PAREN'],
-                'operator':['PAREN'],
-                'operand':['FUNC']
-            },
-        }
-        ### Arithmetics ###
-        self.patterns_arithmetic_1 = {
-            'FUNC__TIMES__FUNC': {
-                'token':['FUNC', 'TIMES'],
-                'operator':['TIMES'],
-                'operand':['FUNC']
-                },
-            'FUNC__DIVIDE__FUNC': {
-                'token':['FUNC', 'DIVIDE'],
-                'operator':['DIVIDE'],
-                'operand':['FUNC']
-                },
-            'FUNC__FLOORDIVIDE__FUNC': {
-                'token':['FUNC', 'FLOORDIVIDE'],
-                'operator':['FLOORDIVIDE'],
-                'operand':['FUNC']
-                },
-        }
-        self.patterns_arithmetic_2 = {
-            'FUNC__MOD__FUNC':{
-                'token':['FUNC', 'MOD'],
-                'operator':['MOD'],
-                'operand':['FUNC']
-            },
-        }
-        self.patterns_arithmetic_3 = {
-
-            'FUNC__PLUS__FUNC': {
-                'token':['FUNC', 'PLUS'],
-                'operator':['PLUS'],
-                'operand':['FUNC']
-                },
-            'FUNC__MINUS__FUNC': {
-                'token':['FUNC', 'MINUS'],
-                'operator':['MINUS'],
-                'operand':['FUNC']
-                },
-        }
-        self.patterns_built_in_func = {
-            ### Built in functions ###
-            'MIN__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'MIN'],
-                'operator':['MIN'],
-                'operand':['FUNC']
-            },
-            'MAX__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'MAX'],
-                'operator':['MAX'],
-                'operand':['FUNC']
-            },
-            # SAFEDIV x 2
-            'SAFEDIV__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'SAFEDIV'],
-                'operator':['SAFEDIV'],
-                'operand':['FUNC']
-            },
-            'SAFEDIV__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'SAFEDIV'],
-                'operator':['SAFEDIV'],
-                'operand':['FUNC']
-            },
-            'RBINOM__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'RBINOM'],
-                'operator':['RBINOM'],
-                'operand':['FUNC']
-            },
-            'INIT__LPAREN__FUNC__RPAREN':{
-                'token':['FUNC', 'INIT'],
-                'operator':['INIT'],
-                'operand':['FUNC']
-            },
-            # DELAY x 2
-            'DELAY__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'DELAY'],
-                'operator':['DELAY'],
-                'operand':['FUNC']
-            },
-            'DELAY__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'DELAY'],
-                'operator':['DELAY'],
-                'operand':['FUNC']
-            },
-            # DELAY1 x 2
-            'DELAY1__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'DELAY1'],
-                'operator':['DELAY1'],
-                'operand':['FUNC']
-            },
-            'DELAY1__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'DELAY1'],
-                'operator':['DELAY1'],
-                'operand':['FUNC']
-            },
-            # DELAY3 x 2
-            'DELAY3__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'DELAY3'],
-                'operator':['DELAY3'],
-                'operand':['FUNC']
-            },
-            'DELAY3__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'DELAY3'],
-                'operator':['DELAY3'],
-                'operand':['FUNC']
-            },
-            # SMTH1 x 2
-            'SMTH1__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'SMTH1'],
-                'operator':['SMTH1'],
-                'operand':['FUNC']
-            },
-            'SMTH1__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'SMTH1'],
-                'operator':['SMTH1'],
-                'operand':['FUNC']
-            },
-            # SMTH3 x 2
-            'SMTH3__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'SMTH3'],
-                'operator':['SMTH3'],
-                'operand':['FUNC']
-            },
-            'SMTH3__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'SMTH3'],
-                'operator':['SMTH3'],
-                'operand':['FUNC']
-            },
-            'HISTORY__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'HISTORY'],
-                'operator':['HISTORY'],
-                'operand':['FUNC']
-            },
-            'STEP__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'STEP'],
-                'operator':['STEP'],
-                'operand':['FUNC']
-            },
-            'LOOKUP__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'LOOKUP'],
-                'operator':['LOOKUP'],
-                'operand':['FUNC']
-            },
-            'SUM__LPAREN__FUNC__RPAREN':{
-                'token':['FUNC', 'SUM'],
-                'operator':['SUM'],
-                'operand':['FUNC']
-            },
-            # PULSE x 3
-            'PULSE__LPAREN__FUNC__RPAREN':{
-                'token':['FUNC', 'PULSE'],
-                'operator':['PULSE'],
-                'operand':['FUNC']
-            },
-            'PULSE__LPAREN__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'PULSE'],
-                'operator':['PULSE'],
-                'operand':['FUNC']
-            },
-            'PULSE__LPAREN__FUNC__COMMA__FUNC__COMMA__FUNC__RPAREN':{
-                'token':['FUNC', 'PULSE'],
-                'operator':['PULSE'],
-                'operand':['FUNC']
-            },
-        }
-        
-        self.patterns_logic = {
-            ### Logic ###
-
-            'FUNC__GT__FUNC':{
-                'token':['FUNC', 'GT'],
-                'operator':['GT'],
-                'operand':['FUNC']
-            },
-            'FUNC__LT__FUNC':{
-                'token':['FUNC', 'LT'],
-                'operator':['LT'],
-                'operand':['FUNC']
-            },
-            'FUNC__NGT__FUNC':{
-                'token':['FUNC', 'NGT'],
-                'operator':['NGT'],
-                'operand':['FUNC']
-            },
-            'FUNC__NLT__FUNC':{
-                'token':['FUNC', 'NLT'],
-                'operator':['NLT'],
-                'operand':['FUNC']
-            },
-            'FUNC__EQS__FUNC':{
-                'token':['FUNC', 'EQS'],
-                'operator':['EQS'],
-                'operand':['FUNC']
-            },
-            'FUNC__AND__FUNC':{
-                'token':['FUNC', 'AND'],
-                'operator':['AND'],
-                'operand':['FUNC']
-            },
-            'FUNC__OR__FUNC':{
-                'token':['FUNC', 'OR'],
-                'operator':['OR'],
-                'operand':['FUNC']
-            },
-            'NOT__FUNC':{
-                'token':['FUNC', 'NOT'],
-                'operator':['NOT'],
-                'operand':['FUNC']
-            },
-        }
-        self.patterns_conditional = {
-            ### Conditional ###
-
-            'CONIF__FUNC__CONTHEN__FUNC__CONELSE__FUNC':{
-                'token':['FUNC', 'CON'],
-                'operator':['CON'],
-                'operand':['FUNC']
-            }
         }
 
         self.HEAD = "PARSER"
 
-    def tokenisation(self, s):
-        items = []
-        # l = len(items)
+        self.node_id = 0
+        self.tokens = []
+        self.current_index = 0
+
+    def tokenise(self, s):
+        tokens = []
         while len(s) > 0:
             # print(self.HEAD, 'Tokenising:', s, 'len:', len(s))
             for type_name, type_regex in (
@@ -345,171 +107,294 @@ class Parser(object):
                 ).items():
                 m = re.match(pattern=type_regex, string=s)
                 if m:
-                    item = m[0]
-                    if item[0] == "\"" and item[-1] == "\"": # strip quotation marks from matched string
-                        item = item[1:-1]
+                    token = m[0]
+                    if token[0] == "\"" and token[-1] == "\"": # strip quotation marks from matched string
+                        token = token[1:-1]
                     if type_name == 'ABSOLUTENAME':
                         type_name = 'NAME'
-                    if type_name == 'NUMBER' and item[0] == '-': # fix the -1: negative 1 vs minus 1 problem
-                        if not(len(items) == 0 or items[-1] == ['LPAREN', '(']):
-                            items.append(['MINUS', '-'])
-                            items.append(['NUMBER', item[1:]])
+                    if type_name == 'NUMBER' and token[0] == '-': # fix the -1: negative 1 vs minus 1 problem
+                        if not(len(tokens) == 0 or tokens[-1][0] == ['LPAREN', '(']):
+                            tokens.append(['MINUS', '-'])
+                            tokens.append(['NUMBER', token[1:]])
                             s = s[m.span()[1]:].strip()
                         else:
-                            items.append([type_name, item])
+                            tokens.append([type_name, token])
                             s = s[m.span()[1]:].strip()
                     else:
-                        items.append([type_name, item])
+                        if type_name in self.functions:
+                            tokens.append(['FUNC', token])
+                        else:
+                            tokens.append([type_name, token])
                         s = s[m.span()[1]:].strip()
                     break
-            # print(items)
-            # if len(items) == l:
-            #     raise Exception()
-            # else:
-            #     l = len(items)
-        return items
+        return tokens
+    
+    def parse(self, expression, plot=False, verbose=False):
+        self.verbose = verbose
 
-    def parse(self, string, verbose=False, max_iter=100):
-        # if type(string) is dict:
-        #     parsed_equations = dict()
-        #     for k, ks in string.items():
-        #         parsed_equations[k] = self.parse(ks)
-        #     return parsed_equations
-        # else:
+        if self.verbose:
+            print(f"Starting parse of expression: {expression}")
+        self.tokens = self.tokenise(expression)
         if verbose:
-            print(self.HEAD, 'Parse string:', string)
-        items = self.tokenisation(string)
-        if verbose:
-            print(self.HEAD, 'Items:', items)
-        graph = nx.DiGraph()
-        if len(items) == 1:
-            if items[0][0] == 'NAME':
-                operator = ['EQUALS']
-            elif items[0][0] == 'NUMBER':
-                operator = ['IS']
-                items[0][1] = float(items[0][1])
-            graph.add_node(
-                self.node_id, 
-                operator=operator,
-                operands=items
-                )
-            graph.add_edge('root', self.node_id)
-            return graph
-        r = max_iter
-        while len(items) > 1 and r > 0:
-            if verbose:
-                print('\n'+self.HEAD, 'Iter:', r)
-            r -= 1 # use this line to put a stop by number of iterations
-            if r == 0:
-                raise Exception('Parser timeout on String\n  {}, \nItems\n  {}'.format(string, items))
-            items_changed = False
-            if verbose:
-                print(self.HEAD, '---Parsing---','\n')
-                print(self.HEAD, 'Items', items)
-                print(self.HEAD, 'Nodes', graph.nodes.data(True))
-                print(self.HEAD, 'Edges', graph.edges.data(True))
-
-            for pattern_set in [ # the order of the following patterns is IMPORTANT
-                self.patterns_sub_var,
-                self.patterns_num,
-                self.patterns_var,
-                self.patterns_custom_func,
-                self.patterns_built_in_func,
-                self.patterns_brackets,
-                self.patterns_arithmetic_1,
-                self.patterns_arithmetic_2,
-                self.patterns_arithmetic_3,
-                self.patterns_logic,
-                self.patterns_conditional,
-                ]: # loop over all patterns
-                for i in range(len(items)): # loop over all positions for this pattern
-                    # if verbose:
-                        # print(self.HEAD, 'Position:', i)
-                    #     print(self.HEAD, 'Checking item:', i, items[i])
-                    for pattern, func in pattern_set.items():
-                        pattern = pattern.split('__')
-                        # if verbose:
-                            # print(self.HEAD, "Searching for {} with operator {}".format(pattern, func['operator']))
-                        pattern_len = len(pattern)
-
-                        if len(items) - i >= pattern_len:
-                            matched = True
-                            for j in range(pattern_len): # matching pattern at this position
-                                if pattern[j] == items[i+j][0]: # exact match
-                                    pass
-                                else: 
-                                    if pattern[j] == 'DOT+': # fuzzy match
-                                        dotplus_matched = False
-                                        # print(self.HEAD, 'Matching DOT+')
-                                        try:
-                                            next_to_match = pattern[j+1] # it is pattern[j+1] that matters
-                                            # print(self.HEAD, 'Next to match:', next_to_match)
-                                            for k in range(i+j+1, len(items)):
-                                                if next_to_match == items[k][0]:
-                                                    # print(self.HEAD, 'Found next to match:', next_to_match, 'at', k, items[k])
-                                                    pattern_len = k - i + 1
-                                                    dotplus_matched = True
-                                                    break                 
-                                        except IndexError: # 'DOT+' is the last in the pattern
-                                            pass
-                                        if dotplus_matched:
-                                            break
-                                    else:
-                                        matched = False
-                                        break
-                            if matched:
-                                matched_items = items[i:i+pattern_len]
-                                if verbose:
-                                    print(self.HEAD, "Found {} at {}".format(pattern, matched_items))
-                                operands = []
-                                for item in matched_items:
-                                    if item[0] in func['operand']:
-                                        if item[0] in ['NAME', 'NUMBER']:
-                                            if item[0] == 'NUMBER':
-                                                # if item is a part of a[1,ele1] then it should remain str
-                                                # otherwise it should be converted to float
-                                                # print(self.HEAD, 'found a number', item, 'func:', func['operator'])
-                                                if func['operator'][0] == 'IS':
-                                                    item[1] = float(item[1])
-                                        else:
-                                            # print(self.HEAD, 'adding edge from {} to {}'.format(self.node_id, item[2]))
-                                            graph.add_edge(self.node_id, item[2])
-                                        operands.append(item)
-                                graph.add_node(
-                                    self.node_id, 
-                                    operator=func['operator'],
-                                    operands=operands
-                                    )
-                                items = items[0:i] + [func['token'][:] + [self.node_id]] + items[i+pattern_len:]
-                                items_changed = True
-                                self.node_id += 1
-                                break # items has been updated and got a new length, need to start the for loop over again
-                    
-                    if items_changed:
-                        break
-                if items_changed:
-                    break
+            print(f"Tokens: {self.tokens}")
         
-        # add root node as entry
-        graph.add_node('root')
-        graph.add_edge('root', items[0][2])
+        ast = self.parse_statement()
+        if self.current_index != len(self.tokens):
+            raise ValueError("Unexpected end of parsing")
+        if self.verbose:
+            print("Completed parse")
+            print("AST:", ast)
+        
+        # create ast graph
+        ast_graph = nx.DiGraph()
+        node_labels = {}
 
-        return graph
+        def add_nodes_and_edges(current_node, parent=None):
+            ast_graph.add_node(
+                current_node.node_id, 
+                operator=current_node.operator, 
+                value=current_node.value,
+                subscripts=current_node.subscripts,
+                operands=[operand.node_id for operand in current_node.operands]
+                )
+            if parent is not None:
+                ast_graph.add_edge(
+                    parent.node_id, current_node.node_id
+                    )
+                
 
-    def plot_ast(self, graph):
-        import matplotlib.pyplot as plt
-        fig, ax = plt.subplots()
-        labels = {}
-        labels_operators = nx.get_node_attributes(graph, 'operator')
-        labels_operands = nx.get_node_attributes(graph, 'operands')
-        for id, label_operator in labels_operators.items():
-            labels[id] = str(id) + '\n' + 'operator:' + str(label_operator) + '\n' + 'operands:' + str(labels_operands[id])
-        labels['root'] = 'root'   
-        pos = nx.nx_agraph.graphviz_layout(graph, prog='dot')
-        nx.draw(graph, with_labels=True, labels=labels, node_color='C1', font_size=9, pos=pos)
+            label_node_id = str(current_node.node_id)
+            label_node_op = 'operator:\n' + str(current_node.operator)
+            if len(current_node.operands) > 0:
+                label_node_operands = 'operands:\n' + str([operand.node_id for operand in current_node.operands])
+            elif current_node.subscripts:
+                label_node_operands = str(current_node.value)+str(current_node.subscripts)
+            elif current_node.value:
+                label_node_operands = str(current_node.value)
+            else:
+                label_node_operands = ''
+            node_labels[current_node.node_id] = label_node_id+'\n'+ label_node_op+'\n'+ label_node_operands
+            for operand in current_node.operands:
+                add_nodes_and_edges(operand, current_node)
 
-        plt.show()
+        add_nodes_and_edges(ast)
 
+        ast_graph.add_node('root')
+        ast_graph.add_edge('root', ast.node_id)
+        node_labels['root'] = 'root'
+
+        if self.verbose:
+            print("AST_graph", ast_graph.nodes.data(True))
+
+        if plot:
+            pos = nx.nx_agraph.graphviz_layout(ast_graph, prog="dot")
+            plt.figure(figsize=(12, 8))
+            nx.draw(ast_graph, pos, labels=node_labels, with_labels=True, node_size=500, node_color="lightblue", font_size=9, font_weight="bold", arrows=True)
+            plt.title("AST Visualization")
+            plt.show()
+        
+        # reset parser state
+        self.node_id = 0
+        self.tokens = []
+        self.current_index = 0
+
+        return ast_graph
+    
+    def parse_statement(self):
+        """Parse a statement. The statement could be an IF-THEN-ELSE statement or an expression."""
+        if self.tokens[self.current_index][0] == 'CONIF':
+            self.current_index += 1
+            condition = self.parse_statement()
+            if self.tokens[self.current_index][0] == 'CONTHEN':
+                self.current_index += 1
+                then_branch = self.parse_statement()
+                if self.tokens[self.current_index][0] == 'CONELSE':
+                    self.current_index += 1
+                    else_branch = self.parse_statement()
+                    self.node_id += 1
+                    return Node(node_id=self.node_id, operator='CON', operands=[condition, then_branch, else_branch])
+                else:
+                    raise ValueError(f"Expected ELSE, got {self.tokens[self.current_index]}")
+            else:
+                raise ValueError(f"Expected THEN, got {self.tokens[self.current_index]}")
+        return self.parse_expression()
+
+    def parse_expression(self):
+        """Parse an expression."""
+        if self.verbose:
+            print('parse_expression   ', self.tokens[self.current_index:])
+        return self.parse_or_expression()
+
+    def parse_or_expression(self):
+        """Parse an or expression."""
+        if self.verbose:
+            print('parse_or_expr      ', self.tokens[self.current_index:])
+        nodes = [self.parse_and_expression()]
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'OR':
+            op = self.tokens[self.current_index]
+            self.current_index += 1
+            left = nodes.pop()
+            right = self.parse_and_expression()
+            self.node_id += 1
+            nodes.append(Node(node_id=self.node_id, operator=op[0], operands=[left, right]))
+        return nodes[0]
+
+    def parse_and_expression(self):
+        """Parse an and expression."""
+        if self.verbose:
+            print('parse_and_expr     ', self.tokens[self.current_index:])
+        nodes = [self.parse_not_expression()]
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'AND':
+            op = self.tokens[self.current_index]
+            self.current_index += 1
+            left = nodes.pop()
+            right = self.parse_not_expression()
+            self.node_id += 1
+            nodes.append(Node(node_id=self.node_id, operator=op[0], operands=[left, right]))
+        return nodes[0]
+    
+    def parse_not_expression(self):
+        """Parse a NOT expression."""
+        if self.verbose:
+            print('parse_not_expr     ', self.tokens[self.current_index:])
+        if self.tokens[self.current_index][0] == 'NOT':
+            self.current_index += 1
+            self.node_id += 1
+            return Node(node_id=self.node_id, operator='NOT', operands=[self.parse_statement()])
+        return self.parse_compare_expression()
+    
+    def parse_compare_expression(self):
+        """Parse a comparison expression."""
+        if self.verbose:
+            print('parse_compare_expr ', self.tokens[self.current_index:])
+        node = self.parse_arith_expression()
+        if self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['GT', 'LT', 'EQS', 'NGT', 'NLT']:
+            op = self.tokens[self.current_index]
+            self.current_index += 1
+            left = node
+            right = self.parse_arith_expression()
+            self.node_id += 1
+            return Node(node_id=self.node_id, operator=op[0], operands=[left, right])
+        return node
+
+    def parse_arith_expression(self):
+        """Parse an expression for '+' and '-' with lower precedence."""
+        if self.verbose:
+            print('parse_arith_expr   ', self.tokens[self.current_index:])
+        nodes = [self.parse_mod()]
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['PLUS', 'MINUS']:
+            op = self.tokens[self.current_index]
+            self.current_index += 1
+            left = nodes.pop()
+            right = self.parse_mod()
+            self.node_id += 1
+            nodes.append(Node(node_id=self.node_id, operator=op[0], operands=[left, right]))
+        return nodes[0]
+    
+    def parse_mod(self):
+        """Parse a mod operation."""
+        if self.verbose:
+            print('parse_mod          ', self.tokens[self.current_index:])
+        nodes = [self.parse_term()]
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'MOD':
+            op = self.tokens[self.current_index]
+            self.current_index += 1
+            left = nodes.pop()
+            right = self.parse_term()
+            self.node_id += 1
+            nodes.append(Node(node_id=self.node_id, operator=op[0], operands=[left, right]))
+        return nodes[0]
+
+    def parse_term(self):
+        """Parse a term for '*' and '/' with higher precedence."""
+        if self.verbose:
+            print('parse_term         ', self.tokens[self.current_index:])
+        nodes = [self.parse_exponent()]
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['TIMES', 'DIVIDE', 'FLOORDIVIDE']:
+            op = self.tokens[self.current_index]
+            self.current_index += 1
+            left = nodes.pop()
+            right = self.parse_exponent()
+            self.node_id += 1
+            nodes.append(Node(node_id=self.node_id, operator=op[0], operands=[left, right]))
+        return nodes[0]
+    
+    def parse_exponent(self):
+        """Parse an EXP (^) operation."""
+        if self.verbose:
+            print('parse_exponent     ', self.tokens[self.current_index:])
+        nodes = [self.parse_factor()]
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'EXP':
+            op = self.tokens[self.current_index]
+            self.current_index += 1
+            left = nodes.pop()
+            right = self.parse_factor()
+            self.node_id += 1
+            nodes.append(Node(node_id=self.node_id, operator=op[0], operands=[left, right]))
+        return nodes[0]
+
+    def parse_factor(self):
+        """Parse a factor which could be a number, a variable, a function call, or an expression in parentheses."""
+        if self.verbose:
+            print('parse_factor       ', self.tokens[self.current_index:])
+        token = self.tokens[self.current_index]
+        if token[0] == 'LPAREN':
+            self.current_index += 1
+            node = self.parse_expression()
+            self.current_index += 1  # Skipping the closing ')'
+            return node
+        elif token[0] == 'FUNC':
+            return self.parse_function_call()
+        elif token[0] == 'NAME':
+            node = self.parse_variable()
+            return node
+        elif token[0] == 'NUMBER':
+            self.current_index += 1
+            self.node_id += 1
+            return Node(node_id=self.node_id, operator='IS', value=token[1])
+        raise ValueError(f"Unexpected token: {token}")
+
+    def parse_function_call(self):
+        """Parse a function call."""
+        if self.verbose:
+            print('parse_function_call', self.tokens[self.current_index:])
+        func_name = self.tokens[self.current_index]
+        self.current_index += 2  # Skipping the function name and the opening '('
+        args = []
+        while self.tokens[self.current_index][0] != 'RPAREN':
+            args.append(self.parse_expression())
+            if self.tokens[self.current_index][0] == 'COMMA':
+                self.current_index += 1  # Skipping the comma
+        self.current_index += 1  # Skipping the closing ')'
+        self.node_id += 1
+        return Node(node_id=self.node_id, operator=func_name[1], operands=args)
+    
+    def parse_variable(self):
+        """Parse a variable. The variable may be subscripted."""
+        if self.verbose:
+            print('parse_variable     ', self.tokens[self.current_index:])
+        var_name = self.tokens[self.current_index][1]
+        self.current_index += 1
+        if self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'LSPAREN':
+            subscripts = []
+            self.current_index += 1 # Skipping the opening '['
+            while self.tokens[self.current_index][0] != 'RSPAREN':
+                if self.tokens[self.current_index][0] != 'COMMA':
+                    if self.tokens[self.current_index][0] == 'NAME':
+                        subscripts.append(self.tokens[self.current_index][1])
+                        self.current_index += 1
+                    elif self.tokens[self.current_index][0] == 'NUMBER':
+                        subscripts.append(str(self.tokens[self.current_index][1]))
+                        self.current_index += 1
+                    else:
+                        raise ValueError(f"Unexpected token for subscript: {self.tokens[self.current_index]}")
+                else:
+                    self.current_index += 1 # Skipping the comma
+            self.current_index += 1 # Skipping the closing ']'
+            self.node_id += 1
+            return Node(node_id=self.node_id, operator='SPAREN', value=var_name, subscripts=subscripts)
+        self.node_id += 1
+        return Node(node_id=self.node_id, operator='EQUALS', value=var_name)
 
 class Solver(object):
     def __init__(self, sim_specs=None, dimension_elements=None, name_space=None, graph_functions=None):
@@ -521,6 +406,8 @@ class Solver(object):
 
         ### Functions ###
 
+        def integer(a):
+            return int(a)
         def logic_and(a, b):
             return (a and b)
         
@@ -702,6 +589,9 @@ class Solver(object):
                     return o
                 else:
                     raise e
+                
+        def exp(a, b):
+            return a ** b
 
         def con(a, b, c):
             if a:
@@ -765,6 +655,8 @@ class Solver(object):
             'MOD':      mod,
             'RBINOM':   rbinom,
             'PULSE':    pulse,
+            'EXP':      exp,
+            'INT':      integer,
         }
 
         self.time_related_functions = [
@@ -793,10 +685,10 @@ class Solver(object):
         self.HEAD = "SOLVER"
 
     def calculate_node(self, parsed_equation, node_id='root', subscript=None, verbose=False, var_name=''):        
-        self.id_level += 1
-
         if verbose:
-            print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'processing node {} on subscript {}:'.format(node_id, subscript))
+            print('\n'+'\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'processing node {} on subscript {}:'.format(node_id, subscript))
+
+        self.id_level += 1
         
         if type(parsed_equation) is dict:  
             raise Exception('Parsed equation should not be a dict. var:', var_name)
@@ -808,53 +700,47 @@ class Solver(object):
         node = parsed_equation.nodes[node_id]
         if verbose:
             print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'node:', node_id, node)
-        operator = node['operator']
-        operands = node['operands']
-        if operator[0] == 'IS':
+        node_operator = node['operator']
+        node_value = node['value']
+        node_subscripts = node['subscripts']
+        node_operands = node['operands']
+        if node_operator == 'IS':
             # if verbose:
             #     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'oprt1')
             #     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'o1')
-            value = np.float64(operands[0][1])
+            value = np.float64(node_value)
             if verbose:
                 print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v2 IS:', value)
-        elif operator[0] == 'EQUALS':
+        elif node_operator == 'EQUALS':
             if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operator v3', operator)
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operands v3', operands)
-            if operands[0][0] == 'NAME':
-                if subscript:
-                    value = self.name_space[operands[0][1]]
-                    if type(value) is dict:
-                        value = value[subscript]
-                        if verbose:
-                            print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.1.1', value)
-                    else:
-                        if verbose:
-                            print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.1.2', value)
-                else:
-                    value = self.name_space[operands[0][1]]
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operator v3', node_operator)
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operator v3', node_value)
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operator v3', node_subscripts)
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operands v3', node_operands)
+            
+            node_var = node_value
+            if subscript:
+                value = self.name_space[node_var]
+                if type(value) is dict:
+                    value = value[subscript]
                     if verbose:
-                        print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.1.3', value, operands)
-                if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.1 Name:', value)
-            elif operands[0][0] == 'FUNC':
-                if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'o3')
-                value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_id, subscript=subscript, verbose=verbose)
-                if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.2 Func:', value)
+                        print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.1.1 EQUALS: subscript present, variable subscripted', value)
+                else:
+                    if verbose:
+                        print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.1.2 EQUALS: subscript present, variable not subscripted', value)
             else:
+                value = self.name_space[node_var]
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'o4')
-                raise Exception("Type of oprand not implemented: {}".format(operands[0][0]))
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3.2 EQUALS: subscript not present', value)
+            
             if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3 Equals:', value)
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v3 EQUALS:', value)
         
-        elif operator[0] == 'SPAREN': # TODO this part is too dynamic, therefore can be slow.
-            var_name = operands[0][1]
+        elif node_operator == 'SPAREN': # TODO this part is too dynamic, therefore can be slow.
+            var_name = node_value
             if verbose:
                 print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1', subscript)
-            if len(operands) == 1: # only var_name; no subscript is specified
+            if node_subscripts is None: # only var_name; no subscript is specified
                 if verbose:
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.1')
                 # this could be 
@@ -872,28 +758,28 @@ class Solver(object):
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v4.1 Sparen without sub:', value)
             else: # there are explicitly specified subscripts in oprands like a[b]
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.2', 'subscript from operands:', operands[1:], 'subscript from context:', subscript)
-                # prioritise subscript from operands
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.2', 'subscript from node definition:', node_subscripts[:], 'subscript from context:', subscript)
+                # prioritise subscript from node definition
                 try:
-                    subscript_from_operands = tuple(operand[1] for operand in operands[1:]) # use tuple to make it hashable
-                    value = self.name_space[var_name][subscript_from_operands]
+                    subscript_from_definition = tuple(node_subscripts[:]) # use tuple to make it hashable
+                    value = self.name_space[var_name][subscript_from_definition]
                     if verbose:
                         print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.2.1')
                 except KeyError as e: # subscript in operands looks like a[Dimension_1, Element_1], inference needed
                     if verbose:
                         print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.2.2')
                     if subscript: # there's subscript in context
-                        operands_containing_subscript = operands[1:]
+                        subscript_from_definition = node_subscripts[:]
                         subscript_from_operands_with_replacement = list()
-                        for i in range(len(operands_containing_subscript)):
-                            if operands_containing_subscript[i][1] in self.dimension_elements.keys(): # it's sth like Dimension_1
+                        for i in range(len(subscript_from_definition)):
+                            if subscript_from_definition[i] in self.dimension_elements.keys(): # it's sth like Dimension_1
                                 # if verbose:
                                 #     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.2.2.1')
                                 subscript_from_operands_with_replacement.append(subscript[i]) # take the element from context subscript in the same position to replace Dimension_1
                             else: # it's sth like Element_1
                                 # if verbose:
                                 #     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.2.2.2')
-                                subscript_from_operands_with_replacement.append(operands_containing_subscript[i][1]) # add to list directly
+                                subscript_from_operands_with_replacement.append(subscript_from_definition[i]) # add to list directly
                         subscript_from_operands_with_replacement = tuple(subscript_from_operands_with_replacement)
                         if verbose:
                             print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a1.2.2', subscript_from_operands_with_replacement)
@@ -904,260 +790,263 @@ class Solver(object):
                 if verbose:
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v4.2 Sparen with sub:', value)
         
-        elif operator[0] == 'PAREN':
-            value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[0][2], subscript=subscript, verbose=verbose)
-            if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v6 Paren:', value)
+        # elif operator == 'PAREN':
+            # value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[0][2], subscript=subscript, verbose=verbose)
+            # if verbose:
+                # print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v6 Paren:', value)
 
-        elif operator[0] in self.built_in_functions.keys(): # plus, minus, con, etc.
+        elif node_operator in self.built_in_functions.keys(): # plus, minus, con, etc.
             if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operator v7 Built-in operator:', operator, operands)
-            func_name = operator[0]
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operator v7 Built-in operator:', node_operator, node_operands)
+            func_name = node_operator
             function = self.built_in_functions[func_name]
             oprds = []
-            for operand in operands:
+            for operand in node_operands:
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7.1', 'oprd', operand)
-                v = self.calculate_node(parsed_equation=parsed_equation, node_id=operand[2], subscript=subscript, verbose=verbose)
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7.1', 'operand', operand)
+                v = self.calculate_node(parsed_equation=parsed_equation, node_id=operand, subscript=subscript, verbose=verbose)
                 if verbose:
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7.2', 'value', v, subscript)
                 oprds.append(v)
             if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7.3', 'oprds', oprds)
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7.3', 'operands', oprds)
             value = function(*oprds)
             if verbose:
                 print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v7 Built-in operation:', value)
         
-        elif operator[0] in self.custom_functions.keys(): # graph functions
+        elif node_operator in self.custom_functions.keys(): # graph functions
             if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'custom func operator', operator)
-            func_name = operator[0]
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'custom func operator', node_operator)
+            func_name = node_operator
             function = self.custom_functions[func_name]
             oprds = []
-            for operand in operands:
+            for operand in node_operands:
                 if verbose:
-                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'oprd', operand)
-                v = self.calculate_node(parsed_equation=parsed_equation, node_id=operand[2], subscript=subscript, verbose=verbose)
+                    print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operand', operand)
+                v = self.calculate_node(parsed_equation=parsed_equation, node_id=operand, subscript=subscript, verbose=verbose)
                 if verbose:
                     print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'value', v)
                 oprds.append(v)
             if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'oprds', oprds)
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'operands', oprds)
             value = function(*oprds)
             if verbose:
                 print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v8 GraphFunc:', value)
 
-        elif operator[0] in self.time_related_functions: # init, delay, etc
+        elif node_operator in self.time_related_functions: # init, delay, etc
             if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'time-related func. operator:', operator, 'operands:', operands)
-            func_name = operator[0]
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'time-related func. operator:', node_operator, 'operands:', node_operands)
+            func_name = node_operator
             if func_name == 'INIT':
-                if tuple(operands[0]) in self.time_expr_register.keys():
-                    value = self.time_expr_register[tuple(operands[0])]
+                if tuple([parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
+                    value = self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])]
                 else:
-                    value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[0][2], subscript=subscript, verbose=verbose)
-                    self.time_expr_register[tuple(operands[0])] = value
+                    value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript, verbose=verbose)
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = value
             elif func_name == 'DELAY':
                 # expr value
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[0][2], subscript=subscript, verbose=verbose)
-                if tuple(operands[0]) in self.time_expr_register.keys():
-                    self.time_expr_register[tuple(operands[0])].append(expr_value)
+                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript, verbose=verbose)
+                if tuple([parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(expr_value)
                 else:
-                    self.time_expr_register[tuple(operands[0])] = [expr_value]
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = [expr_value]
                 
                 # init value
-                if len(operands) == 2: # there's no initial value specified -> use the delayed expr's initial value
-                    init_value = self.time_expr_register[tuple(operands[0])][0]
-                elif len(operands) == 3: # there's an initial value specified
-                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[2][2], subscript=subscript, verbose=verbose)
+                if len(node_operands) == 2: # there's no initial value specified -> use the delayed expr's initial value
+                    init_value = self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][0]
+                elif len(node_operands) == 3: # there's an initial value specified
+                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript, verbose=verbose)
                 else:
-                    raise Exception("Invalid initial value for DELAY in operands {}".format(operands))
+                    raise Exception("Invalid initial value for DELAY in operands {}".format(node_operands))
 
                 # delay time
-                delay_time = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[1][2], subscript=subscript, verbose=verbose)
+                delay_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript, verbose=verbose)
                 if delay_time > (self.sim_specs['current_time'] - self.sim_specs['initial_time']): # (- initial_time) because simulation might not start from time 0
                     value = init_value
                 else:
                     delay_steps = delay_time / self.sim_specs['dt']
-                    value = self.time_expr_register[tuple(operands[0])][-int(delay_steps+1)]
+                    value = self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][-int(delay_steps+1)]
             elif func_name == 'DELAY1':
                 # args values
                 order = 1
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[0][2], subscript=subscript, verbose=verbose)
-                delay_time = self.calculate_node(parsed_equation=parsed_equation, node_id= operands[1][2], subscript=subscript, verbose=verbose)
+                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript, verbose=verbose)
+                delay_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript, verbose=verbose)
 
-                if len(operands) == 3:
-                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[2][2], subscript=subscript, verbose=verbose)
-                elif len(operands) == 2:
+                if len(node_operands) == 3:
+                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript, verbose=verbose)
+                elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
                     raise Exception('Invalid number of args for DELAY1.')
                 
                 # register
-                if tuple(operands[0]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple(operands[0])] = list()
+                if tuple([parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = list()
                     for i in range(order):
-                        self.time_expr_register[tuple(operands[0])].append(delay_time/order*init_value)
+                        self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(delay_time/order*init_value)
                 # outflows
                 outflows = list()
                 for i in range(order):
-                    outflows.append(self.time_expr_register[tuple(operands[0])][i]/(delay_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple(operands[0])][i] -= outflows[i]
+                    outflows.append(self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i]/(delay_time/order) * self.sim_specs['dt'])
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
                 # inflows
-                self.time_expr_register[tuple(operands[0])][0] += expr_value * self.sim_specs['dt']
+                self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
                 for i in range(1, order):
-                    self.time_expr_register[tuple(operands[0])][i] += outflows[i-1]
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
                 return outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'DELAY3':
                 # arg values
                 order = 3
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[0][2], subscript=subscript, verbose=verbose)
-                delay_time = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[1][2], subscript=subscript, verbose=verbose)
-                if len(operands) == 3:
-                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[2][2], subscript=subscript, verbose=verbose)
-                elif len(operands) == 2:
+                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript, verbose=verbose)
+                delay_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript, verbose=verbose)
+                if len(node_operands) == 3:
+                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript, verbose=verbose)
+                elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
                     raise Exception('Invalid number of args for SMTH3.')
                 
                 # register
-                if tuple(operands[0]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple(operands[0])] = list()
+                if tuple([parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = list()
                     for i in range(order):
-                        self.time_expr_register[tuple(operands[0])].append(delay_time/order*init_value)
+                        self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(delay_time/order*init_value)
                 # outflows
                 outflows = list()
                 for i in range(order):
-                    outflows.append(self.time_expr_register[tuple(operands[0])][i]/(delay_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple(operands[0])][i] -= outflows[i]
+                    outflows.append(self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i]/(delay_time/order) * self.sim_specs['dt'])
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
                 # inflows
-                self.time_expr_register[tuple(operands[0])][0] += expr_value * self.sim_specs['dt']
+                self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
                 for i in range(1, order):
-                    self.time_expr_register[tuple(operands[0])][i] += outflows[i-1]
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
                 return outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'HISTORY':
                 # expr value
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[0][2], subscript=subscript, verbose=verbose)
-                if tuple(operands[0]) in self.time_expr_register.keys():
-                    self.time_expr_register[tuple(operands[0])].append(expr_value)
+                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript, verbose=verbose)
+                if tuple([parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(expr_value)
                 else:
-                    self.time_expr_register[tuple(operands[0])] = [expr_value]
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = [expr_value]
                 
                 # historical time
-                historical_time = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[1][2], subscript=subscript, verbose=verbose)
+                historical_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript, verbose=verbose)
                 if historical_time > self.sim_specs['current_time'] or historical_time < self.sim_specs['initial_time']:
                     value = 0
                 else:
                     historical_steps = (historical_time - self.sim_specs['initial_time']) / self.sim_specs['dt']
-                    value = self.time_expr_register[tuple(operands[0])][int(historical_steps)]
+                    value = self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][int(historical_steps)]
             
             elif func_name == 'SMTH1':
                 # arg values
                 order = 1
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[0][2], subscript=subscript, verbose=verbose)
+                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript, verbose=verbose)
                 if type(expr_value) is dict:
                     if subscript is not None:
                         expr_value = expr_value[subscript]
                     else:
                         raise Exception('Invalid subscript.')
-                smth_time = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[1][2], subscript=subscript, verbose=verbose)
-                if len(operands) == 3:
-                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[2][2], subscript=subscript, verbose=verbose)
-                elif len(operands) == 2:
+                smth_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript, verbose=verbose)
+                if len(node_operands) == 3:
+                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript, verbose=verbose)
+                elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
                     raise Exception('Invalid number of args for SMTH1.')
                 
                 # register
-                if tuple(operands[0]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple(operands[0])] = list()
+                if tuple([parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = list()
                     for i in range(order):
-                        self.time_expr_register[tuple(operands[0])].append(smth_time/order*init_value)
+                        self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(smth_time/order*init_value)
                 # outflows
                 outflows = list()
                 for i in range(order):
-                    outflows.append(self.time_expr_register[tuple(operands[0])][i]/(smth_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple(operands[0])][i] -= outflows[i]
+                    outflows.append(self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i]/(smth_time/order) * self.sim_specs['dt'])
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
                 # inflows
-                self.time_expr_register[tuple(operands[0])][0] += expr_value * self.sim_specs['dt']
+                self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
                 for i in range(1, order):
-                    self.time_expr_register[tuple(operands[0])][i] += outflows[i-1]
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
                 return outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'SMTH3':
                 # arg values
                 order = 3
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[0][2], subscript=subscript, verbose=verbose)
+                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript, verbose=verbose)
                 if type(expr_value) is dict:
                     if subscript is not None:
                         expr_value = expr_value[subscript]
                     else:
                         raise Exception('Invalid subscript.')
-                smth_time = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[1][2], subscript=subscript, verbose=verbose)
-                if len(operands) == 3:
-                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[2][2], subscript=subscript, verbose=verbose)
-                elif len(operands) == 2:
+                smth_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript, verbose=verbose)
+                if len(node_operands) == 3:
+                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript, verbose=verbose)
+                elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
                     raise Exception('Invalid number of args for SMTH3.')
                 
                 # register
-                if tuple(operands[0]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple(operands[0])] = list()
+                if tuple([parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = list()
                     for i in range(order):
-                        self.time_expr_register[tuple(operands[0])].append(smth_time/order*init_value)
+                        self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(smth_time/order*init_value)
                 # outflows
                 outflows = list()
                 for i in range(order):
-                    outflows.append(self.time_expr_register[tuple(operands[0])][i]/(smth_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple(operands[0])][i] -= outflows[i]
+                    outflows.append(self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i]/(smth_time/order) * self.sim_specs['dt'])
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
                 # inflows
-                self.time_expr_register[tuple(operands[0])][0] += expr_value * self.sim_specs['dt']
+                self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
                 for i in range(1, order):
-                    self.time_expr_register[tuple(operands[0])][i] += outflows[i-1]
+                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
                 return outflows[-1] / self.sim_specs['dt']
 
             else:
-                raise Exception('Unknown time-related operator {}'.format(operator[0]))
+                raise Exception('Unknown time-related operator {}'.format(node_operator))
             if verbose:
                 print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v9 Time-related Func:', value)
-        elif operator[0] in self.array_related_functions: # Array-RELATED
+        
+        elif node_operator in self.array_related_functions: # Array-RELATED
             if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'array-related func. operator:', operator, 'operands:', operands)
-            func_name = operator[0]
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'array-related func. operator:', node_operator, 'operands:', node_operands)
+            func_name = node_operator
             if func_name == 'SUM':
-                arrayed_var_name = parsed_equation.nodes[operands[0][2]]['operands'][0][1]
+                arrayed_var_name = parsed_equation.nodes[node_operands[0]]['value']
                 sum_array = 0
                 for _, sub_val in self.name_space[arrayed_var_name].items():
                     sum_array += sub_val
                 value = sum_array
             if verbose:
                 print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'v10 Array-related Func:', value)
-        elif operator[0] in self.lookup_functions: # LOOKUP
+        
+        elif node_operator in self.lookup_functions: # LOOKUP
             if verbose:
-                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'Lookup func. operator:', operator, 'operands:', operands)
-            func_name = operator[0]
+                print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'Lookup func. operator:', node_operator, 'operands:', node_operands)
+            func_name = node_operator
             if func_name == 'LOOKUP':
-                look_up_func_node = operands[0][2]
-                look_up_func_name = parsed_equation.nodes[look_up_func_node]['operands'][0][1]
+                look_up_func_node_id = node_operands[0]
+                look_up_func_name = parsed_equation.nodes[look_up_func_node_id]['value']
                 look_up_func = self.graph_functions[look_up_func_name]
-                input_value = self.calculate_node(parsed_equation=parsed_equation, node_id=operands[1][2], subscript=subscript, verbose=verbose)
+                input_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript, verbose=verbose)
                 value = look_up_func(input_value)
             else:
-                raise Exception('Unknown Lookup function {}'.format(operator[0]))
+                raise Exception('Unknown Lookup function {}'.format(node_operator))
+        
         else:
-            raise Exception('Unknown operator {}'.format(operator[0]))
+            raise Exception('Unknown operator {}'.format(node_operator))
         
         self.id_level -= 1
         
         if verbose:
-            print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'value for {} {}'.format(node_id, subscript), value)
+            print('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'value for node {} on subscript {}'.format(node_id, subscript), value)
 
         return value
 
@@ -1715,15 +1604,6 @@ class sdmodel(object):
             self.graph_functions_renamed[gfunc_name] = equation # just for length ... for now
             self.graph_functions[var] = equation
             self.parser.functions.update({gfunc_name:gfunc_name+"(?=\()"}) # make name var also a function name and add it to the parser
-            self.parser.patterns_custom_func.update(
-                {
-                    gfunc_name+'__LPAREN__FUNC__RPAREN':{ # GraphFunc(var, expr, etc.)
-                        'token':['FUNC', gfunc_name],
-                        'operator':[gfunc_name],
-                        'operand':['FUNC']
-                    },
-                }
-            )
             self.solver.custom_functions.update({gfunc_name:equation})
             equation = gfunc_name+'('+ equation.eqn + ')'  # make equation into form like var(eqn), 
                                             # where eqn is the euqaiton whose outcome is the input to GraphFunc var()
@@ -1827,24 +1707,10 @@ class sdmodel(object):
         leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
         for leaf in leafs:
             # print('i4.1')
-            if parsed_equation.nodes[leaf]['operator'][0] in ['EQUALS', 'SPAREN']:
-                operands = parsed_equation.nodes[leaf]['operands']
-                # print('i5', operands)
-                if operands[0][0] == 'NUMBER': # if 'NUMBER' then pass, as numbers (e.g. 100) do not have a node
-                    # print('i5.0') 
-                    pass
-                elif operands[0][0] == 'NAME': # this refers to a variable like 'a'
-                    # print('i5.1', operands[0][0])
-                    var_dependent = operands[0][1]
-                    # print('i5.2', var_dependent)
-                    self.calculate_variable_dynamic(var=var_dependent, verbose=verbose)
-                elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
-                    # print('i5.3')
-                    # need to find that 'SPAREN' node
-                    var_dependent_node_id = operands[0][2]
-                    var_dependent = parsed_equation.nodes[var_dependent_node_id]['operands'][0][1]
-                    # print('var_dependent2', var_dependent)
-                    self.calculate_variable_dynamic(var=var_dependent, verbose=verbose)
+            if parsed_equation.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
+                # operands = parsed_equation.nodes[leaf]['operands']
+                var_dependent = parsed_equation.nodes[leaf]['value']
+                self.calculate_variable_dynamic(var=var_dependent, verbose=verbose)
     
     def calculate_variable_dynamic(self, var, subscript=None, verbose=False, leak_frac=False, conveyor_init=False, conveyor_len=False):
         # print("\nEngine Calculating: {:<15} on subscript {}".format(var, subscript), '\n', 'name_space:', self.name_space, '\n', 'flow_effects', self.stock_shadow_values)
@@ -2344,12 +2210,17 @@ class sdmodel(object):
             
     def export_simulation_result(self, flatten=False, format='dict', to_csv=False, dt=False):
         self.full_result = dict()
+        self.full_result_df = None
+        
+        # generate full_result
         if dt:
             self.full_result['TIME'] = list()
         for time, slice in self.time_slice.items():
             if dt:
                 self.full_result['TIME'].append(time)
             for var, value in slice.items():
+                if var == 'DT':
+                    continue
                 if type(value) is dict:
                     for sub, subvalue in value.items():
                         try:
@@ -2366,33 +2237,33 @@ class sdmodel(object):
                         self.full_result[var].append(value)
                     except:
                         self.full_result[var] = [value]
-        if to_csv or flatten or format == 'df':
-            self.full_result_flattened = dict()
-            for var, result in self.full_result.items():
-                if type(result) is dict:
-                    for sub, subresult in result.items():
-                        self.full_result_flattened[var+'[{}]'.format(', '.join(sub))] = subresult
-                else:
-                    self.full_result_flattened[var] = result
-        if to_csv or format == 'df':
-            import pandas as pd
-            from pprint import pprint
-            df_full_result = pd.DataFrame.from_dict(self.full_result_flattened)
-            df_full_result.drop([self.sim_specs['time_units']],axis=1, inplace=True)
-            if type(to_csv) is not str:
-                df_full_result.to_csv('asdm.csv', index=False)
+        
+        # flatten the full_result
+        self.full_result_flattened = dict()
+        for var, result in self.full_result.items():
+            if type(result) is dict:
+                for sub, subresult in result.items():
+                    self.full_result_flattened[var+'[{}]'.format(', '.join(sub))] = subresult
             else:
-                df_full_result.to_csv(to_csv)
-
+                self.full_result_flattened[var] = result
+        
         if format == 'dict':
             if flatten:
                 return self.full_result_flattened
             else:
                 return self.full_result
         elif format == 'df':
-            return df_full_result
-        else:
-            raise Exception("Invalid value for arg 'format': {}".format(format))
+            import pandas as pd
+            self.full_result_df = pd.DataFrame.from_dict(self.full_result_flattened)
+            self.full_result_df.drop([self.sim_specs['time_units']],axis=1, inplace=True)
+            
+            if to_csv:
+                if type(to_csv) is not str:
+                    self.full_result_df.to_csv('asdm.csv', index=False)
+                else:
+                    self.full_result_df.to_csv(to_csv, index=False)
+                
+            return self.full_result_df
     
     def display_results(self, variables=None):
         if type(variables) is list and len(variables) == 0:
