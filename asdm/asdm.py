@@ -95,7 +95,6 @@ class Parser:
 
     def tokenise(self, s):
         tokens = []
-        # l = len(items)
         while len(s) > 0:
             # print(self.HEAD, 'Tokenising:', s, 'len:', len(s))
             for type_name, type_regex in (
@@ -396,7 +395,7 @@ class Parser:
             return Node(node_id=self.node_id, operator='SPAREN', value=var_name, subscripts=subscripts)
         self.node_id += 1
         return Node(node_id=self.node_id, operator='EQUALS', value=var_name)
-    
+
 class Solver(object):
     def __init__(self, sim_specs=None, dimension_elements=None, name_space=None, graph_functions=None):
         
@@ -409,7 +408,6 @@ class Solver(object):
 
         def integer(a):
             return int(a)
-
         def logic_and(a, b):
             return (a and b)
         

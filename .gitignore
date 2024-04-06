@@ -81,9 +81,6 @@ notes/
 presentations/
 models/
 tests/
-asdm/asdm_old_parser.py
-
-debug_test.py
 
 # IDE
 .vscode/
