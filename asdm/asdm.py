@@ -408,6 +408,7 @@ class Solver(object):
 
         def integer(a):
             return int(a)
+
         def logic_and(a, b):
             return (a and b)
         
@@ -1070,12 +1071,12 @@ class GraphFunc(object):
 
     def __call__(self, input):
         # input out of xscale treatment:
-        if self.out_of_bound_type is None:
+        if self.out_of_bound_type is None: # default to continuous
             input = max(input, self.xpts[0])
             input = min(input, self.xpts[-1])
             output = float(self.interp_func(input)) # the output (like array([1.])) needs to be converted to float to avoid dimension explosion
             return output
-        elif self.out_of_bound_type in ['extrapolate', 'discrete']:
+        elif self.out_of_bound_type == 'extrapolate':
             if input < self.xpts[0]:
                 output = float(self.interp_func_below(input))
             elif input > self.xpts[-1]:
@@ -1083,6 +1084,15 @@ class GraphFunc(object):
             else:
                 output = float(self.interp_func(input))
             return output
+        elif self.out_of_bound_type == 'discrete':
+            if input < self.xpts[0]:
+                return self.ypts[0]
+            elif input > self.xpts[-1]:
+                return self.ypts[-1]
+            else:
+                for i, xpt in enumerate(self.xpts):
+                    if input >= xpt:
+                        return self.ypts[i]
         else:
             raise Exception('Unknown out_of_bound_type {}'.format(self.out_of_bound_type))
     
