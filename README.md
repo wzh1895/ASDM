@@ -30,15 +30,19 @@ We recommend that you create a new environment to use the library, although this
 conda create --name asdm
 ```
 
-### Clone this repository to your local computer
+## Usage
 
-To clone this repository to your local environment, please ensure that ```git``` is installed in your system, then use the following command:
+### Option 1: Use ASDM directly from this repository
+
+#### Clone this repository to your local computer
+
+To clone this repository to your local environment, please ensure that `git` is installed in your system, then use the following command:
 
 ```
 git clone https://github.com/wzh1895/ASDM.git
 ```
 
-### Install dependencies
+#### Install dependencies
 
 ASDM relies on a number of other python libraries as dependencies. To install them, use the following commands:
 
@@ -47,7 +51,33 @@ cd asdm
 conda install --file requirements.txt -c conda-forge
 ```
 
-## Usage
+#### Import ASDM
+
+At the root folder of this repository, execute the following code in the interactive Python environment or as a part of a script:
+```
+from asdm.asdm import sdmodel
+```
+
+### Option 2: Install ASDM from PyPI
+
+#### Install ASDM using `pip`
+
+```
+pip install asdm
+```
+ASDM and its required dependencies will be automatically installed.
+
+#### Import ASDM
+
+At any path, execute the following code in the interactive Python environment or as a part of a script:
+
+```
+from ASDM.asdm import sdmodel
+```
+
+**Note:** there is a difference in code between the above two ways of imports. We are working on making them consistent in future updates.
+
+## Functionalities
 
 Please refer to [Documentation](Documentation.md) for the commonly used functions.
 
