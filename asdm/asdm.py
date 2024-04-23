@@ -1091,8 +1091,9 @@ class GraphFunc(object):
                 return self.ypts[-1]
             else:
                 for i, xpt in enumerate(self.xpts):
-                    if input >= xpt:
-                        return self.ypts[i]
+                    if input < xpt:
+                        return self.ypts[i-1]
+                return self.ypts[-1]
         else:
             raise Exception('Unknown out_of_bound_type {}'.format(self.out_of_bound_type))
     
@@ -1553,15 +1554,32 @@ class sdmodel(object):
             new_equation = str(new_equation)
         elif type(new_equation) is DataFeeder:
             pass
+        elif type(new_equation) is dict:
+            pass
         else:
             raise Exception('Unsupported new equation {} type {}'.format(new_equation, type(new_equation)))
         
         if name in self.stock_equations:
-            self.stock_equations[name] = new_equation
+            if type(new_equation) is dict:
+                for k_new, v_new in new_equation.items():
+                    if k_new in self.stock_equations[name]:
+                        self.stock_equations[name][k_new] = v_new
+            else:
+                self.stock_equations[name] = new_equation
         elif name in self.flow_equations:
-            self.flow_equations[name] = new_equation
+            if type(new_equation) is dict:
+                for k_new, v_new in new_equation.items():
+                    if k_new in self.flow_equations[name]:
+                        self.flow_equations[name][k_new] = v_new
+            else:
+                self.flow_equations[name] = new_equation
         elif name in self.aux_equations:
-            self.aux_equations[name] = new_equation
+            if type(new_equation) is dict:
+                for k_new, v_new in new_equation.items():
+                    if k_new in self.aux_equations[name]:
+                        self.aux_equations[name][k_new] = v_new
+            else:
+                self.aux_equations[name] = new_equation
         else:
             raise Exception('Unable to find {} in the current model'.format(name))
     
