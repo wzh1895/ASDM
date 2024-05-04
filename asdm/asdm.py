@@ -2327,15 +2327,20 @@ class sdmodel(object):
         if var in self.env_variables: # like 'TIME'
             return graph
         parsed_equation = all_equations[var]
-        
-        # get all dependent variables
-        dependent_nodes = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
         dependent_variables = list()
-        for node in dependent_nodes:
-            operands = parsed_equation.nodes[node]['operands']
-            for operand in operands:
-                if operand[0] == 'NAME':
-                    dependent_variables.append(operand[1])
+        if type(parsed_equation) is not dict:
+            leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
+            for leaf in leafs:
+                if parsed_equation.nodes[leaf]['operator'] == 'EQUALS':
+                    dependent_variables.append(parsed_equation.nodes[leaf]['value'])
+        else:
+            for _, sub_eqn in parsed_equation.items():
+                leafs = [x for x in sub_eqn.nodes() if sub_eqn.out_degree(x)==0]
+                for leaf in leafs:
+                    if sub_eqn.nodes[leaf]['operator'] == 'EQUALS':
+                        dependent_variable = sub_eqn.nodes[leaf]['value']
+                        if dependent_variable not in dependent_variables: # remove duplicates
+                            dependent_variables.append(dependent_variable)
         
         # print(dependent_variables)
         if len(dependent_variables) == 0:
@@ -2346,7 +2351,7 @@ class sdmodel(object):
                 self.get_dependent_graph(dependent_var, graph)
             return graph
 
-    def generate_dependent_graph(self, vars=None):
+    def generate_dependent_graph(self, vars=None, show=False, loop=False):
         if vars is None:
             vars = list(self.flow_equations.keys())
         elif type(vars) is str:
@@ -2357,5 +2362,29 @@ class sdmodel(object):
         for var in vars:
             dg_var = self.get_dependent_graph(var)
             dg = nx.compose(dg, dg_var)
+
+        # create flow-to-stock edges if loop=True
+        if loop:
+            for flow in self.flow_stocks.keys():
+                if flow in vars:
+                    for stock in self.flow_stocks[flow].values():
+                        dg.add_edge(flow, stock)
         
-        return dg
+        if not show:
+            return dg
+        else:
+            import matplotlib.pyplot as plt
+            from networkx.drawing.nx_agraph import graphviz_layout
+            pos = graphviz_layout(dg, prog='dot')
+            # pos = nx.spring_layout(dg)
+            nx.draw(
+                dg, 
+                pos, 
+                with_labels=True, 
+                node_size=300, 
+                node_color="skyblue", 
+                node_shape="s", 
+                alpha=1, 
+                linewidths=5
+                )
+            plt.show()
