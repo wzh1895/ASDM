@@ -503,12 +503,12 @@ class Solver(object):
                     for k in a:
                         o[k] = a[k] * b[k]
                     return o
-                elif type(a) is dict and type(b) in [int, float, np.float_]:
+                elif type(a) is dict and type(b) in [int, float, np.float64]:
                     o = dict()
                     for k in a:
                         o[k] = a[k] * b
                     return o
-                elif type(a) in [int, float, np.float_] and type(b) is dict:
+                elif type(a) in [int, float, np.float64] and type(b) is dict:
                     o = dict()
                     for k in b:
                         o[k] = a * b[k]
@@ -526,12 +526,12 @@ class Solver(object):
                     for k in a:
                         o[k] = a[k] / b[k]
                     return o
-                elif type(a) is dict and type(b) in [int, float, np.float_]:
+                elif type(a) is dict and type(b) in [int, float, np.float64]:
                     o = dict()
                     for k in a:
                         o[k] = a[k] / b
                     return o
-                elif type(a) in [int, float, np.float_] and type(b) is dict:
+                elif type(a) in [int, float, np.float64] and type(b) is dict:
                     o = dict()
                     for k in b:
                         o[k] = a / b[k]
@@ -549,12 +549,12 @@ class Solver(object):
                     for k in a:
                         o[k] = a[k] // b[k]
                     return o
-                elif type(a) is dict and type(b) in [int, float, np.float_]:
+                elif type(a) is dict and type(b) in [int, float, np.float64]:
                     o = dict()
                     for k in a:
                         o[k] = a[k] // b
                     return o
-                elif type(a) in [int, float, np.float_] and type(b) is dict:
+                elif type(a) in [int, float, np.float64] and type(b) is dict:
                     o = dict()
                     for k in b:
                         o[k] = a // b[k]
@@ -578,12 +578,12 @@ class Solver(object):
                     for k in a:
                         o[k] = a[k] % b[k]
                     return o
-                elif type(a) is dict and type(b) in [int, float, np.float_]:
+                elif type(a) is dict and type(b) in [int, float, np.float64]:
                     o = dict()
                     for k in a:
                         o[k] = a[k] % b
                     return o
-                elif type(a) in [int, float, np.float_] and type(b) is dict:
+                elif type(a) in [int, float, np.float64] and type(b) is dict:
                     o = dict()
                     for k in b:
                         o[k] = a % b[k]
@@ -1512,7 +1512,7 @@ class sdmodel(object):
 
     # model building
     def add_stock(self, name, equation, non_negative=True, is_conveyor=False, in_flows=[], out_flows=[]):
-        if type(equation) in [int, float, np.int_, np.float_]:
+        if type(equation) in [int, float, np.int_, np.float64]:
             equation = str(equation)
         self.stock_equations[name] = equation
         self.stock_non_negative[name] = non_negative
@@ -1535,7 +1535,7 @@ class sdmodel(object):
         self.stocks[name] = Stock()
     
     def add_flow(self, name, equation, leak=None, non_negative=False):
-        if type(equation) in [int, float, np.int_, np.float_]:
+        if type(equation) in [int, float, np.int_, np.float64]:
             equation = str(equation)
         self.flow_positivity[name] = non_negative
         if leak:
@@ -1543,14 +1543,14 @@ class sdmodel(object):
         self.flow_equations[name] = equation
     
     def add_aux(self, name, equation):
-        if type(equation) in [int, float, np.int_, np.float_]:
+        if type(equation) in [int, float, np.int_, np.float64]:
             equation = str(equation)
         self.aux_equations[name] = equation
 
     def replace_element_equation(self, name, new_equation):
         if type(new_equation) is str:
             pass
-        elif type(new_equation) in [int, float, np.int_, np.float_]:
+        elif type(new_equation) in [int, float, np.int_, np.float64]:
             new_equation = str(new_equation)
         elif type(new_equation) is DataFeeder:
             pass
@@ -1591,7 +1591,7 @@ class sdmodel(object):
     #         else:
     #             raise Exception('Unable to find Stock {} in the current model.'.format(name))
         
-    #     if type(self.name_space[name]) is dict and type(new_value) in [int, float, np.int_, np.float_]:
+    #     if type(self.name_space[name]) is dict and type(new_value) in [int, float, np.int_, np.float64]:
     #         raise Exception('Unable to overwrite arrayed stock value of {} with {} of type {}'.format(name, new_value, type(new_value)))
         
     #     self.name_space[name] = new_value
@@ -1631,7 +1631,7 @@ class sdmodel(object):
             gfunc_name = 'GFUNC{}'.format(len(self.graph_functions_renamed))
             self.graph_functions_renamed[gfunc_name] = equation # just for length ... for now
             self.graph_functions[var] = equation
-            self.parser.functions.update({gfunc_name:gfunc_name+"(?=\()"}) # make name var also a function name and add it to the parser
+            self.parser.functions.update({gfunc_name:gfunc_name+r"(?=\()"}) # make name var also a function name and add it to the parser
             self.solver.custom_functions.update({gfunc_name:equation})
             equation = gfunc_name+'('+ equation.eqn + ')'  # make equation into form like var(eqn), 
                                             # where eqn is the euqaiton whose outcome is the input to GraphFunc var()
@@ -1668,7 +1668,7 @@ class sdmodel(object):
         elif type(equation) is DataFeeder:
             return equation
 
-        elif type(equation) in [str, int, float, np.int_, np.float_]:
+        elif type(equation) in [str, int, float, np.int_, np.float64]:
             parsed_equation = self.parser.parse(equation)
             return parsed_equation
 
