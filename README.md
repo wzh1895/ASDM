@@ -13,69 +13,22 @@ In the library:
 - `asdm/Inference` consists of tools for model calibration.
 
 ## Installation
-
-### Python version
-
-The library is developed and used with `Python 3.11`. However, it should also work with other versions. If you encounter a problem and believe it is related to python version, please open an issue or contact me. 
-
-### Operating system
-
-The library is developed and used on `macOS`. Some tests have also been done on `Windows` and `Ubuntu Linux`, but they are not comprehensive. If you encounter a problem and believe it is related to the OS, please open an issue or contact me.
-
-### Create an environment
-
-We recommend that you create a new environment to use the library, although this is not always necessary. For example, if you use anaconda, this can be done by:
-
-```
-conda create --name asdm
-```
-
-## Usage
-
-### Option 1: Use ASDM directly from this repository
-
-#### Clone this repository to your local computer
-
-To clone this repository to your local environment, please ensure that `git` is installed in your system, then use the following command:
-
-```
-git clone https://github.com/wzh1895/ASDM.git
-```
-
-#### Install dependencies
-
-ASDM relies on a number of other python libraries as dependencies. To install them, use the following commands:
-
-```
-cd asdm
-conda install --file requirements.txt -c conda-forge
-```
-
-#### Import ASDM
-
-At the root folder of this repository, execute the following code in the interactive Python environment or as a part of a script:
-```
-from asdm.asdm import sdmodel
-```
-
-### Option 2: Install ASDM from PyPI
-
-#### Install ASDM using `pip`
+### Install from PyPi
 
 ```
 pip install asdm
 ```
 ASDM and its required dependencies will be automatically installed.
 
-#### Import ASDM
+### Import
 
 At any path, execute the following code in the interactive Python environment or as a part of a script:
 
 ```
-from ASDM.asdm import sdmodel
+from asdm import sdmodel
 ```
 
-**Note:** there is a difference in code between the above two ways of imports. We are working on making them consistent in future updates.
+'sdmodel' is the class for System Dynamics models.
 
 ## Functionalities
 
@@ -87,7 +40,7 @@ Please refer to [Documentation](Documentation.md) for the commonly used function
 We also use Jupyter Notebooks to provide demoes of ASDM's functionalities.
 
 
-1. [SD Modelling](demo/Demo_SD_modelling.ipynb)
+[SD Modelling](demo/Demo_SD_modelling.ipynb)
 
 - Creating an SD model from scratch
   - Adding stocks, flows, auxiliaries
