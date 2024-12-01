@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asdm"
+version = "0.0.4"
+description = "A Python package for System Dynamics Modeling"
+readme = {file = "README.md", content-type = "text/markdown"}
+license = {text = "MIT"}
+authors = [
+    {name = "Wang Zhao", email = "wzh1895@outlook.com"},
+    {name = "Matt Stammers"},
+]
+homepage = "https://github.com/wzh1895/ASDM"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent"
+]
+requires-python = ">=3.9"
+dependencies = ["numpy", "pandas", "matplotlib", "networkx", "lxml", "beautifulsoup4", "scipy"]
+
+[project.urls]
+"Source Code" = "https://github.com/wzh1895/ASDM"
+"Matt Stammers's GitHub" = "https://github.com/MattStammers"
+
+[tool.setuptools.packages.find]
+where = ["src"]

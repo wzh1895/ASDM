@@ -1,0 +1,46 @@
+name: Test Python Compatibility
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+      fail-fast: false
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        pip install build
+    
+    - name: Build and test package
+      run: |
+        python -m build
+    
+    - name: Locate and install the built package
+      run: |
+        # Locate the .whl file and install it
+        python -c "import os, subprocess; files = [f for f in os.listdir('dist') if f.endswith('.whl')]; subprocess.run(['python', '-m', 'pip', 'install', 'dist/'+str(files[0])], check=True);"
+  
+    - name: Test the installed package
+      run: |
+        python -c "from asdm import sdmodel; print('Success:', sdmodel())"
