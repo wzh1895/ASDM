@@ -1626,7 +1626,7 @@ class sdmodel(object):
         
         graph_func_equation.initialise()
 
-    def parse_1(self, var, equation):
+    def parse_equation(self, var, equation):
         if type(equation) is GraphFunc:
             gfunc_name = 'GFUNC{}'.format(len(self.graph_functions_renamed))
             self.graph_functions_renamed[gfunc_name] = equation # just for length ... for now
@@ -1675,7 +1675,7 @@ class sdmodel(object):
         else:
             raise Exception('Unsupported equation {} type {}'.format(equation, type(equation)))
     
-    def parse_0(self, equations, parsed_equations, verbose=False):
+    def batch_parse(self, equations, parsed_equations, verbose=False):
         for var, equation in equations.items():
             if verbose:
                 print(self.HEAD, "Parsing:", var)
@@ -1684,18 +1684,18 @@ class sdmodel(object):
             if type(equation) is dict:
                 parsed_equations[var] = dict()
                 for k, ks in equation.items():
-                    parsed_equations[var][k] = self.parse_1(var=var, equation=ks)
+                    parsed_equations[var][k] = self.parse_equation(var=var, equation=ks)
             
             else:
-                parsed_equations[var] = self.parse_1(var=var, equation=equation)
+                parsed_equations[var] = self.parse_equation(var=var, equation=equation)
             
 
     def parse(self, verbose=False):
         # string equation -> calculation tree
 
-        self.parse_0(self.stock_equations, self.stock_equations_parsed, verbose=verbose)
-        self.parse_0(self.flow_equations, self.flow_equations_parsed, verbose=verbose)
-        self.parse_0(self.aux_equations, self.aux_equations_parsed, verbose=verbose)
+        self.batch_parse(self.stock_equations, self.stock_equations_parsed, verbose=verbose)
+        self.batch_parse(self.flow_equations, self.flow_equations_parsed, verbose=verbose)
+        self.batch_parse(self.aux_equations, self.aux_equations_parsed, verbose=verbose)
         
     def is_dependent(self, var1, var2):
         # determine if var2 depends on var1, i.e., var1 --> var2 or var1 appears in var2's equation
@@ -1738,9 +1738,9 @@ class sdmodel(object):
             if parsed_equation.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
                 # operands = parsed_equation.nodes[leaf]['operands']
                 var_dependent = parsed_equation.nodes[leaf]['value']
-                self.calculate_variable_dynamic(var=var_dependent, verbose=verbose)
+                self.calculate_variable(var=var_dependent, verbose=verbose)
     
-    def calculate_variable_dynamic(self, var, subscript=None, verbose=False, leak_frac=False, conveyor_init=False, conveyor_len=False):
+    def calculate_variable(self, var, subscript=None, verbose=False, leak_frac=False, conveyor_init=False, conveyor_len=False):
         # print("\nEngine Calculating: {:<15} on subscript {}".format(var, subscript), '\n', 'name_space:', self.name_space, '\n', 'flow_effects', self.stock_shadow_values)
         # print("Engine Calculating: {:<15} on subscript {}".format(var, subscript))
         # debug
@@ -1764,12 +1764,12 @@ class sdmodel(object):
                 if not self.conveyors[var]['conveyor'].is_initialized:
                     # print('Initialising {}'.format(var))
                     # when initialising, equation of the conveyor needs to be evaluated, setting flag conveyor_len to True 
-                    self.calculate_variable_dynamic(var=var, subscript=subscript, verbose=verbose, conveyor_len=True)
+                    self.calculate_variable(var=var, subscript=subscript, verbose=verbose, conveyor_len=True)
                     conveyor_length = self.conveyors[var]['len']
                     length_steps = int(conveyor_length/self.sim_specs['dt'])
                     
                     # when initialising, equation of the conveyor needs to be evaluated, setting flag conveyor_init to True 
-                    self.calculate_variable_dynamic(var=var, subscript=subscript, verbose=verbose, conveyor_init=True)
+                    self.calculate_variable(var=var, subscript=subscript, verbose=verbose, conveyor_init=True)
                     conveyor_init_value = self.conveyors[var]['val']
                     
                     leak_flows = self.conveyors[var]['leakflow']
@@ -1777,7 +1777,7 @@ class sdmodel(object):
                         leak_fraction = 0
                     else:
                         for leak_flow in leak_flows.keys():
-                            self.calculate_variable_dynamic(var=leak_flow, subscript=subscript, verbose=verbose, leak_frac=True)
+                            self.calculate_variable(var=leak_flow, subscript=subscript, verbose=verbose, leak_frac=True)
                             leak_fraction = self.conveyors[var]['leakflow'][leak_flow] # TODO multiple leakflows
                     self.conveyors[var]['conveyor'].initialize(length_steps, conveyor_init_value, leak_fraction)
                     
@@ -1850,7 +1850,7 @@ class sdmodel(object):
                         in_flows = self.stock_flows[var]['in']
                         for in_flow in in_flows:
                             if in_flow not in self.name_space:
-                                self.calculate_variable_dynamic(var=in_flow, subscript=subscript, verbose=verbose)
+                                self.calculate_variable(var=in_flow, subscript=subscript, verbose=verbose)
                             if var in self.stock_non_negative:
                                 if type(self.name_space[in_flow]) is not dict:
                                     if self.stock_shadow_values[var] + self.name_space[in_flow] * self.sim_specs['dt'] < 0:
@@ -1888,7 +1888,7 @@ class sdmodel(object):
 
                         for out_flow in out_flows:
                             if out_flow not in self.name_space:
-                                self.calculate_variable_dynamic(var=out_flow, subscript=subscript, verbose=verbose)
+                                self.calculate_variable(var=out_flow, subscript=subscript, verbose=verbose)
                             if var in self.stock_non_negative:
                                 if type(self.name_space[out_flow]) is not dict:
                                     if self.stock_shadow_values[var] - self.name_space[out_flow] * self.sim_specs['dt'] < 0:
@@ -1925,7 +1925,7 @@ class sdmodel(object):
                     # then it is the real value of the leak flow that is requested.
                     # then conveyor needs to be calculated. Otherwise it is the conveyor that requires it 
                     if var not in self.name_space: # the leak_flow is not calculated, which means the conveyor has not been initialised
-                        self.calculate_variable_dynamic(var=self.leak_conveyors[var], subscript=subscript)
+                        self.calculate_variable(var=self.leak_conveyors[var], subscript=subscript)
                 else:
                     # it is the value of the leak_fraction (a percentage) that is requested.    
                     # leak_fraction is calculated using leakflow's equation. 
@@ -1936,7 +1936,7 @@ class sdmodel(object):
             elif var in self.outflow_conveyors:
                 # requiring an outflow's value triggers the calculation of its connected conveyor
                 if var not in self.name_space: # the outflow is not calculated, which means the conveyor has not been initialised
-                    self.calculate_variable_dynamic(var=self.outflow_conveyors[var], subscript=subscript)
+                    self.calculate_variable(var=self.outflow_conveyors[var], subscript=subscript)
                     
             elif var in self.flow_equations: # var is a normal flow
                 if var not in self.name_space:
@@ -2004,9 +2004,9 @@ class sdmodel(object):
         else:
             raise Exception("Undefined var: {}".format(var))
 
-    def calculate_variables_dynamic(self, verbose=False):
+    def calculate_variables(self, verbose=False):
         for var in (self.stock_equations_parsed | self.aux_equations_parsed | self.flow_equations_parsed).keys():
-            self.calculate_variable_dynamic(var=var, verbose=verbose)
+            self.calculate_variable(var=var, verbose=verbose)
     
     def update_conveyors(self):
         for conveyor_name, conveyor in self.conveyors.items(): # Stock is a Conveyor
@@ -2047,7 +2047,7 @@ class sdmodel(object):
                 # print('--time {} --'.format(self.sim_specs['current_time']))
                 print('--step {} start--'.format(s))
                 # print('\n--step {} start--\n'.format(s), self.name_space)
-            self.calculate_variables_dynamic(verbose=verbose)
+            self.calculate_variables(verbose=verbose)
             
             # snapshot current name space
             current_snapshot = deepcopy(self.name_space)
@@ -2190,6 +2190,9 @@ class sdmodel(object):
         self.flow_equations_parsed = dict()
         self.aux_equations_parsed = dict()
 
+        self.graph_functions = dict()
+        self.graph_functions_renamed = dict()
+
         self.full_result = dict()
         self.full_result_flattened = dict()
 
@@ -2199,6 +2202,8 @@ class sdmodel(object):
             name_space=self.name_space,
             graph_functions=self.graph_functions,
             )
+
+        self.custom_functions = dict()
 
         self.sim_specs['running'] = False
 
