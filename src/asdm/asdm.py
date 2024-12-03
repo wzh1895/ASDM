@@ -1547,7 +1547,7 @@ class sdmodel(object):
             equation = str(equation)
         self.aux_equations[name] = equation
 
-    def replace_element_equation(self, name, new_equation):
+    def format_new_equation(self, new_equation):
         if type(new_equation) is str:
             pass
         elif type(new_equation) in [int, float, np.int_, np.float64]:
@@ -1558,26 +1558,45 @@ class sdmodel(object):
             pass
         else:
             raise Exception('Unsupported new equation {} type {}'.format(new_equation, type(new_equation)))
+        return new_equation
+
+    def replace_element_equation(self, name, new_equation):
+        new_equation = self.format_new_equation(new_equation)
         
         if name in self.stock_equations:
             if type(new_equation) is dict:
-                for k_new, v_new in new_equation.items():
-                    if k_new in self.stock_equations[name]:
-                        self.stock_equations[name][k_new] = v_new
+                if type(self.stock_equations[name]) is not dict: # if the old equation is not subscripted
+                    self.stock_equations[name] = new_equation # replace the whole equation
+                    for k_new, v_new in self.stock_equations[name].items():
+                        self.stock_equations[name][k_new] = self.format_new_equation(v_new)
+                else:
+                    for k_new, v_new in new_equation.items():
+                        if k_new in self.stock_equations[name]:
+                            self.stock_equations[name][k_new] = self.format_new_equation(v_new)
             else:
                 self.stock_equations[name] = new_equation
         elif name in self.flow_equations:
             if type(new_equation) is dict:
-                for k_new, v_new in new_equation.items():
-                    if k_new in self.flow_equations[name]:
-                        self.flow_equations[name][k_new] = v_new
+                if type(self.flow_equations[name]) is not dict: # if the old equation is not subscripted
+                    self.flow_equations[name] = new_equation # replace the whole equation
+                    for k_new, v_new in self.flow_equations[name].items():
+                        self.flow_equations[name][k_new] = self.format_new_equation(v_new)
+                else:
+                    for k_new, v_new in new_equation.items():
+                        if k_new in self.flow_equations[name]:
+                            self.flow_equations[name][k_new] = self.format_new_equation(v_new)
             else:
                 self.flow_equations[name] = new_equation
         elif name in self.aux_equations:
             if type(new_equation) is dict:
-                for k_new, v_new in new_equation.items():
-                    if k_new in self.aux_equations[name]:
-                        self.aux_equations[name][k_new] = v_new
+                if type(self.aux_equations[name]) is not dict: # if the old equation is not subscripted
+                    self.aux_equations[name] = new_equation # replace the whole equation
+                    for k_new, v_new in self.aux_equations[name].items():
+                        self.aux_equations[name][k_new] = self.format_new_equation(v_new)
+                else:
+                    for k_new, v_new in new_equation.items():
+                        if k_new in self.aux_equations[name]:
+                            self.aux_equations[name][k_new] = self.format_new_equation(v_new)
             else:
                 self.aux_equations[name] = new_equation
         else:
