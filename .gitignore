@@ -182,3 +182,4 @@ tests/
 *.csv
 *.xls
 *.xlsx
+*.isdb
