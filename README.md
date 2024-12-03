@@ -50,6 +50,12 @@ We also use Jupyter Notebooks to provide demoes of ASDM's functionalities.
 - Exporting and examing simulation outcomes
 - Displaying simulation outcomes as graph
 
+[Support for .stmx models](demo/Demo_stmx_support.ipynb)
+
+- Load and simulate .stmx models
+- Support for arrays
+- Simulate .stmx models with modified equations
+
 We will add more tutorial notebooks. 
 
 You are welcomed to share your own tutorial notebooks through a `pull request`. When sharing notebooks, please make sure it does not contain sensitive data.
