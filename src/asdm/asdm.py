@@ -340,7 +340,7 @@ class Parser:
         token = self.tokens[self.current_index]
         if token[0] == 'LPAREN':
             self.current_index += 1
-            node = self.parse_expression()
+            node = self.parse_statement()
             self.current_index += 1  # Skipping the closing ')'
             return node
         elif token[0] == 'FUNC':
