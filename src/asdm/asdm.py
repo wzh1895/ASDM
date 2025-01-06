@@ -1237,6 +1237,7 @@ class sdmodel(object):
             'simulation_time': 13,
             'time_units' :'Weeks',
             'running': False,
+            'equation_changed_on_the_fly': False,
         }
 
         # dimensions
@@ -1601,6 +1602,10 @@ class sdmodel(object):
                 self.aux_equations[name] = new_equation
         else:
             raise Exception('Unable to find {} in the current model'.format(name))
+
+        if self.sim_specs['running']:
+            self.sim_specs['equation_changed_on_the_fly'] = True
+            self.sim_specs['running'] = False # Stop the simulation to allow the new equation to take effect
     
     # def overwrite_stock_value(self, name, new_value):
     #     print(self.name_space)
@@ -1860,7 +1865,10 @@ class sdmodel(object):
                     self.name_space[var] = value
                 self.stocks[var].initialised = True
                 
-            # if the stock's shadow value has not been calculated for this dt:
+            # if the stock's shadow value has not been calculated:
+            # Note this shadow value is a projection to the next time step; the real value is already in name_space
+            # However if flow equations are changed, either in themselves or in their dependencies,
+            # then the shadow value will be incorrect.
             if var not in self.stock_shadow_values:
                 # load stock's value from last dt from name_space
                 self.stock_shadow_values[var] = deepcopy(self.name_space[var])
@@ -2050,6 +2058,26 @@ class sdmodel(object):
             else:
                 self.df_debug_against = pd.read_csv(debug_against)
 
+        if self.sim_specs['equation_changed_on_the_fly']:
+            if verbose:
+                print('Equation changed on the fly.')
+
+            # This is a temporary solution to handle the case where the model equations are changed 'dynamically' during the simulation
+            # The idea is to take the latest historical value of each stock and use it as the initial value for the next time step
+            # This is not a perfect solution as it changes the equations of the stocks
+            # TODO: Add a middle layer for the stock values to be used in the next time step
+
+            # Replace all stocks' equation by their last historical value (not name-space value as it has been replaced by its shadow value by the end of the last step)
+            for stock_name, stock in self.stocks.items():
+                last_value = self.time_slice[self.sim_specs['current_time']-self.sim_specs['dt']][stock_name]
+                self.replace_element_equation(name=stock_name, new_equation=last_value)
+                stock.initialised = False
+            self.sim_specs['equation_changed_on_the_fly'] = False
+            
+            self.name_space.clear()
+            self.name_space['TIME'] = self.sim_specs['current_time']
+            self.name_space['DT'] = self.sim_specs['dt']
+        
         self.parse(verbose=verbose)
 
         if time is None:
@@ -2117,13 +2145,18 @@ class sdmodel(object):
             
             self.time_slice[self.sim_specs['current_time']] = current_snapshot
             if verbose:
-                print('\n--step {} finish--\n'.format(s))
-                # print('\n--step {} finish--\n'.format(s), self.name_space, self.stock_shadow_values)
+                # print('\n--step {} finish--\n'.format(s))
+                print('\n--step {} finish--\n'.format(s), self.name_space, self.stock_shadow_values)
             self.update_conveyors()
             
             # prepare name_space for next step
             self.sim_specs['current_time'] += dt
             self.name_space.clear()
+
+            # Here this shadow value is used directly as the stock value for the next time step
+            # This is OK if the model equations are not changed 'dynamically' during the simulation
+            # However if flow equations are changed, either in themselves or in their dependencies,
+            # then the shadow value will be incorrect.
             for stock, stock_value in self.stock_shadow_values.items():
                 self.name_space[stock] = stock_value
             self.stock_shadow_values.clear()
