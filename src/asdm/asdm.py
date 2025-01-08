@@ -2069,7 +2069,8 @@ class sdmodel(object):
 
             # Replace all stocks' equation by their last historical value (not name-space value as it has been replaced by its shadow value by the end of the last step)
             for stock_name, stock in self.stocks.items():
-                last_value = self.time_slice[self.sim_specs['current_time']-self.sim_specs['dt']][stock_name]
+                self.sim_specs['current_time'] -= self.sim_specs['dt'] # go back to the last time step
+                last_value = self.time_slice[self.sim_specs['current_time']][stock_name]
                 self.replace_element_equation(name=stock_name, new_equation=last_value)
                 stock.initialised = False
             self.sim_specs['equation_changed_on_the_fly'] = False
@@ -2092,7 +2093,7 @@ class sdmodel(object):
         def step(debug=False):
             if verbose:
                 # print('--time {} --'.format(self.sim_specs['current_time']))
-                print('--step {} start--'.format(s))
+                print('--step {} start, current time {}--'.format(s, self.sim_specs['current_time']))
                 # print('\n--step {} start--\n'.format(s), self.name_space)
             self.calculate_variables(verbose=verbose)
             
