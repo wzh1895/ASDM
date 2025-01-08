@@ -2049,6 +2049,10 @@ class sdmodel(object):
             self.stock_shadow_values[conveyor_name] = conveyor['conveyor'].level()
             
     def simulate(self, time=None, dt=None, dynamic=True, verbose=False, debug_against=False):
+        if verbose:
+            print('Simulation started with specs:')
+            print(self.sim_specs)
+        
         if debug_against is not None:
             if debug_against is True:
                 import pandas as pd
@@ -2068,8 +2072,8 @@ class sdmodel(object):
             # TODO: Add a middle layer for the stock values to be used in the next time step
 
             # Replace all stocks' equation by their last historical value (not name-space value as it has been replaced by its shadow value by the end of the last step)
+            self.sim_specs['current_time'] -= self.sim_specs['dt'] # go back to the last time step
             for stock_name, stock in self.stocks.items():
-                self.sim_specs['current_time'] -= self.sim_specs['dt'] # go back to the last time step
                 last_value = self.time_slice[self.sim_specs['current_time']][stock_name]
                 self.replace_element_equation(name=stock_name, new_equation=last_value)
                 stock.initialised = False
