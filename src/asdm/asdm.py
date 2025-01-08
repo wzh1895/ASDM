@@ -113,7 +113,7 @@ class Parser:
                     if type_name == 'ABSOLUTENAME':
                         type_name = 'NAME'
                     if type_name == 'NUMBER' and token[0] == '-': # fix the -1: negative 1 vs minus 1 problem
-                        if not(len(tokens) == 0 or tokens[-1][0] == ['LPAREN', '(']):
+                        if not(len(tokens) == 0 or tokens[-1][0] == 'LPAREN'):
                             tokens.append(['MINUS', '-'])
                             tokens.append(['NUMBER', token[1:]])
                             s = s[m.span()[1]:].strip()
@@ -1882,14 +1882,14 @@ class sdmodel(object):
                                 if type(self.name_space[in_flow]) is not dict:
                                     if self.stock_shadow_values[var] + self.name_space[in_flow] * self.sim_specs['dt'] < 0:
                                         self.name_space[in_flow] = self.stock_shadow_values[var] * -1 / self.sim_specs['dt']
-                                        self.stock_shadow_values[var] = 0
+                                        self.stock_shadow_values[var] = np.float64(0)
                                     else:
                                         self.stock_shadow_values[var] += self.name_space[in_flow] * self.sim_specs['dt']
                                 else:
                                     for sub, subval in self.name_space[in_flow].items():
                                         if self.stock_shadow_values[var][sub] + subval * self.sim_specs['dt'] < 0:
                                             self.name_space[in_flow][sub] = self.stock_shadow_values[var][sub] * -1 / self.sim_specs['dt']
-                                            self.stock_shadow_values[var][sub] = 0
+                                            self.stock_shadow_values[var][sub] = np.float64(0)
                                         else:
                                             self.stock_shadow_values[var][sub] += subval * self.sim_specs['dt']
                                 
