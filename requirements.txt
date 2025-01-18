@@ -3,3 +3,4 @@ scipy
 beautifulsoup4
 lxml
 pandas
+matplotlib
