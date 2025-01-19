@@ -21,12 +21,12 @@ logging.basicConfig(
     format="%(levelname)s: | %(name)s | %(message)s"
 )
 
-logger_parser.setLevel(logging.DEBUG)
-logger_solver.setLevel(logging.DEBUG)
-logger_graph_function.setLevel(logging.DEBUG)
-logger_conveyor.setLevel(logging.DEBUG)
-logger_data_feeder.setLevel(logging.DEBUG)
-logger_sdmodel.setLevel(logging.DEBUG)
+logger_parser.setLevel(logging.INFO)
+logger_solver.setLevel(logging.INFO)
+logger_graph_function.setLevel(logging.INFO)
+logger_conveyor.setLevel(logging.INFO)
+logger_data_feeder.setLevel(logging.INFO)
+logger_sdmodel.setLevel(logging.INFO)
 
 class Node:
     def __init__(self, node_id, operator=None, value=None, operands=None, subscripts=None):
@@ -150,20 +150,17 @@ class Parser:
                     break
         return tokens
     
-    def parse(self, expression, plot=False, verbose=False):
-        self.verbose = verbose
+    def parse(self, expression, plot=False):
 
-        if self.verbose:
-            self.logger.debug(f"Starting parse of expression: {expression}")
+        self.logger.debug(f"Starting parse of expression: {expression}")
         self.tokens = self.tokenise(expression)
         self.logger.debug(f"Tokens: {self.tokens}")
         
         ast = self.parse_statement()
         if self.current_index != len(self.tokens):
             raise ValueError("Unexpected end of parsing")
-        if self.verbose:
-            self.logger.debug("Completed parse")
-            self.logger.debug(f"AST: {ast}")
+        self.logger.debug("Completed parse")
+        self.logger.debug(f"AST: {ast}")
         
         # create ast graph
         ast_graph = nx.DiGraph()
@@ -203,8 +200,7 @@ class Parser:
         ast_graph.add_edge('root', ast.node_id)
         node_labels['root'] = 'root'
 
-        if self.verbose:
-            self.logger.debug(f"AST_graph {ast_graph.nodes.data(True)}")
+        self.logger.debug(f"AST_graph {ast_graph.nodes.data(True)}")
 
         if plot:
             pos = nx.nx_agraph.graphviz_layout(ast_graph, prog="dot")
@@ -241,14 +237,12 @@ class Parser:
 
     def parse_expression(self):
         """Parse an expression."""
-        if self.verbose:
-            self.logger.debug('parse_expression   {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_expression   {}'.format(self.tokens[self.current_index:]))
         return self.parse_or_expression()
 
     def parse_or_expression(self):
         """Parse an or expression."""
-        if self.verbose:
-            self.logger.debug('parse_or_expr      {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_or_expr      {}'.format(self.tokens[self.current_index:]))
         nodes = [self.parse_and_expression()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'OR':
             op = self.tokens[self.current_index]
@@ -261,8 +255,7 @@ class Parser:
 
     def parse_and_expression(self):
         """Parse an and expression."""
-        if self.verbose:
-            self.logger.debug('parse_and_expr     '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_and_expr     '.format(self.tokens[self.current_index:]))
         nodes = [self.parse_not_expression()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'AND':
             op = self.tokens[self.current_index]
@@ -275,8 +268,7 @@ class Parser:
     
     def parse_not_expression(self):
         """Parse a NOT expression."""
-        if self.verbose:
-            self.logger.debug('parse_not_expr     '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_not_expr     '.format(self.tokens[self.current_index:]))
         if self.tokens[self.current_index][0] == 'NOT':
             self.current_index += 1
             self.node_id += 1
@@ -285,8 +277,7 @@ class Parser:
     
     def parse_compare_expression(self):
         """Parse a comparison expression."""
-        if self.verbose:
-            self.logger.debug('parse_compare_expr '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_compare_expr '.format(self.tokens[self.current_index:]))
         node = self.parse_arith_expression()
         if self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['GT', 'LT', 'EQS', 'NGT', 'NLT']:
             op = self.tokens[self.current_index]
@@ -299,8 +290,7 @@ class Parser:
 
     def parse_arith_expression(self):
         """Parse an expression for '+' and '-' with lower precedence."""
-        if self.verbose:
-            self.logger.debug('parse_arith_expr   '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_arith_expr   '.format(self.tokens[self.current_index:]))
         nodes = [self.parse_mod()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['PLUS', 'MINUS']:
             op = self.tokens[self.current_index]
@@ -313,8 +303,7 @@ class Parser:
     
     def parse_mod(self):
         """Parse a mod operation."""
-        if self.verbose:
-            self.logger.debug('parse_mod          '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_mod          '.format(self.tokens[self.current_index:]))
         nodes = [self.parse_term()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'MOD':
             op = self.tokens[self.current_index]
@@ -327,8 +316,7 @@ class Parser:
 
     def parse_term(self):
         """Parse a term for '*' and '/' with higher precedence."""
-        if self.verbose:
-            self.logger.debug('parse_term         '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_term         '.format(self.tokens[self.current_index:]))
         nodes = [self.parse_exponent()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['TIMES', 'DIVIDE', 'FLOORDIVIDE']:
             op = self.tokens[self.current_index]
@@ -341,8 +329,7 @@ class Parser:
     
     def parse_exponent(self):
         """Parse an EXP (^) operation."""
-        if self.verbose:
-            self.logger.debug('parse_exponent     '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_exponent     '.format(self.tokens[self.current_index:]))
         nodes = [self.parse_factor()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'EXP':
             op = self.tokens[self.current_index]
@@ -355,8 +342,7 @@ class Parser:
 
     def parse_factor(self):
         """Parse a factor which could be a number, a variable, a function call, or an expression in parentheses."""
-        if self.verbose:
-            self.logger.debug('parse_factor       '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_factor       '.format(self.tokens[self.current_index:]))
         token = self.tokens[self.current_index]
         if token[0] == 'LPAREN':
             self.current_index += 1
@@ -376,8 +362,7 @@ class Parser:
 
     def parse_function_call(self):
         """Parse a function call."""
-        if self.verbose:
-            self.logger.debug('parse_function_call'.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_function_call'.format(self.tokens[self.current_index:]))
         func_name = self.tokens[self.current_index]
         self.current_index += 2  # Skipping the function name and the opening '('
         args = []
@@ -391,8 +376,7 @@ class Parser:
     
     def parse_variable(self):
         """Parse a variable. The variable may be subscripted."""
-        if self.verbose:
-            self.logger.debug('parse_variable     '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_variable     '.format(self.tokens[self.current_index:]))
         var_name = self.tokens[self.current_index][1]
         self.current_index += 1
         if self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'LSPAREN':
@@ -420,7 +404,7 @@ class Solver(object):
     def __init__(self, sim_specs=None, dimension_elements=None, name_space=None, graph_functions=None):
         self.logger = logger_solver
 
-        self.sim_specs = sim_specs # current_time, initial_time, dt, simulation_time, time_units, running,
+        self.sim_specs = sim_specs # current_time, initial_time, dt, simulation_time, time_units
         self.dimension_elements = dimension_elements
         self.name_space = name_space
         self.graph_functions = graph_functions
@@ -706,7 +690,7 @@ class Solver(object):
 
         self.HEAD = "SOLVER"
 
-    def calculate_node(self, parsed_equation, node_id='root', subscript=None, verbose=False, var_name=''):        
+    def calculate_node(self, parsed_equation, node_id='root', subscript=None, var_name=''):        
         self.logger.debug('\n'+'\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+' processing node {} on subscript {}:'.format(node_id, subscript))
 
         self.id_level += 1
@@ -1094,7 +1078,7 @@ class Conveyor(object):
         self.length_time_units = length
         self.equation = eqn
         self.length_steps = None # to be decided at runtime
-        self.total = 0 # to be decided when initialising stocks
+        self.total = 0 # to be decided when initializing stocks
         self.slats = list() # pipe [new, ..., old]
         self.is_initialized = False
         self.leaks = list()
@@ -1202,7 +1186,7 @@ class DataFeeder(object):
 
 class sdmodel(object):
     # equations
-    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='debug'):
+    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info'):
         # Debug
         self.HEAD = 'ENGINE'
         self.debug_level_trace_error = 0
@@ -1227,9 +1211,8 @@ class sdmodel(object):
             'dt': 0.25,
             'simulation_time': 13,
             'time_units' :'Weeks',
-            'running': False,
-            'equation_changed_on_the_fly': False,
         }
+
 
         # dimensions
         self.var_dimensions = dict()
@@ -1280,7 +1263,6 @@ class sdmodel(object):
 
         # parser
         self.parser = Parser()
-        self.parsed = False
 
         # parser debug level
         if parser_debug_level == 'debug':
@@ -1322,6 +1304,9 @@ class sdmodel(object):
 
         # custom functions
         self.custom_functions = {}
+        
+        # state
+        self.state = 'created'
 
         # If the model is based on an XMILE file
         if from_xmile is not None:
@@ -1520,6 +1505,8 @@ class sdmodel(object):
                         non_negative = True
                     self.add_flow(self.name_handler(flow.get('name')), equation=subscripted_equation(flow), leak=leak, non_negative=non_negative)
 
+                self.state = 'loaded'
+
             else:
                 raise Exception("Specified model file does not exist.")
 
@@ -1627,12 +1614,11 @@ class sdmodel(object):
         else:
             raise Exception('Unable to find {} in the current model'.format(name))
 
-        if self.sim_specs['running']:
-            self.sim_specs['equation_changed_on_the_fly'] = True
-            self.sim_specs['running'] = False # Stop the simulation to allow the new equation to take effect
-        
-        self.parsed = False
-        
+        if self.state == 'loaded':
+            pass
+        elif self.state == 'simulated':
+            self.state = 'changed'
+
     def overwrite_graph_function_points(self, name, new_xpts=None, new_xscale=None, new_ypts=None):
         if new_xpts is None and new_xscale is None and new_ypts is None:
             raise Exception("Inputs cannot all be None.")
@@ -1712,11 +1698,10 @@ class sdmodel(object):
         else:
             raise Exception('Unsupported equation {} type {}'.format(equation, type(equation)))
     
-    def batch_parse(self, equations, parsed_equations, verbose=False):
+    def batch_parse(self, equations, parsed_equations):
         for var, equation in equations.items():
-            if verbose:
-                self.logger.debug(self.HEAD, f"Parsing: {var}")
-                self.logger.debug(self.HEAD, f"    Eqn: {equation}")
+            # self.logger.debug("Parsing: {}".format(var))
+            # self.logger.debug("    Eqn: {}".format(equation))
             
             if type(equation) is dict:
                 parsed_equations[var] = dict()
@@ -1727,15 +1712,15 @@ class sdmodel(object):
                 parsed_equations[var] = self.parse_equation(var=var, equation=equation)
             
 
-    def parse(self, verbose=False):
+    def parse(self):
         # string equation -> calculation tree
 
         self.batch_parse(self.stock_equations, self.stock_equations_parsed)
         self.batch_parse(self.flow_equations, self.flow_equations_parsed)
         self.batch_parse(self.aux_equations, self.aux_equations_parsed)
 
-        self.parsed = True
-        
+        self.state = 'parsed'
+
     def is_dependent(self, var1, var2):
         # determine if var2 depends directly on var1, i.e., var1 --> var2 or var1 appears in var2's equation
         
@@ -1796,12 +1781,12 @@ class sdmodel(object):
             if not (conveyor_init or conveyor_len):
                 if not self.conveyors[var]['conveyor'].is_initialized:
                     self.logger.debug('\t'+'Initializing conveyor {}'.format(var))
-                    # when initialising, equation of the conveyor needs to be evaluated, using flag conveyor_len=True 
+                    # when initializing, equation of the conveyor needs to be evaluated, using flag conveyor_len=True 
                     self.calculate_variable(var=var, dg=dg, subscript=subscript, conveyor_len=True)
                     conveyor_length = self.conveyors[var]['len']
                     length_steps = int(conveyor_length/self.sim_specs['dt'])
                     
-                    # when initialising, equation of the conveyor needs to be evaluated, using flag conveyor_init=True 
+                    # when initializing, equation of the conveyor needs to be evaluated, using flag conveyor_init=True 
                     self.calculate_variable(var=var, dg=dg, subscript=subscript, conveyor_init=True)
                     conveyor_init_value = self.conveyors[var]['val']
                     
@@ -1914,7 +1899,6 @@ class sdmodel(object):
                             self.name_space[var][sub] = sub_value
                     elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
                         for sub in self.dimension_elements[self.var_dimensions[var]]:
-                            print('aaa', sub)
                             sub_value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=sub, var_name=var)
                             if var not in self.name_space:
                                 self.name_space[var] = dict()
@@ -1943,7 +1927,7 @@ class sdmodel(object):
                     if 'considered_for_non_negative_stock' in flow_attributes:
                         if flow_attributes['considered_for_non_negative_stock'] is True:
                             flow_to_stock = self.flow_stocks[var]['to']
-                            self.logger.debug('\t'+f'----considering inflow {var} for non-negative stocks {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
+                            self.logger.debug('\t'+f'----considering inflow {var} into non-negative stocks {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
                             # this is an in_flow and this in_flow should be considered before constraining out_flows
 
                             # To prevent a negative inflow from making the stock negative, we need to constrain the inflow
@@ -1957,7 +1941,6 @@ class sdmodel(object):
                                         else:
                                             self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
                                 elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
-                                    # print('aaa', self.var_dimensions[var])
                                     for sub in self.stock_non_negative_temp_value[flow_to_stock]:
                                         if self.stock_non_negative_temp_value[flow_to_stock][sub] + self.name_space[var] * self.sim_specs['dt'] < 0:
                                             self.name_space[var] = self.stock_non_negative_temp_value[flow_to_stock][sub] / self.sim_specs['dt'] *-1
@@ -1973,7 +1956,7 @@ class sdmodel(object):
 
                     if 'out_from_non_negative_stock' in flow_attributes:
                         out_from_non_negative_stock = flow_attributes['out_from_non_negative_stock']
-                        self.logger.debug('\t'+f'----flow {var} comes out from for non-negative stock {out_from_non_negative_stock} whose name_space value is {self.name_space[var]}')
+                        self.logger.debug('\t'+f'----considering outflow {var} out from for non-negative stock {out_from_non_negative_stock} whose name_space value is {self.name_space[var]}')
                         
                         # constrain this out_flow
                         self.logger.debug('\t'+f'----stock {out_from_non_negative_stock} temp value is {self.stock_non_negative_temp_value[out_from_non_negative_stock]}')
@@ -2068,7 +2051,6 @@ class sdmodel(object):
                                 else:
                                     self.stock_shadow_values[stock] -= self.name_space[flow] * self.sim_specs['dt']
                                 self.logger.debug('--stock_shadow_value {} becomes {}'.format(stock, self.stock_shadow_values[stock]))
-                                # TODO: stock and flow are dicts
                 else: # there are obsolete stocks that are not connected to any flows
                     self.logger.debug('stock {} is not connected to any flows'.format(stock))
                     self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
@@ -2090,75 +2072,87 @@ class sdmodel(object):
             conveyor['conveyor'].inflow(total_flow_effect * self.sim_specs['dt'])
             self.stock_shadow_values[conveyor_name] = conveyor['conveyor'].level()
 
-    def simulate(self, time=None, dt=None, debug_against=False):
-        self.logger.debug('Simulation started with specs:')
-        self.logger.debug(self.sim_specs)
+    def simulate(self, time=None, dt=None):
+        self.logger.debug('Simulation started with specs: {}'.format(self.sim_specs))
+        self.logger.debug('Equations: {}'.format(self.stock_equations | self.flow_equations | self.aux_equations))
         
-        if debug_against is not None:
-            if debug_against is True:
-                import pandas as pd
-                self.df_debug_against = pd.read_csv('stella.csv')
-            elif debug_against is False:
-                pass
-            else:
-                self.df_debug_against = pd.read_csv(debug_against)
-
-        if self.sim_specs['equation_changed_on_the_fly']:
-            self.logger.debug('Equation changed on the fly.')
-
-            # This is a temporary solution to handle the case where the model equations are changed 'dynamically' during the simulation
-            # The idea is to take the latest historical value of each stock and use it as the initial value for the next time step
-            # This is not a perfect solution as it changes the equations of the stocks
-            # TODO: Add a middle layer for the stock values to be used in the next time step
-
-            # Replace all stocks' equation by their last historical value (not name-space value as it has been replaced by its shadow value by the end of the last step)
-            self.sim_specs['current_time'] -= self.sim_specs['dt'] # go back to the last time step
-            for stock_name, stock in self.stocks.items():
-                last_value = self.time_slice[self.sim_specs['current_time']][stock_name]
-                self.replace_element_equation(name=stock_name, new_equation=last_value)
-                stock.initialized = False
-            self.sim_specs['equation_changed_on_the_fly'] = False
-            
-            self.name_space.clear()
-            self.name_space['TIME'] = self.sim_specs['current_time']
-            self.name_space['DT'] = self.sim_specs['dt']
-        
-        self.parse()
-
         if time is None:
             time = self.sim_specs['simulation_time']
         if dt is None:
             dt = self.sim_specs['dt']
-        steps = int(time/dt)
+        iterations = int(time/dt)
 
-        if self.sim_specs['running']: # Continue simulation
-            steps -= 1
+        if self.state in ['simulated', 'changed']:
+            if self.state == 'changed':
+                self.logger.debug('Equation changed after last simulation, re-parsing.')
+                self.parse() # set state to 'parsed'
+                self.generate_ordered_vars()
 
-        # Initialization Phase
-        self.generate_ordered_vars()
-        self.logger.debug("*** Initialization ***")
-        self.logger.debug("self.ordered_vars_init {}".format(self.ordered_vars_init))
-        for var in self.ordered_vars_init:
-            self.calculate_variable(var=var, dg=self.dg_init)
+            self.logger.debug("")
+            self.logger.debug("*** Resuming ***")
+            self.logger.debug("")
+            # self.name_space.clear()
+            # # use last time slice as the initial values for the next simulation, do not do initialization again
+            # # self.sim_specs['current_time'] -= self.sim_specs['dt'] # go back to the last time step
+            # for stock in (self.stocks | self.conveyors):
+            #     last_value = self.time_slice[self.sim_specs['current_time'] - self.sim_specs['dt']][stock]
+            #     self.name_space[stock] = last_value
+            
+            # self.name_space['TIME'] = self.sim_specs['current_time']
+            # self.name_space['DT'] = self.sim_specs['dt']
+
+            self.state = 'initialized'
+            self.logger.debug('Continuing simulation from time {} for {} iteration'.format(self.sim_specs['current_time'], iterations))
+        
+        elif self.state == 'loaded':
+            # parse equations and order execution (compile)
+            self.parse() # set state to 'parsed's
+            self.generate_ordered_vars()
+            # Initialization Phase
+            self.logger.debug("")
+            self.logger.debug("*** Initialization ***")
+            self.logger.debug("")
+            self.logger.debug("self.ordered_vars_init {}".format(self.ordered_vars_init))
+
+            # Initialize self.stock_non_negative_temp_value
+            for stock, is_non_negative in self.stock_non_negative.items():
+                if is_non_negative:
+                    self.stock_non_negative_temp_value[stock] = None
+
+            for var in self.ordered_vars_init:
+                self.calculate_variable(var=var, dg=self.dg_init)
+        
+            # Since it's just loaded, we need 2 iterations (if we were to simulate 1 DT)
+            # The 1st iteration is to calculate the flows (and auxiliaries) based on the initialilized stocks (1st row of outcome) and update the stocks (2nd row of outcome)
+            # The 2nd iteration is to calculate the flows (and auxiliaries) based on the updated stocks (2nd row of outcome) and update the stocks.
+            # The updated stocks (in name_space) should be part of the 3rd row of outcome, but they are not saved (bus still in name_space) as we only simulate 1 DT.
+            iterations += 1 
+
+            self.state = 'initialized'
 
         # Iteration Phase
+        self.logger.debug("")
         self.logger.debug("*** Iteration ***")
+        self.logger.debug("")
         self.logger.debug("self.ordered_vars_iter {}".format(self.ordered_vars_iter))
+        self.logger.debug("Current name_space: {}".format(self.name_space))
 
-        def step():
-            self.logger.debug('--step {} start, current time {}--'.format(s, self.sim_specs['current_time']))
+        # self.current_iteration = 0
+
+        for s in range(iterations):
+            self.logger.debug('--iteration {} start, current time {}--'.format(s, self.sim_specs['current_time']))
             # self.logger.debug('--time {} --'.format(self.sim_specs['current_time']))
-            self.logger.debug('--step {} start, current time {}--'.format(s, self.sim_specs['current_time']))
             # self.logger.debug('\n--step {} start--\n'.format(s), self.name_space)
             
-            # Calculate flows and auxiliaries they depend on
+            # Iter step 1: calculate flows and auxiliaries they depend on
             for var in self.ordered_vars_iter:
                 self.calculate_variable(var=var, dg=self.dg_iter)
-            
-            # Update stocks using flows
-            self.update_stocks()
 
-            # snapshot current name space
+            # Iter step 2: update stocks using flows and conveyors
+            self.update_stocks() # update stock shadow values using flows
+            self.update_conveyors() # update stock shadow values as well as conveyors 
+
+            # Snapshot current name space
             current_snapshot = deepcopy(self.name_space)
             current_snapshot[self.sim_specs['time_units']] = current_snapshot['TIME']
             current_snapshot.pop('TIME')
@@ -2169,10 +2163,10 @@ class sdmodel(object):
             self.logger.debug('name_space {}'.format(self.name_space))
             self.logger.debug('shadow_val {}'.format(self.stock_shadow_values))
 
-            self.update_conveyors()
             
-            # Update simulation time
+            # Iter step 3: update simulation time
             self.sim_specs['current_time'] += dt
+            # self.current_iteration += 1
 
             # prepare name_space for next step
             self.logger.debug('--- prepared name_space for next step ---')
@@ -2202,61 +2196,53 @@ class sdmodel(object):
             self.name_space['DT'] = self.sim_specs['dt']
 
             self.logger.debug('--- end of preparation ---')
-        
-        self.current_step = 0
-        for s in range(steps+1):
-            if debug_against:
-                step(debug=self.df_debug_against.iloc[self.current_step])
-            else:
-                step()
-            self.current_step += 1
-        
-        self.sim_specs['running'] = True
 
-    def trace_error(self, var_with_error, sub=None):
-        self.debug_level_trace_error += 1
+        self.state = 'simulated'
 
-        self.logger.debug(self.debug_level_trace_error*'\t'+'Tracing error on {} ...'.format(var_with_error))
-        self.logger.debug(self.debug_level_trace_error*'\t'+'asdm value    :', self.name_space[var_with_error])
-        self.logger.debug(self.debug_level_trace_error*'\t'+'Expected value:', self.df_debug_against.iloc[self.current_step][self.var_name_to_csv_entry(var_with_error)])
+    # def trace_error(self, var_with_error, sub=None):
+    #     self.debug_level_trace_error += 1
+
+    #     self.logger.debug(self.debug_level_trace_error*'\t'+'Tracing error on {} ...'.format(var_with_error))
+    #     self.logger.debug(self.debug_level_trace_error*'\t'+'asdm value    :', self.name_space[var_with_error])
+    #     self.logger.debug(self.debug_level_trace_error*'\t'+'Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_with_error)])
         
-        if sub is not None:
-            parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var_with_error][sub]
-        else:
-            parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var_with_error]
+    #     if sub is not None:
+    #         parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var_with_error][sub]
+    #     else:
+    #         parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var_with_error]
         
-        leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
-        self.logger.debug(self.debug_level_trace_error*'\t'+'Dependencies of {}:'.format(var_with_error))
+    #     leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
+    #     self.logger.debug(self.debug_level_trace_error*'\t'+'Dependencies of {}:'.format(var_with_error))
         
-        for leaf in leafs:
-            # self.logger.debug(self.debug_level_trace_error*'\t'+parsed_equation.nodes[leaf])
-            if parsed_equation.nodes[leaf]['operator'][0] in ['EQUALS', 'SPAREN']:
-                operands = parsed_equation.nodes[leaf]['operands']
-                if operands[0][0] == 'NUMBER':
-                    pass
-                elif operands[0][0] == 'NAME': # this refers to a variable like 'a'
-                    var_dependent = operands[0][1]
-                    self.logger.debug(self.debug_level_trace_error*'\t'+'-- Dependent:', var_dependent)
-                    self.logger.debug(self.debug_level_trace_error*'\t'+'   asdm value    :', self.name_space[var_dependent])
-                    self.logger.debug(self.debug_level_trace_error*'\t'+'   Expected value:', self.df_debug_against.iloc[self.current_step][self.var_name_to_csv_entry(var_dependent)])
+    #     for leaf in leafs:
+    #         # self.logger.debug(self.debug_level_trace_error*'\t'+parsed_equation.nodes[leaf])
+    #         if parsed_equation.nodes[leaf]['operator'][0] in ['EQUALS', 'SPAREN']:
+    #             operands = parsed_equation.nodes[leaf]['operands']
+    #             if operands[0][0] == 'NUMBER':
+    #                 pass
+    #             elif operands[0][0] == 'NAME': # this refers to a variable like 'a'
+    #                 var_dependent = operands[0][1]
+    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'-- Dependent:', var_dependent)
+    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'   asdm value    :', self.name_space[var_dependent])
+    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_dependent)])
         
-                elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
-                    # need to find that 'SPAREN' node
-                    var_dependent_node_id = operands[0][2]
-                    var_dependent = parsed_equation.nodes[var_dependent_node_id]['operands'][0][1]
-                    self.logger.debug(self.debug_level_trace_error*'\t'+'-- Dependent:', var_dependent)
-                    self.logger.debug(self.debug_level_trace_error*'\t'+'   asdm value    :', self.name_space[var_dependent])
-                    self.logger.debug(self.debug_level_trace_error*'\t'+'   Expected value:', self.df_debug_against.iloc[self.current_step][self.var_name_to_csv_entry(var_dependent)])
+    #             elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
+    #                 # need to find that 'SPAREN' node
+    #                 var_dependent_node_id = operands[0][2]
+    #                 var_dependent = parsed_equation.nodes[var_dependent_node_id]['operands'][0][1]
+    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'-- Dependent:', var_dependent)
+    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'   asdm value    :', self.name_space[var_dependent])
+    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_dependent)])
         
-        if var_with_error in self.flow_stocks:
-            connected_stocks = self.flow_stocks[var_with_error]
-            for direction, connected_stock in connected_stocks.items():
-                self.logger.debug(self.debug_level_trace_error*'\t'+'-- Connected stock: {:<4} {}'.format(direction, connected_stock))
-                self.logger.debug(self.debug_level_trace_error*'\t'+'   asdm value    :', self.name_space[connected_stock])
-                self.logger.debug(self.debug_level_trace_error*'\t'+'   Expected value:', self.df_debug_against.iloc[self.current_step][self.var_name_to_csv_entry(connected_stock)])
+    #     if var_with_error in self.flow_stocks:
+    #         connected_stocks = self.flow_stocks[var_with_error]
+    #         for direction, connected_stock in connected_stocks.items():
+    #             self.logger.debug(self.debug_level_trace_error*'\t'+'-- Connected stock: {:<4} {}'.format(direction, connected_stock))
+    #             self.logger.debug(self.debug_level_trace_error*'\t'+'   asdm value    :', self.name_space[connected_stock])
+    #             self.logger.debug(self.debug_level_trace_error*'\t'+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(connected_stock)])
         
-        self.logger.debug()
-        self.debug_level_trace_error -= 1
+    #     self.logger.debug()
+    #     self.debug_level_trace_error -= 1
 
     def var_name_to_csv_entry(self, var, sub=None):
         if sub is None:
@@ -2296,7 +2282,7 @@ class sdmodel(object):
 
         self.custom_functions = dict()
 
-        self.sim_specs['running'] = False
+        self.state = 'loaded'
 
     def summary(self):
         print('\nSummary:\n')
@@ -2306,8 +2292,10 @@ class sdmodel(object):
         print('-------------  Sim specs  -------------')
         pprint(self.sim_specs)
         print('')
-        print('-------------   Runtime   -------------')
+        print('-------------  Runtime    -------------')
         pprint(self.name_space)
+        print('-------------  State      -------------')
+        print(self.state)
         print('')
     
     def get_element_simulation_result(self, name, subscript=None):
@@ -2400,10 +2388,6 @@ class sdmodel(object):
     def create_variable_dependency_graph(self, var, graph=None):
         if graph is None:
             graph = nx.DiGraph()
-
-        # parse equations of the model into ast
-        if self.parsed is False:
-            self.parse()
 
         all_equations = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)
         if var in self.env_variables: # like 'TIME'
@@ -2498,14 +2482,13 @@ class sdmodel(object):
         # check each non-negative stock for dependencies of inflow and outflow and add to dg_init
         for stock, in_out_flows in self.stock_flows.items():
             if self.stock_non_negative[stock] is True:
-                self.logger.debug('0.init for non negative stock %s', stock)
-                self.stock_non_negative_temp_value[stock] = None
+                self.logger.debug('GEN 0.init for non negative stock %s', stock)
                 if 'out' in in_out_flows:
                     out_flows = in_out_flows['out']
 
                     for out_flow in out_flows:
                         if out_flow in dg_init:
-                            self.logger.debug('--1.init for outflow %s', out_flow)
+                            self.logger.debug('GEN --1.init for outflow %s', out_flow)
                             # if stock explicitly depends on outflow for initiliazation, we cannot let outflow be constrained by stock in the initialization phase
                             if nx.has_path(dg_init, out_flow, stock):
                                 pass
@@ -2521,7 +2504,7 @@ class sdmodel(object):
 
                         for in_flow in in_flows:
                             if in_flow in dg_init:
-                                self.logger.debug('----2.init for inflow %s', in_flow)
+                                self.logger.debug('GEN ----2.init for inflow %s', in_flow)
                                 in_flow_sanities[in_flow] = True
                                 for out_flow in out_flows:
                                     if nx.has_path(dg_iter, out_flow, in_flow):
@@ -2545,14 +2528,14 @@ class sdmodel(object):
                                     # dg_init
                                     if (out_flow, in_flow) not in dg_init.edges: # avoid overwriting
                                         dg_init.add_edge(out_flow, in_flow)
-                                        self.logger.debug('------3.init inflow %s implicitly depends on %s', in_flow, out_flow)
+                                        self.logger.debug('GEN ------3.init inflow %s implicitly depends on %s', in_flow, out_flow)
 
                             else: # for inflow with sanity, we need to make all outflows dependent on it, so that they are calculated before constraining the outflows
                                 for out_flow in out_flows:
                                     # dg_init
                                     if (in_flow, out_flow) not in dg_init.edges: # avoid overwriting
                                         dg_init.add_edge(in_flow, out_flow)
-                                        self.logger.debug('------4.init outflow %s implicitly depends on %s', out_flow, in_flow)
+                                        self.logger.debug('GEN ------4.init outflow %s implicitly depends on %s', out_flow, in_flow)
                     
                     else: # no inflow, just determine the prioritisation of outflows
                         pass
@@ -2578,12 +2561,12 @@ class sdmodel(object):
                 
                 else: # no outflows
                     if 'in' in in_out_flows: # no outflows, just inflows
-                        self.logger.debug('--5.init no outflow')
+                        self.logger.debug('GEN --5.init no outflow')
                         in_flows = in_out_flows['in']
                         for in_flow in in_flows:
                             if in_flow in dg_init:
                                 nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
-                                self.logger.debug("--6.init consider inflow %s", in_flow)
+                                self.logger.debug("GEN --6.init consider inflow %s", in_flow)
 
         # Conveyor: add dependency of leakflow on the conveyor
         for conveyor_name, conveyor in self.conveyors.items():
@@ -2618,13 +2601,12 @@ class sdmodel(object):
         # check each non-negative stock for dependencies of inflow and outflow and add to dg_iter
         for stock, in_out_flows in self.stock_flows.items():
             if self.stock_non_negative[stock] is True:
-                self.logger.debug('0.iter for non negative stock %s', stock)
-                self.stock_non_negative_temp_value[stock] = None
+                self.logger.debug('GEN 0.iter for non negative stock %s', stock)
                 if 'out' in in_out_flows:
                     out_flows = in_out_flows['out']
 
                     for out_flow in out_flows:
-                        self.logger.debug('--1.iter for outflow %s', out_flow)
+                        self.logger.debug('GEN --1.iter for outflow %s', out_flow)
                         nx.set_node_attributes(dg_iter, {out_flow: {'out_from_non_negative_stock': stock}}) # this attribute triggers the constrains in runtime
 
                     if 'in' in in_out_flows:
@@ -2633,7 +2615,7 @@ class sdmodel(object):
                         in_flow_sanities = {}
 
                         for in_flow in in_flows:
-                            self.logger.debug('----2.iter for inflow %s', in_flow)
+                            self.logger.debug('GEN ----2.iter for inflow %s', in_flow)
                             in_flow_sanities[in_flow] = True
                             for out_flow in out_flows:
                                 if nx.has_path(dg_iter, out_flow, in_flow):
@@ -2650,13 +2632,13 @@ class sdmodel(object):
                                 for out_flow in out_flows:
                                     if (out_flow, in_flow) not in dg_iter.edges: # avoid overwriting
                                         dg_iter.add_edge(out_flow, in_flow)
-                                        self.logger.debug('------3.iter inflow %s implicitly depends on %s', in_flow, out_flow)
+                                        self.logger.debug('GEN ------3.iter inflow %s implicitly depends on %s', in_flow, out_flow)
 
                             else: # for inflow with sanity, we need to make all outflows dependent on it, so that they are calculated before constraining the outflows
                                 for out_flow in out_flows:
                                     if (in_flow, out_flow) not in dg_iter.edges: # avoid overwriting
                                         dg_iter.add_edge(in_flow, out_flow)
-                                        self.logger.debug('------4.iter outflow %s implicitly depends on %s', out_flow, in_flow)
+                                        self.logger.debug('GEN ------4.iter outflow %s implicitly depends on %s', out_flow, in_flow)
 
                     
                     else: # no inflow, just determine the prioritisation of outflows
@@ -2682,18 +2664,18 @@ class sdmodel(object):
                 
                 else: # no outflows
                     if 'in' in in_out_flows: # no outflows, just inflows
-                        self.logger.debug('--5.iter no outflow')
+                        self.logger.debug('GEN --5.iter no outflow')
                         in_flows = in_out_flows['in']
                         for in_flow in in_flows:
                             nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
-                            self.logger.debug("--6.iter consider inflow %s", in_flow)
+                            self.logger.debug("GEN --6.iter consider inflow %s", in_flow)
 
-        self.logger.debug('Dependent graph for init:')
-        self.logger.debug('nodes %s', dg_init.nodes(data=True))
-        self.logger.debug('edges %s', dg_init.edges(data=True))
-        self.logger.debug('Dependent graph for iter:')
-        self.logger.debug('nodes %s', dg_iter.nodes(data=True))
-        self.logger.debug('edges %s', dg_iter.edges(data=True))
+        self.logger.debug('GEN Dependent graph for init:')
+        self.logger.debug('GEN --nodes %s', dg_init.nodes(data=True))
+        self.logger.debug('GEN --edges %s', dg_init.edges(data=True))
+        self.logger.debug('GEN Dependent graph for iter:')
+        self.logger.debug('GEN --nodes %s', dg_iter.nodes(data=True))
+        self.logger.debug('GEN --edges %s', dg_iter.edges(data=True))
 
         if not show:
             return (dg_init, dg_iter)
