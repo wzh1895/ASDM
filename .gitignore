@@ -165,18 +165,13 @@ cython_debug/
 .DS_Store
 
 # Customised
-built_in_test_models/
-data/
-diagrams/
-ignored/
-images/
-notes/
-presentations/
-models/
-tests/
+resources/
 
 # IDE
 .vscode/
+
+# Cross-platform
+clear.bat
 
 # Data files
 *.csv
