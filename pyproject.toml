@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "asdm"
-version = "0.3.0"
+version = "0.4.0"
 description = "A Python package for System Dynamics Modeling"
 readme = {file = "README.md", content-type = "text/markdown"}
 license = {text = "MIT"}
@@ -25,8 +25,22 @@ dependencies = [
     "networkx",
     "lxml",
     "beautifulsoup4",
-    "scipy"
+    "scipy",
+    "Flask",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"asdm.simulator" = [
+    "templates/*.html",
+    "static/js/*.js",
+    "static/css/*.css"
+]
+
+[project.scripts]
+"asdm.simulator" = "asdm.simulator.app:main"
 
 [project.urls]
 Homepage = "https://github.com/wzh1895/ASDM"

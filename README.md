@@ -2,81 +2,137 @@
 
 ## **Agile System Dynamics Modelling**
 
-ASDM is a python library that enables its users to create and simulate System Dynamics (SD) models. It can also simulate SD models saved in the XMILE format, including advanced features such as arrays and conveyors. The support is being continuously improved.
+ASDM is a Python library that enables users to create and simulate System Dynamics (SD) models. It also supports SD models saved in the XMILE format, including advanced features such as arrays and conveyors. The support is being continuously improved.
 
-In the library:
+### **ASDM's Contribution & Impact**
 
-- `asdm/asdm.py` consists of the main functionalities, including the lexer, parser, and interpreter.
+Check out this presentation: [Project Care Home Demand](https://www.youtube.com/watch?v=tP1X38h8Ks4), created by **Sally Thompson**, Senior Healthcare Analyst at *The Strategy Unit* (part of NHS Midlands and Lancashire CSU). The presentation highlights the role of ASDM in developing an [**online SD model-based simulator**](https://connect.strategyunitwm.nhs.uk/care-home-demand/), specifically [here](https://www.youtube.com/watch?v=tP1X38h8Ks4&t=492s).
 
-- `asdm/utilities.py` provies a data visualisation tool.
 
-- `asdm/Inference` consists of tools for model calibration.
+### **Library Structure**
+- `asdm/asdm.py` contains the main functionalities, including the lexer, parser, and interpreter.
+- `asdm/utilities.py` provides a data visualisation tool.
+- `asdm/inference/` consists of tools for model calibration.
+- `asdm/simulator/` provides a **web-based simulation interface** for easy model execution, result downloading, and visualisation.
 
-## Installation
-### Install from PyPi
-
-```
+---
+## **Installation**
+### **Install from PyPi**
+```sh
 pip install asdm
 ```
 ASDM and its required dependencies will be automatically installed.
 
-### Import
+---
 
-At any path, execute the following code in the interactive Python environment or as a part of a script:
-
-```
+## **Basic Usage**
+To create a new SD model using ASDM:
+```python
 from asdm import sdmodel
+
+model = sdmodel()
+```
+`sdmodel` is the core class for System Dynamics models.
+
+Alternatively, you can load an SD model saved in XMILE format, including `.stmx` models:
+```python
+model = sdmodel(from_xmile='example_model.stmx')
 ```
 
-'sdmodel' is the class for System Dynamics models.
+Run the simulation:
+```python
+model.simulate()
+```
 
-## Functionalities
+Export simulation results:
+- As a **pandas DataFrame**:
+  ```python
+  result = model.export_simulation_result(format='df')
+  ```
+- As a **Python dictionary**:
+  ```python
+  result = model.export_simulation_result(format='dict')
+  ```
 
-Please refer to [Documentation](Documentation.md) for the commonly used functions.
+---
 
+## **Web-Based Simulation Interface**
+ASDM now includes a **web-based simulation interface** that allows users to:
+- Upload `.stmx` or `.xmile` models for simulation.  
+- Download simulation results as a **CSV file**.  
+- Select variables and visualise them on an **interactive chart**.  
 
-## Tutorial Jupyter Notebooks
+![ASDM Simulator](media/asdm_simulator.png)
 
-We also use Jupyter Notebooks to provide demoes of ASDM's functionalities.
+### **Quick Start**
+Run the ASDM web simulator with:
+```sh
+asdm.simulator
+```
+By default, this starts a local server at `http://127.0.0.1:8080`. If port 8080 is unavailable, specify a different port, for example:
+```sh
+asdm.simulator --port 8081
+```
+You can also bind to all network interfaces to allow access from others:
+```sh
+asdm.simulator --host 0.0.0.0
+```
+Once started, the browser will automatically open the simulator page.
 
+### **Features**
+- **Drag-and-drop file upload**: Upload your `.stmx` or `.xmile` model file.
+- **Simulation results in a table**: Automatically display after the model runs.
+- **CSV download**: You can download simulation results as a CSV file.
+- **Interactive charting**:
+  - Select variables from a dropdown list.
+  - Automatically detects the **time column name** (e.g., "Years", "Months", etc.).
+  - Uses **Plotly.js** to generate interactive line charts.
 
-[SD Modelling](demo/Demo_SD_modelling.ipynb)
+---
 
-- Creating an SD model from scratch
-  - Adding stocks, flows, auxiliaries
-  - Support for nonlinear functions (MIN, MAX, etc.)
-  - Support for stochastic functions (random binomial trial, etc.)
-- Running simulations
-- Exporting and examing simulation outcomes
-- Displaying simulation outcomes as graph
+## **Functionalities**
+Please refer to [Documentation](Documentation.md) for detailed function descriptions.
 
-[Support for .stmx models](demo/Demo_stmx_support.ipynb)
+---
 
-- Load and simulate .stmx models
-- Support for arrays
-- Simulate .stmx models with modified equations
+## **Tutorial Jupyter Notebooks**
+Jupyter Notebooks demonstrate ASDM's functionalities:
 
-We will add more tutorial notebooks. 
+### **[SD Modelling](demo/Demo_SD_modelling.ipynb)**
+- Creating an SD model from scratch:
+  - Adding **stocks, flows, auxiliaries**.
+  - Support for **nonlinear** and **stochastic** functions.
+- Running simulations.
+- Exporting and examining simulation results.
+- Visualising results.
 
-You are welcomed to share your own tutorial notebooks through a `pull request`. When sharing notebooks, please make sure it does not contain sensitive data.
+### **[Support for .stmx Models](demo/Demo_stmx_support.ipynb)**
+- Load and simulate `.stmx` models.
+- Support for **arrays**.
+- Modify equations and re-run simulations.
 
-## Licence
+More tutorial notebooks will be added.  
+Feel free to contribute your own via **pull requests**—please ensure they do not contain sensitive data.
 
-ASDM is made public under the MIT licence.
+---
 
-## Contributors
-**Wang Zhao** `main author`
+## **Licence**
+ASDM is open-source and released under the **MIT licence**.
 
-PhD candidate & research assistant at University of Strathclyde, UK
+---
 
-Wang has given multiple talks on ASDM at different gatherings and conferences of modellers, operational researchers, and healthcare experts. This is the YouTube link to [one of the talks](https://www.youtube.com/watch?v=I_0YpIKc3yI&t=2321s).
+## **Contributors**
+### **Wang Zhao** (`main author`)
+- Postgraduate research student & research assistant at **University of Strathclyde, UK**.
+- Software engineer at **Newcastle Marine Services, UK**.
+- Speaker at multiple conferences on SD modelling.
+- Contact: [wang.zhao@strath.ac.uk](mailto:wang.zhao@strath.ac.uk); [wzh1895@outlook.com](mailto:wzh1895@outlook.com)
+- Conference talk: [Watch Here on YouTube](https://www.youtube.com/watch?v=I_0YpIKc3yI&t=2321s).
 
-Wang can be reached at <wang.zhao@strath.ac.uk>.
+### **Matt Stammers** (`contributor`)
+- Consultant Gastroenterologist & open-source developer at **University Hospital Southampton, UK**.
+- Developed **Streamlit-powered web apps** using ASDM for healthcare modelling.
+- Part of the **Really Useful Models** initiative: [Learn More](https://opendatasaveslives.org/news/2022-01-05-really-useful-models).
+- GitHub: [Matt's Homepage](https://github.com/MattStammers).
 
-**Matt Stammers** `contributor`
-
-Consultant Gastroenterologist & open-source software developer at University Hospital Southampton, UK
-
-Matt created a webapp using streamlit to allow users to interact with a simulation dashboard in their web browsers or on smartphones, such as in this [demo](https://github.com/ReallyUsefulModels/Donanumab_Model). The simulation of the SD model in the backend is powered by ASDM. This is a part of an initiative [Really Useful Models](https://opendatasaveslives.org/news/2022-01-05-really-useful-models).
-
-Matt's [GitHub Homepage](https://github.com/MattStammers)
+---
