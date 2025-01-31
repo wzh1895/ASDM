@@ -522,27 +522,37 @@ class Solver(object):
                     raise e
 
         def divide(a, b):
-            try:
-                return a / b
-            except TypeError as e:
-                if type(a) is dict and type(b) is dict:
-                    # self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a/b', a, b)
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] / b[k]
-                    return o
-                elif type(a) is dict and type(b) in [int, float, np.float64]:
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] / b
-                    return o
-                elif type(a) in [int, float, np.float64] and type(b) is dict:
-                    o = dict()
-                    for k in b:
-                        o[k] = a / b[k]
-                    return o
-                else:
-                    raise e
+            """ Safely divide a by b, handling scalars and dictionaries, with logging for division by zero. """
+            
+            def safe_div(x, y, key=None):
+                """ Helper function to safely divide x by y and log warnings if y is zero. """
+                if y == 0:
+                    msg = f"Warning: Divide by zero encountered in divide({x}, {y}), returning 0"
+                    if key is not None:
+                        msg += f" for subscript '{key}'"
+                    print(msg)
+                    return 0
+                return x / y
+
+            # Scalar / Scalar
+            if isinstance(a, (int, float, np.float64)) and isinstance(b, (int, float, np.float64)):
+                return safe_div(a, b)
+
+            # Dictionary / Dictionary
+            if isinstance(a, dict) and isinstance(b, dict):
+                return {k: safe_div(a[k], b.get(k, 1), k) for k in a}
+
+            # Dictionary / Scalar
+            if isinstance(a, dict) and isinstance(b, (int, float, np.float64)):
+                return {k: safe_div(a[k], b, k) for k in a}
+
+            # Scalar / Dictionary
+            if isinstance(a, (int, float, np.float64)) and isinstance(b, dict):
+                return {k: safe_div(a, b[k], k) for k in b}
+
+            # Unsupported types
+            self.logger.error(f"TypeError in divide(): Unsupported types {type(a)} and {type(b)}")
+            raise TypeError(f"Unsupported types for division: {type(a)}, {type(b)}")
         
         def floor_divide(a, b):
             try:
