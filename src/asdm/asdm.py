@@ -2018,7 +2018,11 @@ class sdmodel(object):
     def update_stocks(self):
         for stock, in_out_flows in self.stock_flows.items():
             if stock not in self.conveyors: # coneyors are updated separately
-                self.logger.debug('updating stock {}'.format(stock))
+                if stock in self.stock_shadow_values:
+                    self.logger.debug('updating stock {} shadow_value is {}'.format(stock, self.stock_shadow_values[stock]))
+                else:
+                    self.logger.debug('updating stock {} shadow_value not exist, name_space value is {}'.format(stock, self.name_space[stock]))
+                
                 if len(in_out_flows) != 0:
                     for direction, flows in in_out_flows.items():
                         if direction == 'in':
@@ -2035,7 +2039,7 @@ class sdmodel(object):
                                             self.stock_shadow_values[stock][sub] += self.name_space[flow] * self.sim_specs['dt']
                                 else:
                                     self.stock_shadow_values[stock] += self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug('--stock_shadow_value {} bcomes {}'.format(stock, self.stock_shadow_values[stock]))
+                                self.logger.debug('----stock_shadow_value {} bcomes {}'.format(stock, self.stock_shadow_values[stock]))
                         elif direction == 'out':
                             for flow in flows:
                                 self.logger.debug('--outflow {} = {}'.format(flow, self.name_space[flow]))
@@ -2050,7 +2054,7 @@ class sdmodel(object):
                                             self.stock_shadow_values[stock][sub] -= self.name_space[flow] * self.sim_specs['dt']
                                 else:
                                     self.stock_shadow_values[stock] -= self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug('--stock_shadow_value {} becomes {}'.format(stock, self.stock_shadow_values[stock]))
+                                self.logger.debug('----stock_shadow_value {} becomes {}'.format(stock, self.stock_shadow_values[stock]))
                 else: # there are obsolete stocks that are not connected to any flows
                     self.logger.debug('stock {} is not connected to any flows'.format(stock))
                     self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
