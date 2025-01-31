@@ -1,0 +1,60 @@
+/* main.css */
+
+/* Basic styling for the body */
+body {
+  font-family: Arial, sans-serif;
+  margin: 2rem;
+}
+
+/* Bold "asdm" */
+.asdm {
+  font-weight: bold;
+}
+
+/* "simulator" in red */
+.simulator {
+  color: red;
+}
+
+/* Drag-and-drop area styling */
+#drop-area {
+  width: 100%;
+  height: 200px;
+  border: 2px dashed #ccc;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 1rem;
+  text-align: center; /* centre the text inside the area */
+}
+
+/* If you want a highlight effect on dragover */
+#drop-area.highlight {
+  border-color: purple;
+}
+
+/* Table styling */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 2rem;
+}
+th, td {
+  border: 1px solid #ccc;
+  padding: 8px;
+}
+th {
+  background-color: #f2f2f2;
+}
+
+/* Optional: styling for details summary */
+details summary {
+  font-weight: bold;
+  cursor: pointer;
+  margin: 0.5em 0;
+}
+
+#varSelect {
+  margin: 0.5em 0;
+  font-size: 1em;
+}
