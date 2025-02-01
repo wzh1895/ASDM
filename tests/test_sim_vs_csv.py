@@ -10,7 +10,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-spec = importlib.util.spec_from_file_location("asdm", "src\\asdm\\asdm.py")
+spec = importlib.util.spec_from_file_location("asdm", Path('src/asdm/asdm.py'))
 asdm = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(asdm)
 sys.modules['asdm'] = asdm

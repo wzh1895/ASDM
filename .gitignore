@@ -166,6 +166,7 @@ cython_debug/
 
 # Customised
 resources/
+debug_tests/
 
 # IDE
 .vscode/

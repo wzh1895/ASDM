@@ -522,27 +522,37 @@ class Solver(object):
                     raise e
 
         def divide(a, b):
-            try:
-                return a / b
-            except TypeError as e:
-                if type(a) is dict and type(b) is dict:
-                    # self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a/b', a, b)
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] / b[k]
-                    return o
-                elif type(a) is dict and type(b) in [int, float, np.float64]:
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] / b
-                    return o
-                elif type(a) in [int, float, np.float64] and type(b) is dict:
-                    o = dict()
-                    for k in b:
-                        o[k] = a / b[k]
-                    return o
-                else:
-                    raise e
+            """ Safely divide a by b, handling scalars and dictionaries, with logging for division by zero. """
+            
+            def safe_div(x, y, key=None):
+                """ Helper function to safely divide x by y and log warnings if y is zero. """
+                if y == 0:
+                    msg = f"Warning: Divide by zero encountered in divide({x}, {y}), returning 0"
+                    if key is not None:
+                        msg += f" for subscript '{key}'"
+                    print(msg)
+                    return 0
+                return x / y
+
+            # Scalar / Scalar
+            if isinstance(a, (int, float, np.float64)) and isinstance(b, (int, float, np.float64)):
+                return safe_div(a, b)
+
+            # Dictionary / Dictionary
+            if isinstance(a, dict) and isinstance(b, dict):
+                return {k: safe_div(a[k], b.get(k, 1), k) for k in a}
+
+            # Dictionary / Scalar
+            if isinstance(a, dict) and isinstance(b, (int, float, np.float64)):
+                return {k: safe_div(a[k], b, k) for k in a}
+
+            # Scalar / Dictionary
+            if isinstance(a, (int, float, np.float64)) and isinstance(b, dict):
+                return {k: safe_div(a, b[k], k) for k in b}
+
+            # Unsupported types
+            self.logger.error(f"TypeError in divide(): Unsupported types {type(a)} and {type(b)}")
+            raise TypeError(f"Unsupported types for division: {type(a)}, {type(b)}")
         
         def floor_divide(a, b):
             try:
@@ -2018,7 +2028,11 @@ class sdmodel(object):
     def update_stocks(self):
         for stock, in_out_flows in self.stock_flows.items():
             if stock not in self.conveyors: # coneyors are updated separately
-                self.logger.debug('updating stock {}'.format(stock))
+                if stock in self.stock_shadow_values:
+                    self.logger.debug('updating stock {} shadow_value is {}'.format(stock, self.stock_shadow_values[stock]))
+                else:
+                    self.logger.debug('updating stock {} shadow_value not exist, name_space value is {}'.format(stock, self.name_space[stock]))
+                
                 if len(in_out_flows) != 0:
                     for direction, flows in in_out_flows.items():
                         if direction == 'in':
@@ -2035,7 +2049,7 @@ class sdmodel(object):
                                             self.stock_shadow_values[stock][sub] += self.name_space[flow] * self.sim_specs['dt']
                                 else:
                                     self.stock_shadow_values[stock] += self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug('--stock_shadow_value {} bcomes {}'.format(stock, self.stock_shadow_values[stock]))
+                                self.logger.debug('----stock_shadow_value {} bcomes {}'.format(stock, self.stock_shadow_values[stock]))
                         elif direction == 'out':
                             for flow in flows:
                                 self.logger.debug('--outflow {} = {}'.format(flow, self.name_space[flow]))
@@ -2050,7 +2064,7 @@ class sdmodel(object):
                                             self.stock_shadow_values[stock][sub] -= self.name_space[flow] * self.sim_specs['dt']
                                 else:
                                     self.stock_shadow_values[stock] -= self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug('--stock_shadow_value {} becomes {}'.format(stock, self.stock_shadow_values[stock]))
+                                self.logger.debug('----stock_shadow_value {} becomes {}'.format(stock, self.stock_shadow_values[stock]))
                 else: # there are obsolete stocks that are not connected to any flows
                     self.logger.debug('stock {} is not connected to any flows'.format(stock))
                     self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
