@@ -47,6 +47,12 @@
     </div>
   </details>
 
+  <!-- Error Logs Section (Hidden by Default) -->
+  <details id="error-section" style="display:none; margin-top: 1rem;">
+    <summary><strong>Error Logs</strong></summary>
+    <pre id="error-content" style="background: #fee; color: red; padding: 10px; border-radius: 5px;"></pre>
+  </details>
+
   <!-- Link to your external JavaScript file in the static folder -->
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
