@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>asdm.simulator</title>
+  <!-- Link to external CSS in the static folder -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <!-- Import Plotly from a CDN -->
+  <script src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
+</head>
+<body>
+  <!-- Title with styling classes for "asdm" and "simulator" -->
+  <h1>
+    <span class="asdm">asdm</span>.<span class="simulator">simulator</span>
+  </h1>
+
+  <!-- Drag & drop area for file upload -->
+  <div id="drop-area">
+    <p>Drag & drop your model file here, or click to choose a file</p>
+  </div>
+  <input type="file" id="fileElem" style="display:none" accept=".stmx, .xmile"/>
+
+  <!-- 1) Simulation Results - Hidden by default -->
+  <details id="results" style="display:none;">
+    <summary>Simulation Results</summary>
+    <div id="results-content"></div>
+  </details>
+
+  <!-- 2) Download foldable section (open by default) -->
+  <details id="download-section" style="display:none;">
+    <summary>Download Results</summary>
+    <div>
+      <a id="download-link" href="#" download>Download CSV</a>
+    </div>
+  </details>
+
+  <!-- 3) Visualise Results -->
+  <details id="chart-section" style="display:none;">
+    <summary>Visualise Results</summary>
+    <div>
+      <!-- A dropdown to select which variable to plot -->
+      <label for="varSelect">Select a variable:</label>
+      <select id="varSelect"></select>
+
+      <!-- The container for the Plotly chart -->
+      <div id="plot" style="width: 100%; height: 400px;"></div>
+    </div>
+  </details>
+
+  <!-- Link to your external JavaScript file in the static folder -->
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
