@@ -58,3 +58,17 @@ details summary {
   margin: 0.5em 0;
   font-size: 1em;
 }
+
+footer {
+  text-align: center;
+  margin-top: 2rem;
+  font-size: 0.9em;
+  color: #555;
+}
+footer a {
+  color: #007bff;
+  text-decoration: none;
+}
+footer a:hover {
+  text-decoration: underline;
+}
