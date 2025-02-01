@@ -1,6 +1,7 @@
 # src/asdm/simulator/app.py
 
 import os
+import socket
 import tempfile
 import webbrowser
 import threading
@@ -8,6 +9,7 @@ import logging
 import argparse
 import uuid
 import traceback
+import multiprocessing
 from flask import Flask, request, jsonify, make_response, render_template
 from werkzeug.utils import secure_filename
 from concurrent.futures import ProcessPoolExecutor
@@ -17,7 +19,7 @@ from asdm import sdmodel
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(asctime)s - %(message)s')
 
-executor = ProcessPoolExecutor(max_workers=40)
+executor = ProcessPoolExecutor(max_workers=multiprocessing.cpu_count())
 
 # A simple dictionary mapping a unique ID -> CSV content
 DOWNLOAD_CACHE = {}
@@ -117,6 +119,11 @@ def download_csv(download_id):
 def open_browser(host, port):
     webbrowser.open_new(f"http://{host}:{port}")
 
+def is_port_in_use(port):
+    """Check if a port is in use (Cross-platform)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('127.0.0.1', port)) == 0
+
 def main():
     parser = argparse.ArgumentParser(description="Run the ASDM simulator web server.")
     parser.add_argument("--host", default="127.0.0.1",
@@ -125,6 +132,16 @@ def main():
                         help="Port to run the server on (default: 8080)")
     args = parser.parse_args()
 
-    logging.info(f"Starting ASDM simulator on {args.host}:{args.port} ...")
-    threading.Timer(1, open_browser, [args.host, args.port]).start()
-    app.run(debug=False, host=args.host, port=args.port)
+    host, port = args.host, args.port
+
+    # Check if the server is already running
+    if is_port_in_use(port):
+        print(f"ASDM simulator is already running on port {port}. Exiting.")
+        return
+
+    logging.basicConfig(level=logging.INFO)
+    logging.info(f"Starting ASDM simulator on {host}:{port} ...")
+
+    threading.Timer(1, open_browser, [host, port]).start()
+
+    app.run(debug=False, host=host, port=port)
