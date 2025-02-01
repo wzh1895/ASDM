@@ -67,50 +67,58 @@ function handleFiles(files) {
     method: 'POST',
     body: formData
   })
-  .then(res => {
-    // Check if upload succeeded
-    return res.json();
-  })
-  fetch('/simulate', {
-    method: 'POST',
-    body: formData
-  })
   .then(res => res.json())
   .then(data => {
     console.log("Server response:", data);
     
+    // Handle errors
     if (data.error) {
       resultsContent.innerHTML = `<p style="color:red;">Error: ${data.error}</p>`;
+
+      // Show full error logs (call stack)
+      let errorLog = data.error_log ? `<pre>${data.error_log}</pre>` : "No additional error details.";
+      document.getElementById('error-content').innerHTML = errorLog; // Use innerHTML to preserve formatting
+      document.getElementById('error-section').style.display = 'block';
+      document.getElementById('error-section').open = true;  // Unfold error section
       return;
     }
-  
+
     // Store the results globally
     globalRecords = data.data || [];
     globalTimeCol = data.time_col || "Time"; 
-  
+
     // 1) Show the results section
     if (globalRecords.length > 0) {
       document.getElementById('results').style.display = 'block';
       displayResults(globalRecords);
     }
-  
+
     // 2) Show the download section if there's a CSV file
     if (data?.download_url) {
       downloadLink.href = data.download_url;
       downloadSection.style.display = 'block';
       downloadSection.open = true;
     }
-  
+
     // 3) Show the visualization section
     if (globalRecords.length > 0) {
       setupChartOptions(globalRecords, globalTimeCol);
       chartSection.style.display = 'block';
       chartSection.open = true;
     }
+
+    // Hide error logs if the previous run had errors
+    document.getElementById('error-section').style.display = 'none';
   })
   .catch(err => {
     console.error(err);
     resultsContent.innerHTML = '<p style="color:red;">Error occurred.</p>';
+
+    // Show full error message for client-side issues
+    let errorLog = err.stack ? `<pre>${err.stack}</pre>` : "Unexpected error occurred.";
+    document.getElementById('error-content').innerHTML = errorLog;
+    document.getElementById('error-section').style.display = 'block';
+    document.getElementById('error-section').open = true;  // Unfold error section
   });
 }
 
