@@ -7,6 +7,7 @@ import threading
 import logging
 import argparse
 import uuid
+import traceback
 from flask import Flask, request, jsonify, make_response, render_template
 from werkzeug.utils import secure_filename
 from concurrent.futures import ProcessPoolExecutor
@@ -34,15 +35,16 @@ def simulate_model():
     - Receives an uploaded file
     - Uses a process pool to run the simulation
     - Returns the JSON result + a link to download CSV
+    - Includes an error log section for debugging
     """
     if 'model_file' not in request.files:
         logging.error("No file part in request.")
-        return jsonify({'error': 'No file found'}), 400
+        return jsonify({'error': 'No file found', 'error_log': 'No file uploaded'}), 400
 
     file = request.files['model_file']
     if file.filename == '':
         logging.error("Filename is empty.")
-        return jsonify({'error': 'Empty filename'}), 400
+        return jsonify({'error': 'Empty filename', 'error_log': 'Uploaded file has no name'}), 400
 
     filename = secure_filename(file.filename)
     logging.info(f"Received file: {filename}")
@@ -60,9 +62,11 @@ def simulate_model():
             logging.debug("Starting simulation in a separate process...")
             df_records, csv_data, time_col = future.result()  # df_records is the JSON-friendly data, csv_data is the CSV, time_col is the time column name
             logging.debug("Simulation completed successfully.")
+            error_log = ""  # No errors if successful
         except Exception as e:
             logging.exception("Error during simulation:")
-            return jsonify({'error': str(e)}), 500
+            error_log = traceback.format_exc()  # Capture full traceback
+            return jsonify({'error': str(e), 'error_log': error_log}), 500
 
         # Store the CSV data in memory with a unique ID
         download_id = str(uuid.uuid4())
@@ -71,7 +75,8 @@ def simulate_model():
         return jsonify({
             "data": df_records,
             "time_col": time_col,
-            "download_url": f"/download_csv/{download_id}"
+            "download_url": f"/download_csv/{download_id}",
+            "error_log": error_log  # Include error logs even if empty
         })
 
 def run_simulation_and_csv(filepath):
