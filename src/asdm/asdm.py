@@ -101,6 +101,7 @@ class Parser:
             'SUM': r'SUM(?=\()',
             'PULSE': r'PULSE(?=\()',
             'INT': r'INT(?=\()',
+            'LOG10': r'LOG10(?=\()',
         }
 
         self.names = {
@@ -158,7 +159,7 @@ class Parser:
         
         ast = self.parse_statement()
         if self.current_index != len(self.tokens):
-            raise ValueError("Unexpected end of parsing")
+            raise ValueError("Unexpected end of parsing of expression {} at index {} of tokens {}".format(expression, self.current_index, self.tokens))
         self.logger.debug("Completed parse")
         self.logger.debug(f"AST: {ast}")
         
@@ -647,6 +648,9 @@ class Solver(object):
             s = stats.binom.rvs(int(n), p, size=1)[0]
             return float(s) # TODO: something is wrong here - the dimension of s goes high like [[[[30]]]] if not float()ed.
         
+        def log10(a):
+            return np.log10(a)
+        
         ### Function mapping ###
 
         self.built_in_functions = {
@@ -673,6 +677,7 @@ class Solver(object):
             'PULSE':    pulse,
             'EXP':      exp,
             'INT':      integer,
+            'LOG10':    log10,
         }
 
         self.time_related_functions = [
