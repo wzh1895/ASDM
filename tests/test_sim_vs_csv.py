@@ -37,6 +37,7 @@ for file in test_batch_1.glob('*.stmx'):
 # Add more pairs from test_2
 params.extend([
     (test_batch_2 / 'IntegratedNewModel20250107.stmx', test_batch_2 / 'IntegratedNewModel20250107.csv'),
+    (test_batch_2 / 'World3.stmx', test_batch_2 / 'World3.csv'),
 ])
 
 def id_func(param):
