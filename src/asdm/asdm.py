@@ -2451,6 +2451,10 @@ class sdmodel(object):
             return graph
 
     def generate_cld(self, vars=None, show=False, loop=True):
+        # Make sure the model equations are parsed
+        if self.state == 'loaded':
+            self.parse()
+
         if vars is None:
             vars = list(self.flow_equations.keys())
         elif type(vars) is str:
@@ -2488,7 +2492,7 @@ class sdmodel(object):
                 )
             plt.show()
 
-    def generate_dependent_graph(self, show=False):
+    def generate_full_dependent_graph(self, show=False):
         stocks = list(self.stock_equations.keys())
         flows = list(self.flow_equations.keys())
 
@@ -2724,6 +2728,6 @@ class sdmodel(object):
             return (dg_init, dg_iter)
     
     def generate_ordered_vars(self):
-        self.dg_init, self.dg_iter = self.generate_dependent_graph()
+        self.dg_init, self.dg_iter = self.generate_full_dependent_graph()
         self.ordered_vars_init = list(nx.topological_sort(self.dg_init))
         self.ordered_vars_iter = list(nx.topological_sort(self.dg_iter))
