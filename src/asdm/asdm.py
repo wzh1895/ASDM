@@ -2335,7 +2335,11 @@ class sdmodel(object):
         else:
             result= list()
             for time, slice in self.time_slice.items():
-                result.append(slice[name][subscript])
+                try:
+                    result.append(slice[name][subscript])
+                except KeyError as e:
+                    print('Subscript {} not found for variable {}; available subscripts: {}'.format(subscript, name, list(slice[name].keys())))
+                    raise e
             return result
             
     def export_simulation_result(self, flatten=False, format='dict', to_csv=False):
