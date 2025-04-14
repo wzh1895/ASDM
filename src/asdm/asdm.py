@@ -2101,6 +2101,10 @@ class sdmodel(object):
             dt = self.sim_specs['dt']
         iterations = int(time/dt)
 
+        # TODO: state code below is not running this on first sim. What are the possible states when calling simulate? are there instances when we wouldn't want to re-parse the equations?
+        self.parse()
+        self.generate_ordered_vars()
+
         if self.state in ['simulated', 'changed']:
             if self.state == 'changed':
                 self.logger.debug('Equation changed after last simulation, re-parsing.')
