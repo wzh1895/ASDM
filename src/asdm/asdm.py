@@ -1560,6 +1560,8 @@ class sdmodel(object):
             self.flow_stocks[out_flow]['from'] = name
         
         self.stocks[name] = Stock()
+
+        self.state = 'loaded'
     
     def add_flow(self, name, equation, leak=None, non_negative=False):
         if type(equation) in [int, float, np.int_, np.float64]:
@@ -1568,11 +1570,15 @@ class sdmodel(object):
         if leak:
             self.leak_conveyors[name] = None # to be filled when parsing the conveyor
         self.flow_equations[name] = equation
+
+        self.state = 'loaded'
     
     def add_aux(self, name, equation):
         if type(equation) in [int, float, np.int_, np.float64]:
             equation = str(equation)
         self.aux_equations[name] = equation
+
+        self.state = 'loaded'
 
     def format_new_equation(self, new_equation):
         if type(new_equation) is str:
@@ -2120,7 +2126,6 @@ class sdmodel(object):
             # self.name_space['TIME'] = self.sim_specs['current_time']
             # self.name_space['DT'] = self.sim_specs['dt']
 
-            self.state = 'initialized'
             self.logger.debug('Continuing simulation from time {} for {} iteration'.format(self.sim_specs['current_time'], iterations))
         
         elif self.state == 'loaded':
@@ -2146,8 +2151,6 @@ class sdmodel(object):
             # The 2nd iteration is to calculate the flows (and auxiliaries) based on the updated stocks (2nd row of outcome) and update the stocks.
             # The updated stocks (in name_space) should be part of the 3rd row of outcome, but they are not saved (bus still in name_space) as we only simulate 1 DT.
             iterations += 1 
-
-            self.state = 'initialized'
 
         # Iteration Phase
         self.logger.debug("")
