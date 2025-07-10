@@ -1329,8 +1329,8 @@ class sdmodel(object):
             from pathlib import Path
             xmile_path = Path(from_xmile)
             if xmile_path.exists():
-                with open(xmile_path) as f:
-                    xmile_content = f.read().encode()
+                with open(xmile_path, encoding='utf-8') as f:
+                    xmile_content = f.read()
                     f.close()
                 from bs4 import BeautifulSoup
 
