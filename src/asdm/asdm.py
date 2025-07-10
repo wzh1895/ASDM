@@ -2130,7 +2130,7 @@ class sdmodel(object):
         
         elif self.state == 'loaded':
             # parse equations and order execution (compile)
-            self.parse() # set state to 'parsed's
+            self.parse() # set state to 'parsed'
             self.generate_ordered_vars()
             # Initialization Phase
             self.logger.debug("")
