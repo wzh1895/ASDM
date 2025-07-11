@@ -1720,18 +1720,51 @@ class sdmodel(object):
             raise Exception('Unsupported equation {} type {}'.format(equation, type(equation)))
     
     def batch_parse(self, equations, parsed_equations):
+        # Debug logic: collect all equations that cannot be parsed and log them, then end the parsing process.
+        unparsed_equations = list()
+        counter_all_equations = 0
+        counter_unparsed_variables = 0
+        counter_all_variables = 0
+
         for var, equation in equations.items():
             # self.logger.debug("Parsing: {}".format(var))
             # self.logger.debug("    Eqn: {}".format(equation))
             
             if type(equation) is dict:
+                un_parsed = False
                 parsed_equations[var] = dict()
                 for k, ks in equation.items():
-                    parsed_equations[var][k] = self.parse_equation(var=var, equation=ks)
-            
+                    try:
+                        parsed_equations[var][k] = self.parse_equation(var=var, equation=ks)
+                        counter_all_equations += 1
+                    except Exception as e:
+                        self.logger.error("Error parsing equation for variable {}: {}".format(var, e))
+                        unparsed_equations.append(((var, k), ks, e))
+                        counter_all_equations += 1
+                        un_parsed = True
+                if un_parsed:
+                    counter_unparsed_variables += 1
             else:
-                parsed_equations[var] = self.parse_equation(var=var, equation=equation)
-            
+                try:
+                    parsed_equations[var] = self.parse_equation(var=var, equation=equation)
+                    counter_all_equations += 1
+                except Exception as e:
+                    self.logger.error("Error parsing equation for variable {}: {}".format(var, e))
+                    unparsed_equations.append((var, equation, e))
+                    counter_all_equations += 1
+                    counter_unparsed_variables += 1
+            counter_all_variables += 1
+        
+        if len(unparsed_equations) > 0:
+            self.logger.error(f"The following {len(unparsed_equations)} equations (out of {counter_all_equations}) could not be parsed:")
+            self.logger.error("")
+            for i in range(len(unparsed_equations)):
+                var, eqn, error = unparsed_equations[i]
+                self.logger.error("{} Variable: {}".format(i+1, var))
+                self.logger.error("{} Equation: {}".format(i+1, eqn))
+                self.logger.error("{} Error: {}".format(i+1, error))
+                self.logger.error("")
+            raise Exception(f"Parsing failed for {len(unparsed_equations)} equations out of {counter_all_equations} ({counter_unparsed_variables} variables out of {counter_all_variables}). See logs for details.")
 
     def parse(self):
         # string equation -> calculation tree
