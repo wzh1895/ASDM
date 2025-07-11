@@ -1356,7 +1356,7 @@ class sdmodel(object):
                 # read subscritps
                 try:
                     subscripts_root = BeautifulSoup(xmile_content, 'xml').find('dimensions')
-                    dimensions = subscripts_root.findAll('dim')
+                    dimensions = subscripts_root.find_all('dim')
 
                     dims = dict()
                     for dimension in dimensions:
@@ -1365,7 +1365,7 @@ class sdmodel(object):
                             size = dimension.get('size')
                             dims[name] = [str(i) for i in range(1, int(size)+1)]
                         except:
-                            elems = dimension.findAll('elem')
+                            elems = dimension.find_all('elem')
                             elem_names = list()
                             for elem in elems:
                                 elem_names.append(elem.get('name'))
@@ -1376,9 +1376,9 @@ class sdmodel(object):
                 
                 # read variables
                 variables_root = BeautifulSoup(xmile_content, 'xml').find('variables') # omit names in view
-                stocks = variables_root.findAll('stock')
-                flows = variables_root.findAll('flow')
-                auxiliaries = variables_root.findAll('aux')
+                stocks = variables_root.find_all('stock')
+                flows = variables_root.find_all('flow')
+                auxiliaries = variables_root.find_all('aux')
                 
                 # read graph functions
                 def read_graph_func(var):
@@ -1413,7 +1413,7 @@ class sdmodel(object):
                 def subscripted_equation(var):
                     if var.find('dimensions'):
                         self.var_dimensions[self.name_handler(var.get('name'))] = list()
-                        var_dimensions = var.find('dimensions').findAll('dim')
+                        var_dimensions = var.find('dimensions').find_all('dim')
                         # self.logger.debug('Found dimensions {}:'.format(var), var_dimensions)
 
                         var_dims = dict()
@@ -1423,7 +1423,7 @@ class sdmodel(object):
                             var_dims[dim_name] = dims[dim_name]
                         
                         var_subscripted_eqn = dict()
-                        var_elements = var.findAll('element')
+                        var_elements = var.find_all('element')
                         if len(var_elements) != 0:
                             for var_element in var_elements:
 
@@ -1490,8 +1490,8 @@ class sdmodel(object):
                     if stock.find('conveyor'):
                         is_conveyor = True
 
-                    inflows = stock.findAll('inflow')
-                    outflows = stock.findAll('outflow')
+                    inflows = stock.find_all('inflow')
+                    outflows = stock.find_all('outflow')
                     self.add_stock(
                         name, 
                         equation=subscripted_equation(stock), 
