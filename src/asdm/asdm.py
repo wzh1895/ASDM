@@ -221,6 +221,8 @@ class Parser:
         return ast_graph
     
     def parse_statement(self):
+        self.logger.debug("")
+        self.logger.debug('parse_statement   {}'.format(self.tokens[self.current_index:]))
         """Parse a statement. The statement could be an IF-THEN-ELSE statement or an expression."""
         if self.tokens[self.current_index][0] == 'CONIF':
             self.current_index += 1
