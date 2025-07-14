@@ -118,7 +118,7 @@ class Parser:
     def tokenise(self, s):
         tokens = []
         while len(s) > 0:
-            self.logger.debug(self.HEAD+'Tokenising: '+s+f' len: {len(s)}')
+            self.logger.debug('Tokenising: '+s+f' len: {len(s)}')
             for type_name, type_regex in (
                 self.numbers | \
                 self.special_symbols | \
@@ -153,6 +153,7 @@ class Parser:
     
     def parse(self, expression, plot=False):
 
+        self.logger.debug("")
         self.logger.debug(f"Starting parse of expression: {expression}")
         self.tokens = self.tokenise(expression)
         self.logger.debug(f"Tokens: {self.tokens}")
@@ -465,7 +466,7 @@ class Solver(object):
                 raise Exception
 
         def plus(a, b):
-            # self.logger.debug('\t'*self.id_level+self.HEAD +' plus {} {} {} {}'.format(a, type(a), b, type(b)))
+            # self.logger.debug('    '*self.id_level+self.HEAD +' plus {} {} {} {}'.format(a, type(a), b, type(b)))
             try:
                 return a + b
             except TypeError as e:
@@ -478,7 +479,7 @@ class Solver(object):
                     raise e
 
         def minus(a, b):
-            # self.logger.debug('\t'*self.id_level+self.HEAD +' minus {} {} {} {}'.format(a, type(a), b, type(b)))
+            # self.logger.debug('    '*self.id_level+self.HEAD +' minus {} {} {} {}'.format(a, type(a), b, type(b)))
             try:
                 return a - b
             except TypeError as e:
@@ -560,7 +561,7 @@ class Solver(object):
                 return a // b
             except TypeError as e:
                 if type(a) is dict and type(b) is dict:
-                    # self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a//b', a, b)
+                    # self.logger.debug('    '*self.id_level+'[ '+var_name+' ] ', 'a//b', a, b)
                     o = dict()
                     for k in a:
                         o[k] = a[k] // b[k]
@@ -589,7 +590,7 @@ class Solver(object):
                 return a % b
             except TypeError as e:
                 if type(a) is dict and type(b) is dict:
-                    # self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] ', 'a % b', a, b)
+                    # self.logger.debug('    '*self.id_level+'[ '+var_name+' ] ', 'a % b', a, b)
                     o = dict()
                     for k in a:
                         o[k] = a[k] % b[k]
@@ -706,7 +707,7 @@ class Solver(object):
         self.HEAD = "SOLVER"
 
     def calculate_node(self, parsed_equation, node_id='root', subscript=None, var_name=''):        
-        self.logger.debug('\n'+'\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+' processing node {} on subscript {}:'.format(node_id, subscript))
+        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v0 processing node {} on subscript {}:'.format(node_id, subscript))
 
         self.id_level += 1
         
@@ -716,19 +717,19 @@ class Solver(object):
         if node_id == 'root':
             node_id = list(parsed_equation.successors('root'))[0]
         node = parsed_equation.nodes[node_id]
-        self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'node: {node_id} {node}')
+        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'node: {node_id} {node}')
         node_operator = node['operator']
         node_value = node['value']
         node_subscripts = node['subscripts']
         node_operands = node['operands']
         if node_operator == 'IS':
             value = np.float64(node_value)
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'v2 IS: {value}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v2 IS: {value}')
         elif node_operator == 'EQUALS':
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'operator v3 {node_operator}')
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'operator v3 {node_value}')
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'operator v3 {node_subscripts}')
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'operands v3 {node_operands}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operator v3 node_operator {node_operator}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operator v3 node_value {node_value}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operator v3 node_subscripts_in_token {node_subscripts_in_token}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operands v3 node_operands {node_operands}')
             
             node_var = node_value
             if subscript:
@@ -753,21 +754,21 @@ class Solver(object):
                 # (1) this variable (var_name) is not subscripted therefore the only value of it should be used;
                 # (2) this variable (var_name) is subscripted in the same way as the variable using it (a contextual info is needed and provided in the arg subscript)
                 if subscript:
-                    self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+'a1.1.1')
+                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.1.1')
                     value = self.name_space[var_name][subscript] 
                 else:
-                    self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+'a1.1.2')
+                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.1.2')
                     value = self.name_space[var_name]
-                self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'v4.1 Sparen without sub: {value}')
+                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v4.1 Sparen without sub: {value}')
             else: # there are explicitly specified subscripts in oprands like a[b]
                 self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+'a1.2', f'subscript from node definition: {node_subscripts[:]} subscript from context: {subscript}')
                 # prioritise subscript from node definition
                 try:
                     subscript_from_definition = tuple(node_subscripts[:]) # use tuple to make it hashable
                     value = self.name_space[var_name][subscript_from_definition]
-                    self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+'a1.2.1')
+                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.3.1 value' + str(value))
                 except KeyError as e: # subscript in operands looks like a[Dimension_1, Element_1], inference needed
-                    self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+'a1.2.2')
+                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.3.2')
                     if subscript: # there's subscript in context
                         subscript_from_definition = node_subscripts[:]
                         subscript_from_operands_with_replacement = list()
@@ -777,43 +778,43 @@ class Solver(object):
                             else: # it's sth like Element_1
                                 subscript_from_operands_with_replacement.append(subscript_from_definition[i]) # add to list directly
                         subscript_from_operands_with_replacement = tuple(subscript_from_operands_with_replacement)
-                        self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'a1.2.2 {subscript_from_operands_with_replacement}')
+                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.3.2.1 {subscript_from_operands_with_replacement}')
                         value = self.name_space[var_name][subscript_from_operands_with_replacement] # try if subscript is Element_1
                     else: # there's no subscript in context
                         raise e
                         
-                self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'v4.2 Sparen with sub: {value}')
+                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v4.2 SPAREN with sub: {value}')
         
         elif node_operator in self.built_in_functions.keys(): # plus, minus, con, etc.
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'operator v7 Built-in operator: {node_operator}, {node_operands}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operator v7 Built-in operator: {node_operator}, {node_operands}')
             func_name = node_operator
             function = self.built_in_functions[func_name]
             oprds = []
             for operand in node_operands:
-                self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+'v7.1'+f' operand {operand}')
+                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v7.1'+f' operand {operand}')
                 v = self.calculate_node(parsed_equation=parsed_equation, node_id=operand, subscript=subscript)
-                self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+'v7.2'+f' value {v} {subscript}')
+                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v7.2'+f' value {v} {subscript}')
                 oprds.append(v)
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+'v7.3'+f' operands {oprds}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v7.3'+f' operands {oprds}')
             value = function(*oprds)
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'v7 Built-in operation: {value}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v7 Built-in operator {node_operator}: {value}')
         
         elif node_operator in self.custom_functions.keys(): # graph functions
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'custom func operator {node_operator}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'custom func operator {node_operator}')
             func_name = node_operator
             function = self.custom_functions[func_name]
             oprds = []
             for operand in node_operands:
-                self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+ f'operand {operand}')
+                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'operand {operand}')
                 v = self.calculate_node(parsed_equation=parsed_equation, node_id=operand, subscript=subscript)
-                self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+ f'value {v}')
+                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'value {v}')
                 oprds.append(v)
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+ f'operands {oprds}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'operands {oprds}')
             value = function(*oprds)
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+ f'v8 GraphFunc: {value}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'v8 GraphFunc: {value}')
 
         elif node_operator in self.time_related_functions: # init, delay, etc
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+ f'time-related func. operator: {node_operator} operands {node_operands}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'time-related func. operator: {node_operator} operands {node_operands}')
             func_name = node_operator
             if func_name == 'INIT':
                 if tuple([parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
@@ -989,10 +990,10 @@ class Solver(object):
 
             else:
                 raise Exception('Unknown time-related operator {}'.format(node_operator))
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+ f'v9 Time-related Func: {value}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'v9 Time-related Func: {value}')
         
         elif node_operator in self.array_related_functions: # Array-RELATED
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+ f'array-related func. operator: {node_operator} operands: {node_operands}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'array-related func. operator: {node_operator} operands: {node_operands}')
             func_name = node_operator
             if func_name == 'SUM':
                 arrayed_var_name = parsed_equation.nodes[node_operands[0]]['value']
@@ -1000,10 +1001,10 @@ class Solver(object):
                 for _, sub_val in self.name_space[arrayed_var_name].items():
                     sum_array += sub_val
                 value = sum_array
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+ f'v10 Array-related Func: {value}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'v10 Array-related Func: {value}')
         
         elif node_operator in self.lookup_functions: # LOOKUP
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+ f'Lookup func. operator: {node_operator} operands: {node_operands}')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'Lookup func. operator: {node_operator} operands: {node_operands}')
             func_name = node_operator
             if func_name == 'LOOKUP':
                 look_up_func_node_id = node_operands[0]
@@ -1019,7 +1020,7 @@ class Solver(object):
         
         self.id_level -= 1
         
-        self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+'value for node {} on subscript {}'.format(node_id, subscript, value))
+        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v0 value for node {} on subscript {}: {}'.format(node_id, subscript, value))
 
         return value
 
@@ -1812,9 +1813,9 @@ class sdmodel(object):
 
     def calculate_variable(self, var, dg, subscript=None, leak_frac=False, conveyor_init=False, conveyor_len=False):
         if leak_frac or conveyor_init or conveyor_len:
-            self.logger.debug("\t"+"Calculating: {:<15} on subscript {}; flags leak_frac={}, conveyor_init={}, conveyor_len={}".format(var, subscript, leak_frac, conveyor_init, conveyor_len))
+            self.logger.debug("    "+"Calculating: {:<15} on subscript {}; flags leak_frac={}, conveyor_init={}, conveyor_len={}".format(var, subscript, leak_frac, conveyor_init, conveyor_len))
         else:
-            self.logger.debug("\t"+"Calculating: {:<15} on subscript {}".format(var, subscript))
+            self.logger.debug("    "+"Calculating: {:<15} on subscript {}".format(var, subscript))
         # debug
         if var in self.env_variables.keys():
             return
@@ -1834,7 +1835,7 @@ class sdmodel(object):
             # self.logger.debug('Calculating Conveyor {}'.format(var))
             if not (conveyor_init or conveyor_len):
                 if not self.conveyors[var]['conveyor'].is_initialized:
-                    self.logger.debug('\t'+'Initializing conveyor {}'.format(var))
+                    self.logger.debug('    '+'Initializing conveyor {}'.format(var))
                     # when initializing, equation of the conveyor needs to be evaluated, using flag conveyor_len=True 
                     self.calculate_variable(var=var, dg=dg, subscript=subscript, conveyor_len=True)
                     conveyor_length = self.conveyors[var]['len']
@@ -1857,7 +1858,7 @@ class sdmodel(object):
                     value = self.conveyors[var]['conveyor'].level()
                     self.name_space[var] = value
 
-                    self.logger.debug('\t'+'Initializd conveyor {}'.format(var))
+                    self.logger.debug('    '+'Initializd conveyor {}'.format(var))
                 
                 if var not in self.stock_shadow_values:
                     # self.logger.debug("Updating {} and its outflows".format(var))
@@ -1892,7 +1893,7 @@ class sdmodel(object):
         # B: var is a normal stock
         elif var not in self.conveyors and var in self.stocks:
             if not self.stocks[var].initialized:
-                self.logger.debug('\t'+'Stock {} not initialized'.format(var))
+                self.logger.debug('    '+'Stock {} not initialized'.format(var))
                 if type(parsed_equation) is dict:
                     for sub, sub_parsed_equation in parsed_equation.items():
                         sub_value = self.solver.calculate_node(parsed_equation=sub_parsed_equation, subscript=sub, var_name=var)
@@ -1914,13 +1915,13 @@ class sdmodel(object):
                 if self.stock_non_negative[var] is True:
                     self.stock_non_negative_temp_value[var] = deepcopy(self.name_space[var])
 
-                self.logger.debug('\t'+'Stock {} initialized = {}'.format(var, self.name_space[var]))
+                self.logger.debug('    '+'Stock {} initialized = {}'.format(var, self.name_space[var]))
             
             else:
                 if self.stock_non_negative[var] is True:
-                    self.logger.debug('\t'+'Stock {} already initialized = {}, temp value: {}'.format(var, self.name_space[var], self.stock_non_negative_temp_value[var]))
+                    self.logger.debug('    '+'Stock {} already initialized = {}, temp value: {}'.format(var, self.name_space[var], self.stock_non_negative_temp_value[var]))
                 else:
-                    self.logger.debug('\t'+'Stock {} already initialized = {}'.format(var, self.name_space[var]))
+                    self.logger.debug('    '+'Stock {} already initialized = {}'.format(var, self.name_space[var]))
         
         # C: var is a flow
         elif var in self.flow_equations:
@@ -1967,21 +1968,21 @@ class sdmodel(object):
                             for sub, sub_value in self.name_space[var].items():
                                 if sub_value < 0:
                                     self.name_space[var][sub] = np.float64(0)
-                                    self.logger.debug('\t'+"Flow {}[{}] is negative, set to 0".format(var, sub))
+                                    self.logger.debug('    '+"Flow {}[{}] is negative, set to 0".format(var, sub))
                         else:
                             if self.name_space[var] < 0:
                                 self.name_space[var] = np.float64(0)
-                                self.logger.debug('\t'+"Flow {} is negative, set to 0".format(var))
+                                self.logger.debug('    '+"Flow {} is negative, set to 0".format(var))
 
                     # do not use 'value' from here on, use 'self.name_space[var]' instead
                     # check flow attributes for its constraints from non-negative stocks
                     flow_attributes = dg.nodes[var]
-                    self.logger.debug('\t'+'Checking attributes: {}'.format(flow_attributes))
+                    self.logger.debug('    '+'Checking attributes: {}'.format(flow_attributes))
                     
                     if 'considered_for_non_negative_stock' in flow_attributes:
                         if flow_attributes['considered_for_non_negative_stock'] is True:
                             flow_to_stock = self.flow_stocks[var]['to']
-                            self.logger.debug('\t'+f'----considering inflow {var} into non-negative stocks {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
+                            self.logger.debug('    '+f'----considering inflow {var} into non-negative stocks {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
                             # this is an in_flow and this in_flow should be considered before constraining out_flows
 
                             # To prevent a negative inflow from making the stock negative, we need to constrain the inflow
@@ -2010,15 +2011,15 @@ class sdmodel(object):
 
                     if 'out_from_non_negative_stock' in flow_attributes:
                         out_from_non_negative_stock = flow_attributes['out_from_non_negative_stock']
-                        self.logger.debug('\t'+f'----considering outflow {var} out from for non-negative stock {out_from_non_negative_stock} whose name_space value is {self.name_space[var]}')
+                        self.logger.debug('    '+f'----considering outflow {var} out from for non-negative stock {out_from_non_negative_stock} whose name_space value is {self.name_space[var]}')
                         
                         # constrain this out_flow
-                        self.logger.debug('\t'+f'----stock {out_from_non_negative_stock} temp value is {self.stock_non_negative_temp_value[out_from_non_negative_stock]}')
+                        self.logger.debug('    '+f'----stock {out_from_non_negative_stock} temp value is {self.stock_non_negative_temp_value[out_from_non_negative_stock]}')
                         if type(self.name_space[var]) is dict:
                             for sub, sub_value in self.name_space[var].items():
                                 if self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] - sub_value * self.sim_specs['dt'] < 0:
                                     self.name_space[var][sub] = self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] / self.sim_specs['dt']
-                                    self.logger.debug('\t'+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
+                                    self.logger.debug('    '+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] = np.float64(0)
                                 else:
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] -= sub_value * self.sim_specs['dt']
@@ -2026,21 +2027,21 @@ class sdmodel(object):
                             for sub in self.stock_non_negative_temp_value[out_from_non_negative_stock]:
                                 if self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] - self.name_space[var] * self.sim_specs['dt'] < 0:
                                     self.name_space[var] = self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] / self.sim_specs['dt']
-                                    self.logger.debug('\t'+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
+                                    self.logger.debug('    '+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] = np.float64(0)
                                 else:
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] -= self.name_space[var] * self.sim_specs['dt']
                         else:                        
                             if self.stock_non_negative_temp_value[out_from_non_negative_stock] - self.name_space[var] * self.sim_specs['dt'] < 0:
                                 self.name_space[var] = self.stock_non_negative_temp_value[out_from_non_negative_stock] / self.sim_specs['dt']
-                                self.logger.debug('\t'+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
+                                self.logger.debug('    '+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
                                 self.stock_non_negative_temp_value[out_from_non_negative_stock] = np.float64(0)
                             else:
                                 self.stock_non_negative_temp_value[out_from_non_negative_stock] -= self.name_space[var] * self.sim_specs['dt']
 
-                    self.logger.debug('\t'+'Flow {} = {}'.format(var, self.name_space[var]))
+                    self.logger.debug('    '+'Flow {} = {}'.format(var, self.name_space[var]))
                 else:
-                    self.logger.debug('\t'+'Flow {} is already in name space.'.format(var))
+                    self.logger.debug('    '+'Flow {} is already in name space.'.format(var))
                     # raise Warning('Flow {} is already in name space.'.format(var)) # this should not happen, just in case of any bugs as we switched from dynamic calculation to static calculation
         
         # D: var is an auxiliary
@@ -2061,7 +2062,7 @@ class sdmodel(object):
                 else:
                     value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=subscript, var_name=var)
                     self.name_space[var] = value
-                self.logger.debug('\t'+'Aux {} = {}'.format(var, value))
+                self.logger.debug('    '+'Aux {} = {}'.format(var, value))
                         
             else:
                 pass
@@ -2257,9 +2258,9 @@ class sdmodel(object):
     # def trace_error(self, var_with_error, sub=None):
     #     self.debug_level_trace_error += 1
 
-    #     self.logger.debug(self.debug_level_trace_error*'\t'+'Tracing error on {} ...'.format(var_with_error))
-    #     self.logger.debug(self.debug_level_trace_error*'\t'+'asdm value    :', self.name_space[var_with_error])
-    #     self.logger.debug(self.debug_level_trace_error*'\t'+'Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_with_error)])
+    #     self.logger.debug(self.debug_level_trace_error*'    '+'Tracing error on {} ...'.format(var_with_error))
+    #     self.logger.debug(self.debug_level_trace_error*'    '+'asdm value    :', self.name_space[var_with_error])
+    #     self.logger.debug(self.debug_level_trace_error*'    '+'Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_with_error)])
         
     #     if sub is not None:
     #         parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var_with_error][sub]
@@ -2267,34 +2268,34 @@ class sdmodel(object):
     #         parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var_with_error]
         
     #     leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
-    #     self.logger.debug(self.debug_level_trace_error*'\t'+'Dependencies of {}:'.format(var_with_error))
+    #     self.logger.debug(self.debug_level_trace_error*'    '+'Dependencies of {}:'.format(var_with_error))
         
     #     for leaf in leafs:
-    #         # self.logger.debug(self.debug_level_trace_error*'\t'+parsed_equation.nodes[leaf])
+    #         # self.logger.debug(self.debug_level_trace_error*'    '+parsed_equation.nodes[leaf])
     #         if parsed_equation.nodes[leaf]['operator'][0] in ['EQUALS', 'SPAREN']:
     #             operands = parsed_equation.nodes[leaf]['operands']
     #             if operands[0][0] == 'NUMBER':
     #                 pass
     #             elif operands[0][0] == 'NAME': # this refers to a variable like 'a'
     #                 var_dependent = operands[0][1]
-    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'-- Dependent:', var_dependent)
-    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'   asdm value    :', self.name_space[var_dependent])
-    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_dependent)])
+    #                 self.logger.debug(self.debug_level_trace_error*'    '+'-- Dependent:', var_dependent)
+    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   asdm value    :', self.name_space[var_dependent])
+    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_dependent)])
         
     #             elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
     #                 # need to find that 'SPAREN' node
     #                 var_dependent_node_id = operands[0][2]
     #                 var_dependent = parsed_equation.nodes[var_dependent_node_id]['operands'][0][1]
-    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'-- Dependent:', var_dependent)
-    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'   asdm value    :', self.name_space[var_dependent])
-    #                 self.logger.debug(self.debug_level_trace_error*'\t'+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_dependent)])
+    #                 self.logger.debug(self.debug_level_trace_error*'    '+'-- Dependent:', var_dependent)
+    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   asdm value    :', self.name_space[var_dependent])
+    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_dependent)])
         
     #     if var_with_error in self.flow_stocks:
     #         connected_stocks = self.flow_stocks[var_with_error]
     #         for direction, connected_stock in connected_stocks.items():
-    #             self.logger.debug(self.debug_level_trace_error*'\t'+'-- Connected stock: {:<4} {}'.format(direction, connected_stock))
-    #             self.logger.debug(self.debug_level_trace_error*'\t'+'   asdm value    :', self.name_space[connected_stock])
-    #             self.logger.debug(self.debug_level_trace_error*'\t'+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(connected_stock)])
+    #             self.logger.debug(self.debug_level_trace_error*'    '+'-- Connected stock: {:<4} {}'.format(direction, connected_stock))
+    #             self.logger.debug(self.debug_level_trace_error*'    '+'   asdm value    :', self.name_space[connected_stock])
+    #             self.logger.debug(self.debug_level_trace_error*'    '+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(connected_stock)])
         
     #     self.logger.debug()
     #     self.debug_level_trace_error -= 1
