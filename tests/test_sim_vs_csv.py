@@ -3,19 +3,7 @@
 import pytest
 import pandas as pd
 import numpy as np
-
-import importlib.util
-import sys
-import networkx as nx
-import matplotlib.pyplot as plt
 from pathlib import Path
-
-spec = importlib.util.spec_from_file_location("asdm", Path('src/asdm/asdm.py'))
-asdm = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(asdm)
-sys.modules['asdm'] = asdm
-
-# Import the module
 from asdm import sdmodel
 
 # test paths
