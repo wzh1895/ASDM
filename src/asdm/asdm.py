@@ -257,7 +257,7 @@ class Parser:
 
     def parse_and_expression(self):
         """Parse an and expression."""
-        self.logger.debug('parse_and_expr     '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_and_expr     {}'.format(self.tokens[self.current_index:]))
         nodes = [self.parse_not_expression()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'AND':
             op = self.tokens[self.current_index]
@@ -270,7 +270,7 @@ class Parser:
     
     def parse_not_expression(self):
         """Parse a NOT expression."""
-        self.logger.debug('parse_not_expr     '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_not_expr     {}'.format(self.tokens[self.current_index:]))
         if self.tokens[self.current_index][0] == 'NOT':
             self.current_index += 1
             self.node_id += 1
@@ -279,7 +279,7 @@ class Parser:
     
     def parse_compare_expression(self):
         """Parse a comparison expression."""
-        self.logger.debug('parse_compare_expr '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_compare_expr {}'.format(self.tokens[self.current_index:]))
         node = self.parse_arith_expression()
         if self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['GT', 'LT', 'EQS', 'NGT', 'NLT']:
             op = self.tokens[self.current_index]
@@ -292,7 +292,7 @@ class Parser:
 
     def parse_arith_expression(self):
         """Parse an expression for '+' and '-' with lower precedence."""
-        self.logger.debug('parse_arith_expr   '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_arith_expr   {}'.format(self.tokens[self.current_index:]))
         nodes = [self.parse_mod()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['PLUS', 'MINUS']:
             op = self.tokens[self.current_index]
@@ -305,7 +305,7 @@ class Parser:
     
     def parse_mod(self):
         """Parse a mod operation."""
-        self.logger.debug('parse_mod          '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_mod          {}'.format(self.tokens[self.current_index:]))
         nodes = [self.parse_term()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'MOD':
             op = self.tokens[self.current_index]
@@ -318,7 +318,7 @@ class Parser:
 
     def parse_term(self):
         """Parse a term for '*' and '/' with higher precedence."""
-        self.logger.debug('parse_term         '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_term         {} '.format(self.tokens[self.current_index:]))
         nodes = [self.parse_exponent()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['TIMES', 'DIVIDE', 'FLOORDIVIDE']:
             op = self.tokens[self.current_index]
@@ -331,7 +331,7 @@ class Parser:
     
     def parse_exponent(self):
         """Parse an EXP (^) operation."""
-        self.logger.debug('parse_exponent     '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_exponent     {}'.format(self.tokens[self.current_index:]))
         nodes = [self.parse_factor()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'EXP':
             op = self.tokens[self.current_index]
@@ -344,7 +344,7 @@ class Parser:
 
     def parse_factor(self):
         """Parse a factor which could be a number, a variable, a function call, or an expression in parentheses."""
-        self.logger.debug('parse_factor       '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_factor       {}'.format(self.tokens[self.current_index:]))
         token = self.tokens[self.current_index]
         if token[0] == 'LPAREN':
             self.current_index += 1
@@ -364,7 +364,7 @@ class Parser:
 
     def parse_function_call(self):
         """Parse a function call."""
-        self.logger.debug('parse_function_call'.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_function_call{}'.format(self.tokens[self.current_index:]))
         func_name = self.tokens[self.current_index]
         self.current_index += 2  # Skipping the function name and the opening '('
         args = []
@@ -378,7 +378,7 @@ class Parser:
     
     def parse_variable(self):
         """Parse a variable. The variable may be subscripted."""
-        self.logger.debug('parse_variable     '.format(self.tokens[self.current_index:]))
+        self.logger.debug('parse_variable     {}'.format(self.tokens[self.current_index:]))
         var_name = self.tokens[self.current_index][1]
         self.current_index += 1
         if self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'LSPAREN':
