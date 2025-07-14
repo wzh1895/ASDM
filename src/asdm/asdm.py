@@ -152,6 +152,8 @@ class Parser:
         return tokens
     
     def parse(self, expression, plot=False):
+        # remove \n in the expression
+        expression = expression.replace('\n', ' ')
 
         self.logger.debug("")
         self.logger.debug(f"Starting parse of expression: {expression}")
