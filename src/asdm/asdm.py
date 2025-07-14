@@ -387,19 +387,21 @@ class Parser:
         self.current_index += 1
         if self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'LSPAREN':
             subscripts = []
+            subscripts_in_token = []
+            subscript_in_token = []
             self.current_index += 1 # Skipping the opening '['
+            # split subscript tokens by commas
             while self.tokens[self.current_index][0] != 'RSPAREN':
+                # in runtime, referring to other element in the same dimension (e.g. another age group) can be done by
+                # something like "Age-1", where Age is the dimension name.
                 if self.tokens[self.current_index][0] != 'COMMA':
-                    if self.tokens[self.current_index][0] == 'NAME':
-                        subscripts.append(self.tokens[self.current_index][1])
-                        self.current_index += 1
-                    elif self.tokens[self.current_index][0] == 'NUMBER':
-                        subscripts.append(str(self.tokens[self.current_index][1]))
-                        self.current_index += 1
-                    else:
-                        raise ValueError(f"Unexpected token for subscript: {self.tokens[self.current_index]}")
+                    subscript_in_token.append(self.tokens[self.current_index]) # collect this token into the current subscript
                 else:
-                    self.current_index += 1 # Skipping the comma
+                    subscripts_in_token.append(subscript_in_token)
+                    subscript_in_token = []
+                self.current_index += 1
+            subscripts_in_token.append(subscript_in_token) # add the last subscript
+            subscripts = subscripts_in_token
             self.current_index += 1 # Skipping the closing ']'
             self.node_id += 1
             return Node(node_id=self.node_id, operator='SPAREN', value=var_name, subscripts=subscripts)
@@ -724,7 +726,7 @@ class Solver(object):
         self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'node: {node_id} {node}')
         node_operator = node['operator']
         node_value = node['value']
-        node_subscripts = node['subscripts']
+        node_subscripts_in_token = node['subscripts']
         node_operands = node['operands']
         if node_operator == 'IS':
             value = np.float64(node_value)
@@ -735,25 +737,47 @@ class Solver(object):
             self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operator v3 node_subscripts_in_token {node_subscripts_in_token}')
             self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operands v3 node_operands {node_operands}')
             
-            node_var = node_value
-            if subscript:
-                value = self.name_space[node_var]
-                if type(value) is dict:
-                    value = value[subscript]
-                    self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'v3.1.1 EQUALS: subscript present, variable subscripted {value}')
+            # Case 1: node_value is a variable name, e.g. "Population"
+            if node_value in self.name_space.keys():
+                node_var = node_value
+                if subscript:
+                    value = self.name_space[node_var]
+                    if type(value) is dict:
+                        value = value[subscript]
+                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.1.1 EQUALS: subscript present, variable subscripted {value}')
+                    else:
+                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.1.2 EQUALS: subscript present, variable not subscripted {value}')
                 else:
-                    self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'v3.1.2 EQUALS: subscript present, variable not subscripted {value}')
+                    value = self.name_space[node_var]
+                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.2 EQUALS: subscript not present {value}')
+                
+                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3 EQUALS: {value}')
+
+            # Case 2: node_value is a dimension name, e.g. "Age"
+            elif node_value in self.dimension_elements.keys():
+                # In this case, evaluate something like "Age=1" to determine if the current element is the one we are looking for.
+                # Our job here is to return the order of the element (we are currently calculating) in the dimension.
+                if subscript is not None:
+                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3 EQUALS: subscript present {subscript}')
+                    dimension_order = list(self.dimension_elements.keys()).index(node_value) # get the index of the dimension name in the dimension_elements
+                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3.1 EQUALS: dimension order {dimension_order}')
+                    element_order = self.dimension_elements[node_value].index(subscript[dimension_order])
+                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3.2 EQUALS: element order {element_order}')
+                    value = element_order + 1 # +1 because the order starts from 0, but we want to return 1, 2, 3, etc.
+                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3 EQUALS: value {value}')
+                else:
+                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.4 EQUALS: subscript not present')
+                    raise Exception(f'Subscript is not provided for dimension {node_value}. var: {var_name}')
+            # Raise Exception('Dimension name should not be used as a variable name. var:', node_value)
             else:
-                value = self.name_space[node_var]
-                self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'v3.2 EQUALS: subscript not present {value}')
-            
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'v3 EQUALS: {value}')
-        
+                self.logger.error('    '*self.id_level+'[ '+var_name+' ] '+f'v3 EQUALS: name {node_value} is not defined in the name space or dimension elements.')
+                raise Exception(f'Name {node_value} is not defined in the name space or dimension elements. var: {var_name}')
+
         elif node_operator == 'SPAREN': # TODO this part is too dynamic, therefore can be slow.
             var_name = node_value
-            self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+f'a1 {subscript}')
-            if node_subscripts is None: # only var_name; no subscript is specified
-                self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+'a1.1')
+            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1 context subscript {subscript}')
+            if node_subscripts_in_token is None: # only var_name; no subscript is specified
+                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.1')
                 # this could be 
                 # (1) this variable (var_name) is not subscripted therefore the only value of it should be used;
                 # (2) this variable (var_name) is subscripted in the same way as the variable using it (a contextual info is needed and provided in the arg subscript)
@@ -765,7 +789,50 @@ class Solver(object):
                     value = self.name_space[var_name]
                 self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v4.1 Sparen without sub: {value}')
             else: # there are explicitly specified subscripts in oprands like a[b]
-                self.logger.debug('\t'*self.id_level+self.HEAD+' [ '+var_name+' ] '+'a1.2', f'subscript from node definition: {node_subscripts[:]} subscript from context: {subscript}')
+                # print('subscripts from node definition', node_subscripts_in_token)
+                # print('subscripts from context', subscript)
+                # After allowing "Dimention-1" in the subscript, we need to ad-hoc construct the right subscripts to use for retrieving variable value
+                # TODO: may need to consider more cases here.
+                node_subscripts = []
+                for subscript_in_token in node_subscripts_in_token:
+                    # Case 1: just a subscript in the context, e.g. a[Element_1]
+                    if len(subscript_in_token) == 1 and subscript_in_token[0][0] in ['NAME', 'NUMBER']:
+                        node_subscripts.append(subscript_in_token[0][1]) # it's a dimension name, e.g. Dimension-1
+                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.0 subscript in token: {subscript_in_token[0][1]}')
+                    # Case 2: subscript has in-line referencing to another element in the same dimension, e.g. a[Dimension-1]
+                    elif len(subscript_in_token) == 3:
+                        # step 1: find out the dimension name
+                        dimension_name = subscript_in_token[0][1]
+                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.1 dimension name: {dimension_name}')
+                        elements = self.dimension_elements[dimension_name]
+                        # step 2: find out the offset direction
+                        offset_operator = subscript_in_token[1][0]
+                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.2 offset operator: {offset_operator}')
+                        # step 3: find out the offset amount
+                        offset_amount = subscript_in_token[2][1]
+                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.3 offset amount: {offset_amount}')
+                        
+                        # We need to read from the context subscript the current element in the relevant dimension
+                        # in case of wrong order in context subscripts, we check every one of them if they belong to elements
+                        for context_element in subscript:
+                            if context_element in elements:
+                                ind_context_element = elements.index(context_element)
+                                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.4 context element index: {ind_context_element}')
+                                if offset_operator == 'MINUS':
+                                    ind_new_element = ind_context_element - int(offset_amount)
+                                elif offset_operator == 'PLUS':
+                                    ind_new_element = ind_context_element + int(offset_amount)
+                                else:
+                                    raise Exception(f"Invalid offset operator {offset_operator} in subscript {subscript_in_token}.")
+                                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.5 new element index: {ind_new_element}')
+                                new_element = elements[ind_new_element]
+                                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.6 new element: {new_element}')
+                                node_subscripts.append(new_element)
+                                break
+                    else:
+                        raise Exception(f"Invalid length of subscript tokens {subscript_in_token}: {len(subscript_in_token)}, should be 1 or 3.")
+
+                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.3 '+ f'subscript from node definition: {node_subscripts[:]} subscript from context: {subscript}')
                 # prioritise subscript from node definition
                 try:
                     subscript_from_definition = tuple(node_subscripts[:]) # use tuple to make it hashable
@@ -1235,7 +1302,7 @@ class sdmodel(object):
 
 
         # dimensions
-        self.var_dimensions = dict()
+        self.var_dimensions = dict() # 'dim1':['ele1', 'ele2']
         self.dimension_elements = dict()
         
         # stocks
@@ -2464,15 +2531,18 @@ class sdmodel(object):
                 leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
                 for leaf in leafs:
                     if parsed_equation.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
-                        dependent_variables.append(parsed_equation.nodes[leaf]['value'])
+                        dependent_name = parsed_equation.nodes[leaf]['value']
+                        if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out
+                            dependent_variables.append(dependent_name)
             else:
                 for _, sub_eqn in parsed_equation.items():
                     leafs = [x for x in sub_eqn.nodes() if sub_eqn.out_degree(x)==0]
                     for leaf in leafs:
                         if sub_eqn.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
-                            dependent_variable = sub_eqn.nodes[leaf]['value']
-                            if dependent_variable not in dependent_variables: # remove duplicates
-                                dependent_variables.append(dependent_variable)
+                            dependent_name = sub_eqn.nodes[leaf]['value']
+                            if dependent_name not in dependent_variables: # remove duplicates
+                                if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out
+                                    dependent_variables.append(dependent_name)
             return dependent_variables
         
         if type(parsed_equation) is list: # this variable might be a conveyor
@@ -2485,7 +2555,7 @@ class sdmodel(object):
                 raise Exception("Non-conveyor variable with parsed equation as list: {}".format(var))
         else:
             dependent_variables = get_dependent_variables(parsed_equation)
-        
+
         if len(dependent_variables) == 0:
             graph.add_node(var)
             return graph
