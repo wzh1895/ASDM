@@ -847,16 +847,24 @@ class Solver(object):
                 except KeyError as e: # subscript in operands looks like a[Dimension_1, Element_1], inference needed
                     self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.3.2')
                     if subscript: # there's subscript in context
-                        subscript_from_definition = node_subscripts[:]
-                        subscript_from_operands_with_replacement = list()
+                        subscript_from_definition = node_subscripts[:] # definition is what user put in equation, should take higher priority
+                        subscript_from_definition_with_replacement = list()
+                        subscript_from_context_index = 0
                         for i in range(len(subscript_from_definition)):
-                            if subscript_from_definition[i] in self.dimension_elements.keys(): # it's sth like Dimension_1
-                                subscript_from_operands_with_replacement.append(subscript[i]) # take the element from context subscript in the same position to replace Dimension_1
-                            else: # it's sth like Element_1
-                                subscript_from_operands_with_replacement.append(subscript_from_definition[i]) # add to list directly
-                        subscript_from_operands_with_replacement = tuple(subscript_from_operands_with_replacement)
-                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.3.2.1 {subscript_from_operands_with_replacement}')
-                        value = self.name_space[var_name][subscript_from_operands_with_replacement] # try if subscript is Element_1
+                            if subscript_from_definition[i] in self.var_dimensions[var_name]: # it's sth like Dimension_1 - needed to be replaced by the contextual element as it's not specified
+                                dimension_from_definition = subscript_from_definition[i]
+                                # now need to find out which element in the context subscript corresponds to this dimension
+                                while subscript_from_context_index < len(subscript) and subscript[subscript_from_context_index] not in self.dimension_elements[dimension_from_definition]:
+                                    subscript_from_context_index += 1
+                                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.3.2.1 replace {dimension_from_definition} with {subscript[subscript_from_context_index]} from context subscript {subscript}')
+                                subscript_from_definition_with_replacement.append(subscript[subscript_from_context_index]) # take the element from context subscript in the same position to replace Dimension_1
+                                subscript_from_context_index += 1
+                            else: # it's sth like Element_1 - specified by the user, should take priority
+                                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.3.2.2 keep {subscript_from_definition[i]} as is, since it is not in dimension names of this model')
+                                subscript_from_definition_with_replacement.append(subscript_from_definition[i]) # add to list directly
+                        subscript_from_definition_with_replacement = tuple(subscript_from_definition_with_replacement)
+                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.3.2.2 {subscript_from_definition_with_replacement}')
+                        value = self.name_space[var_name][subscript_from_definition_with_replacement] # try if subscript is Element_1
                     else: # there's no subscript in context
                         raise e
                         
