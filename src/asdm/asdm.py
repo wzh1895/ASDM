@@ -409,11 +409,12 @@ class Parser:
         return Node(node_id=self.node_id, operator='EQUALS', value=var_name)
 
 class Solver(object):
-    def __init__(self, sim_specs=None, dimension_elements=None, name_space=None, graph_functions=None):
+    def __init__(self, sim_specs=None, dimension_elements=None, var_dimensions=None, name_space=None, graph_functions=None):
         self.logger = logger_solver
 
         self.sim_specs = sim_specs # current_time, initial_time, dt, simulation_time, time_units
         self.dimension_elements = dimension_elements
+        self.var_dimensions = var_dimensions
         self.name_space = name_space
         self.graph_functions = graph_functions
 
@@ -712,8 +713,8 @@ class Solver(object):
 
         self.HEAD = "SOLVER"
 
-    def calculate_node(self, parsed_equation, node_id='root', subscript=None, var_name=''):        
-        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v0 processing node {} on subscript {}:'.format(node_id, subscript))
+    def calculate_node(self, var_name, parsed_equation, node_id='root', subscript=None):        
+        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0 processing node {node_id}:")
 
         self.id_level += 1
         
@@ -754,15 +755,20 @@ class Solver(object):
                 self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3 EQUALS: {value}')
 
             # Case 2: node_value is a dimension name, e.g. "Age"
-            elif node_value in self.dimension_elements.keys():
+            elif node_value in self.var_dimensions[var_name]: # only consider the dimension of the variable we are calculating
                 # In this case, evaluate something like "Age=1" to determine if the current element is the one we are looking for.
                 # Our job here is to return the order of the element (we are currently calculating) in the dimension.
                 if subscript is not None:
                     self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3 EQUALS: subscript present {subscript}')
-                    dimension_order = list(self.dimension_elements.keys()).index(node_value) # get the index of the dimension name in the dimension_elements
-                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3.1 EQUALS: dimension order {dimension_order}')
-                    element_order = self.dimension_elements[node_value].index(subscript[dimension_order])
-                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3.2 EQUALS: element order {element_order}')
+                    dimension_order = list(self.var_dimensions[var_name]).index(node_value) # get the index of the dimension name in var_dimensions
+                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3.1 EQUALS: dimension {node_value} within {self.var_dimensions[var_name]} order {dimension_order}')
+                    try:
+                        element_order = self.dimension_elements[node_value].index(subscript[dimension_order])
+                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3.2 EQUALS: element {subscript[dimension_order]} within {self.var_dimensions[var_name][dimension_order]} order {element_order}')
+                    except ValueError:
+                        self.logger.error('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3.2 EQUALS: element {subscript[dimension_order]} not found within dimension: elements {node_value}: {list(self.dimension_elements[node_value])}')
+                        raise
+
                     value = element_order + 1 # +1 because the order starts from 0, but we want to return 1, 2, 3, etc.
                     self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3 EQUALS: value {value}')
                 else:
@@ -863,7 +869,7 @@ class Solver(object):
             oprds = []
             for operand in node_operands:
                 self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v7.1'+f' operand {operand}')
-                v = self.calculate_node(parsed_equation=parsed_equation, node_id=operand, subscript=subscript)
+                v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=operand, subscript=subscript)
                 self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v7.2'+f' value {v} {subscript}')
                 oprds.append(v)
             self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v7.3'+f' operands {oprds}')
@@ -877,7 +883,7 @@ class Solver(object):
             oprds = []
             for operand in node_operands:
                 self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'operand {operand}')
-                v = self.calculate_node(parsed_equation=parsed_equation, node_id=operand, subscript=subscript)
+                v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=operand, subscript=subscript)
                 self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'value {v}')
                 oprds.append(v)
             self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'operands {oprds}')
@@ -891,11 +897,11 @@ class Solver(object):
                 if tuple([parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
                     value = self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])]
                 else:
-                    value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
+                    value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
                     self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = value
             elif func_name == 'DELAY':
                 # expr value
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
                 if tuple([parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
                     self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(expr_value)
                 else:
@@ -905,12 +911,12 @@ class Solver(object):
                 if len(node_operands) == 2: # there's no initial value specified -> use the delayed expr's initial value
                     init_value = self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][0]
                 elif len(node_operands) == 3: # there's an initial value specified
-                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
                 else:
                     raise Exception("Invalid initial value for DELAY in operands {}".format(node_operands))
 
                 # delay time
-                delay_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
                 if delay_time > (self.sim_specs['current_time'] - self.sim_specs['initial_time']): # (- initial_time) because simulation might not start from time 0
                     value = init_value
                 else:
@@ -919,11 +925,11 @@ class Solver(object):
             elif func_name == 'DELAY1':
                 # args values
                 order = 1
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
-                delay_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
+                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
 
                 if len(node_operands) == 3:
-                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
                 elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
@@ -949,10 +955,10 @@ class Solver(object):
             elif func_name == 'DELAY3':
                 # arg values
                 order = 3
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
-                delay_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
+                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
                 if len(node_operands) == 3:
-                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
                 elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
@@ -977,14 +983,14 @@ class Solver(object):
 
             elif func_name == 'HISTORY':
                 # expr value
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
                 if tuple([parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
                     self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(expr_value)
                 else:
                     self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = [expr_value]
                 
                 # historical time
-                historical_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                historical_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
                 if historical_time > self.sim_specs['current_time'] or historical_time < self.sim_specs['initial_time']:
                     value = 0
                 else:
@@ -994,15 +1000,15 @@ class Solver(object):
             elif func_name == 'SMTH1':
                 # arg values
                 order = 1
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
                 if type(expr_value) is dict:
                     if subscript is not None:
                         expr_value = expr_value[subscript]
                     else:
                         raise Exception('Invalid subscript.')
-                smth_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                smth_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
                 if len(node_operands) == 3:
-                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
                 elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
@@ -1028,15 +1034,15 @@ class Solver(object):
             elif func_name == 'SMTH3':
                 # arg values
                 order = 3
-                expr_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
                 if type(expr_value) is dict:
                     if subscript is not None:
                         expr_value = expr_value[subscript]
                     else:
                         raise Exception('Invalid subscript.')
-                smth_time = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                smth_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
                 if len(node_operands) == 3:
-                    init_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
                 elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
@@ -1081,7 +1087,7 @@ class Solver(object):
                 look_up_func_node_id = node_operands[0]
                 look_up_func_name = parsed_equation.nodes[look_up_func_node_id]['value']
                 look_up_func = self.graph_functions[look_up_func_name]
-                input_value = self.calculate_node(parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                input_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
                 value = look_up_func(input_value)
             else:
                 raise Exception('Unknown Lookup function {}'.format(node_operator))
@@ -1090,8 +1096,8 @@ class Solver(object):
             raise Exception('Unknown operator {}'.format(node_operator))
         
         self.id_level -= 1
-        
-        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v0 value for node {} on subscript {}: {}'.format(node_id, subscript, value))
+
+        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0 value for node {node_id}: {value}")
 
         return value
 
@@ -1373,6 +1379,7 @@ class sdmodel(object):
         self.solver = Solver(
             sim_specs=self.sim_specs,
             dimension_elements=self.dimension_elements,
+            var_dimensions=self.var_dimensions,
             name_space=self.name_space,
             graph_functions=self.graph_functions,
         )
@@ -1953,13 +1960,13 @@ class sdmodel(object):
                 # self.logger.debug('Calculating LEN for {}'.format(var))
                 # it is the intitial value of the conveyoer
                 parsed_equation = self.stock_equations_parsed[var][0]
-                self.conveyors[var]['len'] = self.solver.calculate_node(parsed_equation=parsed_equation, var_name=var)
-            
+                self.conveyors[var]['len'] = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation)
+
             elif conveyor_init:
                 # self.logger.debug('Calculating INIT VAL for {}'.format(var))
                 # it is the intitial value of the conveyoer
                 parsed_equation = self.stock_equations_parsed[var][1]
-                self.conveyors[var]['val'] = self.solver.calculate_node(parsed_equation=parsed_equation, var_name=var)
+                self.conveyors[var]['val'] = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation)
         
         # B: var is a normal stock
         elif var not in self.conveyors and var in self.stocks:
@@ -1967,18 +1974,18 @@ class sdmodel(object):
                 self.logger.debug('    '+'Stock {} not initialized'.format(var))
                 if type(parsed_equation) is dict:
                     for sub, sub_parsed_equation in parsed_equation.items():
-                        sub_value = self.solver.calculate_node(parsed_equation=sub_parsed_equation, subscript=sub, var_name=var)
+                        sub_value = self.solver.calculate_node(var_name=var, parsed_equation=sub_parsed_equation, subscript=sub)
                         if var not in self.name_space:
                             self.name_space[var] = dict()
                         self.name_space[var][sub] = sub_value
                 elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
                     for sub in self.dimension_elements[self.var_dimensions[var]]:
-                        sub_value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=sub, var_name=var)
+                        sub_value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=sub)
                         if var not in self.name_space:
                             self.name_space[var] = dict()
                         self.name_space[var][sub] = sub_value
                 else: # The variable is not subscripted
-                    value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=subscript, var_name=var)
+                    value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=subscript)
                     self.name_space[var] = value
                 
                 self.stocks[var].initialized = True
@@ -2008,7 +2015,7 @@ class sdmodel(object):
                     # it is the value of the leak_fraction (a percentage) that is requested.    
                     # leak_fraction is calculated using leakflow's equation. 
                     parsed_equation = self.flow_equations_parsed[var]
-                    self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = self.solver.calculate_node(parsed_equation=parsed_equation, var_name=var)
+                    self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation)
 
             elif var in self.outflow_conveyors:
                 # requiring an outflow's value triggers the calculation of its connected conveyor
@@ -2019,18 +2026,18 @@ class sdmodel(object):
                 if var not in self.name_space:
                     if type(parsed_equation) is dict:
                         for sub, sub_parsed_equation in parsed_equation.items():
-                            sub_value = self.solver.calculate_node(parsed_equation=sub_parsed_equation, subscript=sub, var_name=var)
+                            sub_value = self.solver.calculate_node(var_name=var, parsed_equation=sub_parsed_equation, subscript=sub)
                             if var not in self.name_space:
                                 self.name_space[var] = dict()
                             self.name_space[var][sub] = sub_value
                     elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
                         for sub in self.dimension_elements[self.var_dimensions[var]]:
-                            sub_value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=sub, var_name=var)
+                            sub_value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=sub)
                             if var not in self.name_space:
                                 self.name_space[var] = dict()
                             self.name_space[var][sub] = sub_value
                     else:
-                        value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=subscript, var_name=var)
+                        value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=subscript)
                         self.name_space[var] = value
 
                     # control flow positivity by itself
@@ -2120,18 +2127,18 @@ class sdmodel(object):
             if var not in self.name_space:
                 if type(parsed_equation) is dict:
                     for sub, sub_parsed_equation in parsed_equation.items():
-                        value = self.solver.calculate_node(parsed_equation=sub_parsed_equation, subscript=sub, var_name=var)
+                        value = self.solver.calculate_node(var_name=var, parsed_equation=sub_parsed_equation, subscript=sub)
                         if var not in self.name_space:
                             self.name_space[var] = dict()
                         self.name_space[var][sub] = value
                 elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
                     for sub in self.dimension_elements[self.var_dimensions[var]]:
-                        value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=sub, var_name=var)
+                        value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=sub)
                         if var not in self.name_space:
                             self.name_space[var] = dict()
                         self.name_space[var][sub] = value
                 else:
-                    value = self.solver.calculate_node(parsed_equation=parsed_equation, subscript=subscript, var_name=var)
+                    value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=subscript)
                     self.name_space[var] = value
                 self.logger.debug('    '+'Aux {} = {}'.format(var, value))
                         
@@ -2403,6 +2410,7 @@ class sdmodel(object):
         self.solver = Solver(
             sim_specs=self.sim_specs,
             dimension_elements=self.dimension_elements,
+            var_dimension=self.var_dimension,
             name_space=self.name_space,
             graph_functions=self.graph_functions,
             )
