@@ -118,7 +118,7 @@ class Parser:
     def tokenise(self, s):
         tokens = []
         while len(s) > 0:
-            self.logger.debug('Tokenising: '+s+f' len: {len(s)}')
+            self.logger.debug(f"Tokenising: {s} len: {len(s)}")
             for type_name, type_regex in (
                 self.numbers | \
                 self.special_symbols | \
@@ -222,7 +222,7 @@ class Parser:
     
     def parse_statement(self):
         self.logger.debug("")
-        self.logger.debug('parse_statement   {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_statement   {self.tokens[self.current_index:]}")
         """Parse a statement. The statement could be an IF-THEN-ELSE statement or an expression."""
         if self.tokens[self.current_index][0] == 'CONIF':
             self.current_index += 1
@@ -243,12 +243,12 @@ class Parser:
 
     def parse_expression(self):
         """Parse an expression."""
-        self.logger.debug('parse_expression   {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_expression   {self.tokens[self.current_index:]}")
         return self.parse_or_expression()
 
     def parse_or_expression(self):
         """Parse an or expression."""
-        self.logger.debug('parse_or_expr      {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_or_expr      {self.tokens[self.current_index:]}")
         nodes = [self.parse_and_expression()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'OR':
             op = self.tokens[self.current_index]
@@ -261,7 +261,7 @@ class Parser:
 
     def parse_and_expression(self):
         """Parse an and expression."""
-        self.logger.debug('parse_and_expr     {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_and_expr     {self.tokens[self.current_index:]}")
         nodes = [self.parse_not_expression()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'AND':
             op = self.tokens[self.current_index]
@@ -274,7 +274,7 @@ class Parser:
     
     def parse_not_expression(self):
         """Parse a NOT expression."""
-        self.logger.debug('parse_not_expr     {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_not_expr     {self.tokens[self.current_index:]}")
         if self.tokens[self.current_index][0] == 'NOT':
             self.current_index += 1
             self.node_id += 1
@@ -283,7 +283,7 @@ class Parser:
     
     def parse_compare_expression(self):
         """Parse a comparison expression."""
-        self.logger.debug('parse_compare_expr {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_compare_expr {self.tokens[self.current_index:]}")
         node = self.parse_arith_expression()
         if self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['GT', 'LT', 'EQS', 'NGT', 'NLT']:
             op = self.tokens[self.current_index]
@@ -296,7 +296,7 @@ class Parser:
 
     def parse_arith_expression(self):
         """Parse an expression for '+' and '-' with lower precedence."""
-        self.logger.debug('parse_arith_expr   {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_arith_expr   {self.tokens[self.current_index:]}")
         nodes = [self.parse_mod()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['PLUS', 'MINUS']:
             op = self.tokens[self.current_index]
@@ -309,7 +309,7 @@ class Parser:
     
     def parse_mod(self):
         """Parse a mod operation."""
-        self.logger.debug('parse_mod          {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_mod          {self.tokens[self.current_index:]}")
         nodes = [self.parse_term()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'MOD':
             op = self.tokens[self.current_index]
@@ -322,7 +322,7 @@ class Parser:
 
     def parse_term(self):
         """Parse a term for '*' and '/' with higher precedence."""
-        self.logger.debug('parse_term         {} '.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_term         {self.tokens[self.current_index:]} ")
         nodes = [self.parse_exponent()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['TIMES', 'DIVIDE', 'FLOORDIVIDE']:
             op = self.tokens[self.current_index]
@@ -335,7 +335,7 @@ class Parser:
     
     def parse_exponent(self):
         """Parse an EXP (^) operation."""
-        self.logger.debug('parse_exponent     {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_exponent     {self.tokens[self.current_index:]}")
         nodes = [self.parse_factor()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'EXP':
             op = self.tokens[self.current_index]
@@ -348,7 +348,7 @@ class Parser:
 
     def parse_factor(self):
         """Parse a factor which could be a number, a variable, a function call, or an expression in parentheses."""
-        self.logger.debug('parse_factor       {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_factor       {self.tokens[self.current_index:]}")
         token = self.tokens[self.current_index]
         if token[0] == 'LPAREN':
             self.current_index += 1
@@ -368,7 +368,7 @@ class Parser:
 
     def parse_function_call(self):
         """Parse a function call."""
-        self.logger.debug('parse_function_call{}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_function_call{self.tokens[self.current_index:]}")
         func_name = self.tokens[self.current_index]
         self.current_index += 2  # Skipping the function name and the opening '('
         args = []
@@ -382,7 +382,7 @@ class Parser:
     
     def parse_variable(self):
         """Parse a variable. The variable may be subscripted."""
-        self.logger.debug('parse_variable     {}'.format(self.tokens[self.current_index:]))
+        self.logger.debug(f"parse_variable     {self.tokens[self.current_index:]}")
         var_name = self.tokens[self.current_index][1]
         self.current_index += 1
         if self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'LSPAREN':
@@ -473,7 +473,6 @@ class Solver(object):
                 raise Exception
 
         def plus(a, b):
-            # self.logger.debug('    '*self.id_level+self.HEAD +' plus {} {} {} {}'.format(a, type(a), b, type(b)))
             try:
                 return a + b
             except TypeError as e:
@@ -486,7 +485,6 @@ class Solver(object):
                     raise e
 
         def minus(a, b):
-            # self.logger.debug('    '*self.id_level+self.HEAD +' minus {} {} {} {}'.format(a, type(a), b, type(b)))
             try:
                 return a - b
             except TypeError as e:
@@ -724,19 +722,19 @@ class Solver(object):
         if node_id == 'root':
             node_id = list(parsed_equation.successors('root'))[0]
         node = parsed_equation.nodes[node_id]
-        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'node: {node_id} {node}')
+        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] node: {node_id} {node}")
         node_operator = node['operator']
         node_value = node['value']
         node_subscripts_in_token = node['subscripts']
         node_operands = node['operands']
         if node_operator == 'IS':
             value = np.float64(node_value)
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v2 IS: {value}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v2 IS: {value}")
         elif node_operator == 'EQUALS':
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operator v3 node_operator {node_operator}')
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operator v3 node_value {node_value}')
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operator v3 node_subscripts_in_token {node_subscripts_in_token}')
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operands v3 node_operands {node_operands}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operator v3 node_operator {node_operator}")
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operator v3 node_value {node_value}")
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operator v3 node_subscripts_in_token {node_subscripts_in_token}")
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operands v3 node_operands {node_operands}")
             
             # Case 1: node_value is a variable name, e.g. "Population"
             if node_value in self.name_space.keys():
@@ -745,55 +743,55 @@ class Solver(object):
                     value = self.name_space[node_var]
                     if type(value) is dict:
                         value = value[subscript]
-                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.1.1 EQUALS: subscript present, variable subscripted {value}')
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.1.1 EQUALS: subscript present, variable subscripted {value}")
                     else:
-                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.1.2 EQUALS: subscript present, variable not subscripted {value}')
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.1.2 EQUALS: subscript present, variable not subscripted {value}")
                 else:
                     value = self.name_space[node_var]
-                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.2 EQUALS: subscript not present {value}')
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.2 EQUALS: subscript not present {value}")
                 
-                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3 EQUALS: {value}')
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3 EQUALS: {value}")
 
             # Case 2: node_value is a dimension name, e.g. "Age"
             elif node_value in self.var_dimensions[var_name]: # only consider the dimension of the variable we are calculating
                 # In this case, evaluate something like "Age=1" to determine if the current element is the one we are looking for.
                 # Our job here is to return the order of the element (we are currently calculating) in the dimension.
                 if subscript is not None:
-                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3 EQUALS: subscript present {subscript}')
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3 EQUALS: subscript present {subscript}")
                     dimension_order = list(self.var_dimensions[var_name]).index(node_value) # get the index of the dimension name in var_dimensions
-                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3.1 EQUALS: dimension {node_value} within {self.var_dimensions[var_name]} order {dimension_order}')
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.1 EQUALS: dimension {node_value} within {self.var_dimensions[var_name]} order {dimension_order}")
                     try:
                         element_order = self.dimension_elements[node_value].index(subscript[dimension_order])
-                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3.2 EQUALS: element {subscript[dimension_order]} within {self.var_dimensions[var_name][dimension_order]} order {element_order}')
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.2 EQUALS: element {subscript[dimension_order]} within {self.var_dimensions[var_name][dimension_order]} order {element_order}")
                     except ValueError:
-                        self.logger.error('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3.2 EQUALS: element {subscript[dimension_order]} not found within dimension: elements {node_value}: {list(self.dimension_elements[node_value])}')
+                        self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.2 EQUALS: element {subscript[dimension_order]} not found within dimension: elements {node_value}: {list(self.dimension_elements[node_value])}")
                         raise
 
                     value = element_order + 1 # +1 because the order starts from 0, but we want to return 1, 2, 3, etc.
-                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.3 EQUALS: value {value}')
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3 EQUALS: value {value}")
                 else:
-                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v3.4 EQUALS: subscript not present')
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.4 EQUALS: subscript not present")
                     raise Exception(f'Subscript is not provided for dimension {node_value}. var: {var_name}')
             # Raise Exception('Dimension name should not be used as a variable name. var:', node_value)
             else:
-                self.logger.error('    '*self.id_level+'[ '+var_name+' ] '+f'v3 EQUALS: name {node_value} is not defined in the name space or dimension elements.')
+                self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3 EQUALS: name {node_value} is not defined in the name space or dimension elements.")
                 raise Exception(f'Name {node_value} is not defined in the name space or dimension elements. var: {var_name}')
 
         elif node_operator == 'SPAREN': # TODO this part is too dynamic, therefore can be slow.
             var_name = node_value
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1 context subscript {subscript}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1 context subscript {subscript}")
             if node_subscripts_in_token is None: # only var_name; no subscript is specified
-                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.1')
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.1")
                 # this could be 
                 # (1) this variable (var_name) is not subscripted therefore the only value of it should be used;
                 # (2) this variable (var_name) is subscripted in the same way as the variable using it (a contextual info is needed and provided in the arg subscript)
                 if subscript:
-                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.1.1')
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.1.1")
                     value = self.name_space[var_name][subscript] 
                 else:
-                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.1.2')
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.1.2")
                     value = self.name_space[var_name]
-                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v4.1 Sparen without sub: {value}')
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v4.1 Sparen without sub: {value}")
             else: # there are explicitly specified subscripts in oprands like a[b]
                 # print('subscripts from node definition', node_subscripts_in_token)
                 # print('subscripts from context', subscript)
@@ -804,48 +802,48 @@ class Solver(object):
                     # Case 1: just a subscript in the context, e.g. a[Element_1]
                     if len(subscript_in_token) == 1 and subscript_in_token[0][0] in ['NAME', 'NUMBER']:
                         node_subscripts.append(subscript_in_token[0][1]) # it's a dimension name, e.g. Dimension-1
-                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.0 subscript in token: {subscript_in_token[0][1]}')
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.2.1 subscript in token: {subscript_in_token[0][1]}")
                     # Case 2: subscript has in-line referencing to another element in the same dimension, e.g. a[Dimension-1]
                     elif len(subscript_in_token) == 3:
                         # step 1: find out the dimension name
                         dimension_name = subscript_in_token[0][1]
-                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.1 dimension name: {dimension_name}')
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.2.2.1 dimension name: {dimension_name}")
                         elements = self.dimension_elements[dimension_name]
                         # step 2: find out the offset direction
                         offset_operator = subscript_in_token[1][0]
-                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.2 offset operator: {offset_operator}')
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.2.2.2 offset operator: {offset_operator}")
                         # step 3: find out the offset amount
                         offset_amount = subscript_in_token[2][1]
-                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.3 offset amount: {offset_amount}')
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.2.2.3 offset amount: {offset_amount}")
                         
                         # We need to read from the context subscript the current element in the relevant dimension
                         # in case of wrong order in context subscripts, we check every one of them if they belong to elements
                         for context_element in subscript:
                             if context_element in elements:
                                 ind_context_element = elements.index(context_element)
-                                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.4 context element index: {ind_context_element}')
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.2.2.4 context element index: {ind_context_element}")
                                 if offset_operator == 'MINUS':
                                     ind_new_element = ind_context_element - int(offset_amount)
                                 elif offset_operator == 'PLUS':
                                     ind_new_element = ind_context_element + int(offset_amount)
                                 else:
                                     raise Exception(f"Invalid offset operator {offset_operator} in subscript {subscript_in_token}.")
-                                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.5 new element index: {ind_new_element}')
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.2.2.5 new element index: {ind_new_element}")
                                 new_element = elements[ind_new_element]
-                                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.2.6 new element: {new_element}')
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.2.2.6 new element: {new_element}")
                                 node_subscripts.append(new_element)
                                 break
                     else:
                         raise Exception(f"Invalid length of subscript tokens {subscript_in_token}: {len(subscript_in_token)}, should be 1 or 3.")
 
-                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.3 '+ f'subscript from node definition: {node_subscripts[:]} subscript from context: {subscript}')
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.3 subscript from node definition: {node_subscripts[:]} subscript from context: {subscript}")
                 # prioritise subscript from node definition
                 try:
                     subscript_from_definition = tuple(node_subscripts[:]) # use tuple to make it hashable
                     value = self.name_space[var_name][subscript_from_definition]
-                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.3.1 value' + str(value))
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.3.1 value{str(value)}")
                 except KeyError as e: # subscript in operands looks like a[Dimension_1, Element_1], inference needed
-                    self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'a1.3.2')
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.3.2 subscript in operands contains dimension name(s)")
                     if subscript: # there's subscript in context
                         subscript_from_definition = node_subscripts[:] # definition is what user put in equation, should take higher priority
                         subscript_from_definition_with_replacement = list()
@@ -856,50 +854,50 @@ class Solver(object):
                                 # now need to find out which element in the context subscript corresponds to this dimension
                                 while subscript_from_context_index < len(subscript) and subscript[subscript_from_context_index] not in self.dimension_elements[dimension_from_definition]:
                                     subscript_from_context_index += 1
-                                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.3.2.1 replace {dimension_from_definition} with {subscript[subscript_from_context_index]} from context subscript {subscript}')
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.3.2.1 replace {dimension_from_definition} with {subscript[subscript_from_context_index]} from context subscript {subscript}")
                                 subscript_from_definition_with_replacement.append(subscript[subscript_from_context_index]) # take the element from context subscript in the same position to replace Dimension_1
                                 subscript_from_context_index += 1
                             else: # it's sth like Element_1 - specified by the user, should take priority
-                                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.3.2.2 keep {subscript_from_definition[i]} as is, since it is not in dimension names of this model')
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.3.2.2 keep {subscript_from_definition[i]} as is, since it is not in dimension names of this model")
                                 subscript_from_definition_with_replacement.append(subscript_from_definition[i]) # add to list directly
                         subscript_from_definition_with_replacement = tuple(subscript_from_definition_with_replacement)
-                        self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'a1.3.2.2 {subscript_from_definition_with_replacement}')
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.3.2.2 {subscript_from_definition_with_replacement}")
                         value = self.name_space[var_name][subscript_from_definition_with_replacement] # try if subscript is Element_1
                     else: # there's no subscript in context
                         raise e
                         
-                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v4.2 SPAREN with sub: {value}')
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v4.2 SPAREN with sub: {value}")
         
         elif node_operator in self.built_in_functions.keys(): # plus, minus, con, etc.
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'operator v7 Built-in operator: {node_operator}, {node_operands}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operator v7 Built-in operator: {node_operator}, {node_operands}")
             func_name = node_operator
             function = self.built_in_functions[func_name]
             oprds = []
             for operand in node_operands:
-                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v7.1'+f' operand {operand}')
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.1 operand {operand}")
                 v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=operand, subscript=subscript)
-                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v7.2'+f' value {v} {subscript}')
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.2 value {v} {subscript}")
                 oprds.append(v)
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+'v7.3'+f' operands {oprds}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.3 operands {oprds}")
             value = function(*oprds)
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'v7 Built-in operator {node_operator}: {value}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7 Built-in operator {node_operator}: {value}")
         
         elif node_operator in self.custom_functions.keys(): # graph functions
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+f'custom func operator {node_operator}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] custom func operator {node_operator}")
             func_name = node_operator
             function = self.custom_functions[func_name]
             oprds = []
             for operand in node_operands:
-                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'operand {operand}')
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operand {operand}")
                 v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=operand, subscript=subscript)
-                self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'value {v}')
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] value {v}")
                 oprds.append(v)
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'operands {oprds}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operands {oprds}")
             value = function(*oprds)
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'v8 GraphFunc: {value}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v8 GraphFunc: {value}")
 
         elif node_operator in self.time_related_functions: # init, delay, etc
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'time-related func. operator: {node_operator} operands {node_operands}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] time-related func. operator: {node_operator} operands {node_operands}")
             func_name = node_operator
             if func_name == 'INIT':
                 if tuple([parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
@@ -1075,10 +1073,10 @@ class Solver(object):
 
             else:
                 raise Exception('Unknown time-related operator {}'.format(node_operator))
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'v9 Time-related Func: {value}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v9 Time-related Func: {value}")
         
         elif node_operator in self.array_related_functions: # Array-RELATED
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'array-related func. operator: {node_operator} operands: {node_operands}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] array-related func. operator: {node_operator} operands: {node_operands}")
             func_name = node_operator
             if func_name == 'SUM':
                 arrayed_var_name = parsed_equation.nodes[node_operands[0]]['value']
@@ -1086,10 +1084,10 @@ class Solver(object):
                 for _, sub_val in self.name_space[arrayed_var_name].items():
                     sum_array += sub_val
                 value = sum_array
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'v10 Array-related Func: {value}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10 Array-related Func: {value}")
         
         elif node_operator in self.lookup_functions: # LOOKUP
-            self.logger.debug('    '*self.id_level+'[ '+var_name+' ] '+ f'Lookup func. operator: {node_operator} operands: {node_operands}')
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] Lookup func. operator: {node_operator} operands: {node_operands}")
             func_name = node_operator
             if func_name == 'LOOKUP':
                 look_up_func_node_id = node_operands[0]
@@ -1899,9 +1897,9 @@ class sdmodel(object):
 
     def calculate_variable(self, var, dg, subscript=None, leak_frac=False, conveyor_init=False, conveyor_len=False):
         if leak_frac or conveyor_init or conveyor_len:
-            self.logger.debug("    "+"Calculating: {:<15} on subscript {}; flags leak_frac={}, conveyor_init={}, conveyor_len={}".format(var, subscript, leak_frac, conveyor_init, conveyor_len))
+            self.logger.debug(f"    Calculating: {var:<15} on subscript {subscript}; flags leak_frac={leak_frac}, conveyor_init={conveyor_init}, conveyor_len={conveyor_len}")
         else:
-            self.logger.debug("    "+"Calculating: {:<15} on subscript {}".format(var, subscript))
+            self.logger.debug(f"    Calculating: {var:<15} on subscript {subscript}")
         # debug
         if var in self.env_variables.keys():
             return
@@ -1921,7 +1919,7 @@ class sdmodel(object):
             # self.logger.debug('Calculating Conveyor {}'.format(var))
             if not (conveyor_init or conveyor_len):
                 if not self.conveyors[var]['conveyor'].is_initialized:
-                    self.logger.debug('    '+'Initializing conveyor {}'.format(var))
+                    self.logger.debug(f"    Initializing conveyor {var}")
                     # when initializing, equation of the conveyor needs to be evaluated, using flag conveyor_len=True 
                     self.calculate_variable(var=var, dg=dg, subscript=subscript, conveyor_len=True)
                     conveyor_length = self.conveyors[var]['len']
@@ -1944,7 +1942,7 @@ class sdmodel(object):
                     value = self.conveyors[var]['conveyor'].level()
                     self.name_space[var] = value
 
-                    self.logger.debug('    '+'Initializd conveyor {}'.format(var))
+                    self.logger.debug(f"    Initialized conveyor {var}")
                 
                 if var not in self.stock_shadow_values:
                     # self.logger.debug("Updating {} and its outflows".format(var))
@@ -1979,7 +1977,7 @@ class sdmodel(object):
         # B: var is a normal stock
         elif var not in self.conveyors and var in self.stocks:
             if not self.stocks[var].initialized:
-                self.logger.debug('    '+'Stock {} not initialized'.format(var))
+                self.logger.debug(f"    Stock {var} not initialized")
                 if type(parsed_equation) is dict:
                     for sub, sub_parsed_equation in parsed_equation.items():
                         sub_value = self.solver.calculate_node(var_name=var, parsed_equation=sub_parsed_equation, subscript=sub)
@@ -2001,13 +1999,13 @@ class sdmodel(object):
                 if self.stock_non_negative[var] is True:
                     self.stock_non_negative_temp_value[var] = deepcopy(self.name_space[var])
 
-                self.logger.debug('    '+'Stock {} initialized = {}'.format(var, self.name_space[var]))
+                self.logger.debug(f"    Stock {var} initialized = {self.name_space[var]}")
             
             else:
                 if self.stock_non_negative[var] is True:
-                    self.logger.debug('    '+'Stock {} already initialized = {}, temp value: {}'.format(var, self.name_space[var], self.stock_non_negative_temp_value[var]))
+                    self.logger.debug(f"    Stock {var} already initialized = {self.name_space[var]}, temp value: {self.stock_non_negative_temp_value[var]}")
                 else:
-                    self.logger.debug('    '+'Stock {} already initialized = {}'.format(var, self.name_space[var]))
+                    self.logger.debug(f"    Stock {var} already initialized = {self.name_space[var]}")
         
         # C: var is a flow
         elif var in self.flow_equations:
@@ -2054,7 +2052,7 @@ class sdmodel(object):
                             for sub, sub_value in self.name_space[var].items():
                                 if sub_value < 0:
                                     self.name_space[var][sub] = np.float64(0)
-                                    self.logger.debug('    '+"Flow {}[{}] is negative, set to 0".format(var, sub))
+                                    self.logger.debug(f"    Flow {var}[{sub}] is negative, set to 0")
                         else:
                             if self.name_space[var] < 0:
                                 self.name_space[var] = np.float64(0)
