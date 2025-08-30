@@ -84,24 +84,24 @@ class Parser:
             'EXP': r'\^',
         }
 
-        self.functions = { # use lookahead (?=\() to ensure only match INIT( not INITIAL
-            'MIN': r'MIN(?=\()',
-            'MAX': r'MAX(?=\()',
-            'SAFEDIV': r'SAFEDIV(?=\()',
-            'RBINOM': r'RBINOM(?=\()',
-            'INIT': r'INIT(?=\()',
-            'DELAY': r'DELAY(?=\()',
-            'DELAY1': r'DELAY1(?=\()',
-            'DELAY3': r'DELAY3(?=\()',
-            'SMTH1': r'SMTH1(?=\()',
-            'SMTH3': r'SMTH3(?=\()',
-            'STEP': r'STEP(?=\()',
-            'HISTORY': r'HISTORY(?=\()',
-            'LOOKUP': r'LOOKUP(?=\()',
-            'SUM': r'SUM(?=\()',
-            'PULSE': r'PULSE(?=\()',
-            'INT': r'INT(?=\()',
-            'LOG10': r'LOG10(?=\()',
+        self.functions = { # use lookahead (?=\s*\() to ensure only match INIT( or INIT  ( not INITIAL
+            'MIN': r'MIN(?=\s*\()',
+            'MAX': r'MAX(?=\s*\()',
+            'SAFEDIV': r'SAFEDIV(?=\s*\()',
+            'RBINOM': r'RBINOM(?=\s*\()',
+            'INIT': r'INIT(?=\s*\()',
+            'DELAY': r'DELAY(?=\s*\()',
+            'DELAY1': r'DELAY1(?=\s*\()',
+            'DELAY3': r'DELAY3(?=\s*\()',
+            'SMTH1': r'SMTH1(?=\s*\()',
+            'SMTH3': r'SMTH3(?=\s*\()',
+            'STEP': r'STEP(?=\s*\()',
+            'HISTORY': r'HISTORY(?=\s*\()',
+            'LOOKUP': r'LOOKUP(?=\s*\()',
+            'SUM': r'SUM(?=\s*\()',
+            'PULSE': r'PULSE(?=\s*\()',
+            'INT': r'INT(?=\s*\()',
+            'LOG10': r'LOG10(?=\s*\()',
         }
 
         self.names = {
@@ -1838,6 +1838,7 @@ class sdmodel(object):
                     unparsed_equations.append((var, equation, e))
                     counter_all_equations += 1
                     counter_unparsed_variables += 1
+                    exit()
             counter_all_variables += 1
         
         if len(unparsed_equations) > 0:
