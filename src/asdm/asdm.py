@@ -114,7 +114,7 @@ class Parser:
 
         self.names = {
             'ABSOLUTENAME': r'"[\s\S]*?"', # match quoted strings
-            'NAME': r'[a-zA-Z0-9_£$\?]*', # add support for £ and $ in variable names
+            'NAME': r'[a-zA-Z0-9_£$\?&]*', # add support for £ and $ in variable names
         }
 
         self.HEAD = "PARSER"
