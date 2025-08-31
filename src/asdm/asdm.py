@@ -14,7 +14,7 @@ logger_solver = logging.getLogger('asdm.solver')
 logger_graph_function = logging.getLogger('asdm.graph_function')
 logger_conveyor = logging.getLogger('asdm.conveyor')
 logger_data_feeder = logging.getLogger('asdm.data_feeder')
-logger_sdmodel = logging.getLogger('asdm.simulator')
+logger_sdmodel = logging.getLogger('asdm.simrun')
 
 logging.basicConfig(
     level=logging.INFO,
