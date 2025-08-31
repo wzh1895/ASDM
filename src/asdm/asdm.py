@@ -1603,6 +1603,10 @@ class sdmodel(object):
         self.aux_equations = dict()
         self.aux_equations_parsed = dict()
 
+        # delayed auxiliaries # virtually stocks with an auxiliary appearance and a SMOOTH/DELAY type of definition
+        self.delayed_auxiliary_equations = dict()
+        self.delayed_auxiliary_equations_parsed = dict()
+
         # graph_functions
         self.graph_functions = dict()
         self.graph_functions_renamed = dict()
@@ -1812,7 +1816,12 @@ class sdmodel(object):
                     
                 # create auxiliaries
                 for auxiliary in auxiliaries:
-                    self.add_aux(self.name_handler(auxiliary.get('name')), equation=subscripted_equation(auxiliary))
+                    # if after <eqn> tag there is <isee:delay_aux/>
+                    delay_aux = auxiliary.find('isee:delay_aux')
+                    if delay_aux is not None:
+                        self.add_delayed_aux(self.name_handler(auxiliary.get('name')), equation=subscripted_equation(auxiliary))
+                    else:
+                        self.add_aux(self.name_handler(auxiliary.get('name')), equation=subscripted_equation(auxiliary))
 
                 # create flows
                 for flow in flows:
@@ -1924,6 +1933,11 @@ class sdmodel(object):
         self.aux_equations[name] = equation
 
         self.state = 'loaded'
+
+    def add_delayed_aux(self, name, equation):
+        if type(equation) in [int, float, np.int_, np.float64]:
+            equation = str(equation)
+        self.delayed_auxiliary_equations[name] = equation
 
     def format_new_equation(self, new_equation):
         if type(new_equation) is str:
@@ -2119,7 +2133,7 @@ class sdmodel(object):
         self.batch_parse(self.stock_equations, self.stock_equations_parsed)
         self.batch_parse(self.flow_equations, self.flow_equations_parsed)
         self.batch_parse(self.aux_equations, self.aux_equations_parsed)
-
+        self.batch_parse(self.delayed_auxiliary_equations, self.delayed_auxiliary_equations_parsed)
         self.state = 'parsed'
 
     def is_dependent(self, var1, var2):
@@ -2146,8 +2160,8 @@ class sdmodel(object):
                 else:
                     pass
             return dependent
-        
-        parsed_equation_var2 = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var2]
+
+        parsed_equation_var2 = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed | self.delayed_auxiliary_equations_parsed)[var2]
         if type(parsed_equation_var2) is dict:
             for _, sub_eqn in parsed_equation_var2.items():
                 dependent = is_dependent_sub(var1, sub_eqn)
@@ -2157,7 +2171,7 @@ class sdmodel(object):
         else:
             return is_dependent_sub(var1, parsed_equation_var2)
 
-    def calculate_variable(self, var, dg, subscript=None, leak_frac=False, conveyor_init=False, conveyor_len=False):
+    def calculate_variable(self, var, dg, mode, subscript=None, leak_frac=False, conveyor_init=False, conveyor_len=False):
         if leak_frac or conveyor_init or conveyor_len:
             self.logger.debug(f"    Calculating: {var:<15} on subscript {subscript}; flags leak_frac={leak_frac}, conveyor_init={conveyor_init}, conveyor_len={conveyor_len}")
         else:
@@ -2167,10 +2181,10 @@ class sdmodel(object):
             return
         
         if subscript is not None:
-            parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var][subscript]
+            parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed | self.delayed_auxiliary_equations_parsed)[var][subscript]
         else:
-            parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var]
-        
+            parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed | self.delayed_auxiliary_equations_parsed)[var]
+
         # DataFeeder - external data
         if type(parsed_equation) is DataFeeder:
             if var not in self.name_space:
@@ -2583,6 +2597,9 @@ class sdmodel(object):
             # then the shadow value will be incorrect.
             for stock, stock_value in self.stock_shadow_values.items():
                 self.name_space[stock] = deepcopy(stock_value)
+
+            # then we need to add delayed auxiliaries as they are implicit stocks
+
             self.logger.debug(f'name space: {self.name_space}')
             
             self.logger.debug('clear shadow value')
@@ -2668,6 +2685,7 @@ class sdmodel(object):
         self.stock_equations_parsed = dict()
         self.flow_equations_parsed = dict()
         self.aux_equations_parsed = dict()
+        self.delayed_auxiliary_equations_parsed = dict()
 
         self.graph_functions = dict()
         self.graph_functions_renamed = dict()
@@ -2792,24 +2810,90 @@ class sdmodel(object):
         ax.legend()
         plt.show()
 
-    def create_variable_dependency_graph(self, var, graph=None):
+    def create_variable_dependency_graph(self, var, mode, graph=None, visited=None):
+        self.logger.debug(f"Creating dependency graph for variable '{var}' in mode '{mode}'")
         if graph is None:
             graph = nx.DiGraph()
-
-        all_equations = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)
-        if var in self.env_variables: # like 'TIME'
+        if visited is None:
+            visited = set()
+        
+        # Prevent infinite recursion by checking if we've already visited this variable
+        if var in visited:
             return graph
+        
+        visited.add(var)
+
+        if self.state == 'loaded':
+            self.parse()
+
+        all_equations = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed | self.delayed_auxiliary_equations_parsed)
+        if var in self.env_variables: # like 'TIME'
+            visited.remove(var)
+            return graph
+        
         parsed_equation = all_equations[var]
 
         def get_dependent_variables(parsed_equation):
+            # self.logger.debug(f"Getting dependent variables for parsed equation of variable '{var}'")
+            # self.logger.debug(f"Parsed equation: {parsed_equation.nodes(data=True)}")
+            # dependent_variables = set()
+            # if type(parsed_equation) is not dict:
+            #     def trace_node(node_id, node_dependents=set()):
+            #         self.logger.debug(f"Tracing node {node_id} with current dependents: {node_dependents}, parsed equation: {parsed_equation.nodes(data=True)}")
+            #         node = parsed_equation.nodes[node_id]
+            #         print('aaa', node)
+            #         node_operator = node['operator']
+            #         self.logger.debug(f"Tracing node {node_id}: operator {node_operator}")
+            #         if node_operator not in ['DELAY', 'DELAY1', 'DELAY3', 'SMTH1', 'SMTH3']: # if it is not a delay function, it's likely not having initial value issue
+            #             self.logger.debug(f"Node {node_id} is not a delay/smooth function, skipping special handling")
+            #             node_dependents.update(node['operands'])
+            #         else: # these functions have 2 or 3 operands; if 2 then no initial value, only 1st is used for initialization; if 3 then with initial value, only 3rd is used for initialization; 1st is indirectly (through cumulation) used for iteration; 2nd is directly (delay time) used for iteration
+            #             self.logger.debug(f"Node {node_id} is a delay/smooth function {node_operator}, handling operands based on mode '{mode}'")
+            #             if mode == 'init':
+            #                 self.logger.debug(f"Initialization mode: only considering the operand used for initialization")
+            #                 if len(node['operands']) == 3:
+            #                     self.logger.debug(f"Node {node_id} has 3 operands, adding the 3rd operand for initialization")
+            #                     node_dependents.add(node['operands'][2])
+            #                 elif len(node['operands']) == 2:
+            #                     self.logger.debug(f"Node {node_id} has 2 operands, adding the 1st operand for initialization")
+            #                     node_dependents.add(node['operands'][0])
+            #             elif mode == 'iter':
+            #                 self.logger.debug(f"Iteration mode: only delay time")
+            #                 node_dependents.add(node['operands'][1])
+            #         self.logger.debug(f"    1. Node {node_id} dependents after tracing: {node_dependents}")
+            #         self.logger.debug(f"    2. Retrieving dependent variables for node {node_id}")
+                    
+            #         node_dependent_purged = set()
+            #         for node_dependent in node_dependents:
+            #             if parsed_equation.nodes[node_dependent]['operator'] in ['EQUALS', 'SPAREN']:
+            #                 self.logger.debug(f"    --Node {node_dependent} is a variable, adding to dependent variables")
+            #                 dependent_name = parsed_equation.nodes[node_dependent]['value']
+            #                 dependent_variables.add(dependent_name)
+            #             elif parsed_equation.nodes[node_dependent]['operator'] == 'IS': # it is a number, no dependent, skip
+            #                 self.logger.debug(f"    --Node {node_dependent} is a number, skipping")
+            #                 pass
+            #             else:
+            #                 node_dependent_purged.add(node_dependent)
+            #         self.logger.debug(f"    3. Dependent variables for variable {var}: {dependent_variables}")
+            #         self.logger.debug(f"    4. Remaining node dependents for node {node_id}: {node_dependent_purged}")
+
+            #         # the remaining nodes could have dependencies on other variables, trace them recursively
+            #         for node_dependent in node_dependent_purged:
+            #             trace_node(node_id=node_dependent, node_dependents=node_dependent_purged)
+
+            #     trace_node(node_id=list(parsed_equation.successors('root'))[0])
+
+
+            # 20250831 this method is too coarse to detect if a, e.g., SMTH1 function depends on some var as input but has a different initial value
             dependent_variables = list()
             if type(parsed_equation) is not dict:
                 leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
                 for leaf in leafs:
                     if parsed_equation.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
                         dependent_name = parsed_equation.nodes[leaf]['value']
-                        if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out
-                            dependent_variables.append(dependent_name)
+                        # if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out # 20250831: Dimension now is a different kind of token
+                        dependent_variables.append(dependent_name)
+                        
             else:
                 for _, sub_eqn in parsed_equation.items():
                     leafs = [x for x in sub_eqn.nodes() if sub_eqn.out_degree(x)==0]
@@ -2817,8 +2901,8 @@ class sdmodel(object):
                         if sub_eqn.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
                             dependent_name = sub_eqn.nodes[leaf]['value']
                             if dependent_name not in dependent_variables: # remove duplicates
-                                if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out
-                                    dependent_variables.append(dependent_name)
+                                # if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out # 20250831: Dimension now is a different kind of token
+                                dependent_variables.append(dependent_name)
             return dependent_variables
         
         if type(parsed_equation) is list: # this variable might be a conveyor
@@ -2828,17 +2912,29 @@ class sdmodel(object):
                 # combine the two lists without duplicates
                 dependent_variables = list(set(dep_graph_len + dep_graph_val))
             else:
+                visited.remove(var)
                 raise Exception("Non-conveyor variable with parsed equation as list: {}".format(var))
-        else:
+        else: # this is a normal variable
+            # now check is it a delay or smooth
             dependent_variables = get_dependent_variables(parsed_equation)
 
         if len(dependent_variables) == 0:
             graph.add_node(var)
+            visited.remove(var)
             return graph
         else:
             for dependent_var in dependent_variables:
-                graph.add_edge(dependent_var, var)
-                self.create_variable_dependency_graph(dependent_var, graph)
+                # Only recurse if we haven't already visited this dependent variable
+                if dependent_var not in visited:
+                    graph.add_edge(dependent_var, var)
+                    self.create_variable_dependency_graph(dependent_var, mode=mode, graph=graph, visited=visited)
+                else:
+                    # Circular dependency detected
+                    self.logger.warning(f"Warning: Circular dependency detected between {dependent_var} and {var}")
+                    self.logger.warning(f"Warning: Full dependency path - direction A: {nx.shortest_path(graph, dependent_var, var)}")
+                    self.logger.warning(f"Warning: Full dependency path - direction B: {nx.shortest_path(graph, var, dependent_var)}\n")
+
+            visited.remove(var)
             return graph
 
     def generate_cld(self, vars=None, show=False, loop=True):
@@ -2886,6 +2982,7 @@ class sdmodel(object):
     def generate_full_dependent_graph(self, show=False):
         stocks = list(self.stock_equations.keys())
         flows = list(self.flow_equations.keys())
+        delayed_auxiliaries = list(self.delayed_auxiliary_equations.keys())
 
         # Initialization phase
         dg_init = nx.DiGraph()
@@ -2999,6 +3096,11 @@ class sdmodel(object):
                     dg_leak_fraction.add_edge(pred, conveyor_name)
                 
                 dg_init = nx.compose(dg_init, dg_leak_fraction)
+
+        # Initialize delayed auxiliaries
+        for aux in self.delayed_auxiliary_equations_parsed:
+            dg_delayed_aux = self.create_variable_dependency_graph(aux, mode='init')
+            dg_init = nx.compose(dg_init, dg_delayed_aux)
 
         # Iteration phase
         dg_iter = nx.DiGraph()
