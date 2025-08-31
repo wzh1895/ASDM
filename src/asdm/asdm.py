@@ -1047,11 +1047,11 @@ class Solver(object):
                     if subscript: # there's subscript in context
                         subscript_from_definition = node_subscripts[:] # definition is what user put in equation, should take higher priority
                         subscript_from_definition_with_replacement = list()
-                        subscript_from_context_index = 0
                         for i in range(len(subscript_from_definition)):
                             if subscript_from_definition[i] in self.var_dimensions[var_name]: # it's sth like Dimension_1 - needed to be replaced by the contextual element as it's not specified
                                 dimension_from_definition = subscript_from_definition[i]
                                 # now need to find out which element in the context subscript corresponds to this dimension
+                                subscript_from_context_index = 0 # search should start from 0, as dimensions from definition and dimensions from context can ba in different orders, e.g., variable itself is [Dim1, Dim2] but referring to another variable subscribed as [Dim2, Dim1]
                                 while subscript_from_context_index < len(subscript) and subscript[subscript_from_context_index] not in self.dimension_elements[dimension_from_definition]:
                                     subscript_from_context_index += 1
                                 self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.3.2.1 replace {dimension_from_definition} with {subscript[subscript_from_context_index]} from context subscript {subscript}")
