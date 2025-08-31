@@ -357,6 +357,12 @@ class Parser:
             operand = self.parse_factor()  # Recursively parse the operand
             self.node_id += 1
             return Node(node_id=self.node_id, operator='UNARY_MINUS', operands=[operand])
+        # Handle unary plus
+        elif token[0] == 'PLUS':
+            self.current_index += 1
+            operand = self.parse_factor()  # Recursively parse the operand
+            self.node_id += 1
+            return Node(node_id=self.node_id, operator='UNARY_PLUS', operands=[operand])
         elif token[0] == 'LPAREN':
             self.current_index += 1
             node = self.parse_statement()
@@ -705,6 +711,7 @@ class Solver(object):
             'NLT':      no_less_than,
             'EQS':      equals,
             'PLUS':     plus,
+            'UNARY_PLUS': unary_plus,
             'MINUS':    minus,
             'UNARY_MINUS': unary_minus,
             'TIMES':    times,
