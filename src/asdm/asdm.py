@@ -50,7 +50,7 @@ class Parser:
         self.logger = logger_parser
         
         self.numbers = {
-            'NUMBER': r'(?<![a-zA-Z0-9)])[-]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?'
+            'NUMBER': r'(?<![a-zA-Z0-9)])[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?'
         }
         self.special_symbols = {
             'COMMA': r',',
@@ -134,14 +134,10 @@ class Parser:
                         token = token[1:-1]
                     if type_name == 'ABSOLUTENAME':
                         type_name = 'NAME'
-                    if type_name == 'NUMBER' and token[0] == '-': # fix the -1: negative 1 vs minus 1 problem
-                        if not(len(tokens) == 0 or tokens[-1][0] == 'LPAREN'):
-                            tokens.append(['MINUS', '-'])
-                            tokens.append(['NUMBER', token[1:]])
-                            s = s[m.span()[1]:].strip()
-                        else:
-                            tokens.append([type_name, token])
-                            s = s[m.span()[1]:].strip()
+
+                    if token in self.dimension_elements.keys():
+                        tokens.append(['DIMENSION', token])
+                        s = s[m.span()[1]:].strip()
                     else:
                         if type_name in self.functions:
                             tokens.append(['FUNC', token])
@@ -149,6 +145,7 @@ class Parser:
                             tokens.append([type_name, token])
                         s = s[m.span()[1]:].strip()
                     break
+        
         return tokens
     
     def parse(self, expression, plot=False):
@@ -350,7 +347,14 @@ class Parser:
         """Parse a factor which could be a number, a variable, a function call, or an expression in parentheses."""
         self.logger.debug(f"parse_factor       {self.tokens[self.current_index:]}")
         token = self.tokens[self.current_index]
-        if token[0] == 'LPAREN':
+        
+        # Handle unary minus (negation)
+        if token[0] == 'MINUS':
+            self.current_index += 1
+            operand = self.parse_factor()  # Recursively parse the operand
+            self.node_id += 1
+            return Node(node_id=self.node_id, operator='UNARY_MINUS', operands=[operand])
+        elif token[0] == 'LPAREN':
             self.current_index += 1
             node = self.parse_statement()
             self.current_index += 1  # Skipping the closing ')'
@@ -502,6 +506,32 @@ class Solver(object):
                     o = dict()
                     for k in b:
                         o[k] = a - b[k]
+                    return o
+                else:
+                    raise e
+
+        def unary_minus(a):
+            """Unary minus operator (negation)"""
+            try:
+                return -a
+            except TypeError as e:
+                if type(a) is dict:
+                    o = dict()
+                    for k in a:
+                        o[k] = -a[k]
+                    return o
+                else:
+                    raise e
+
+        def unary_plus(a):
+            """Unary plus operator"""
+            try:
+                return +a
+            except TypeError as e:
+                if type(a) is dict:
+                    o = dict()
+                    for k in a:
+                        o[k] = +a[k]
                     return o
                 else:
                     raise e
@@ -670,6 +700,7 @@ class Solver(object):
             'EQS':      equals,
             'PLUS':     plus,
             'MINUS':    minus,
+            'UNARY_MINUS': unary_minus,
             'TIMES':    times,
             'DIVIDE':   divide,
             'FLOORDIVIDE': floor_divide,
