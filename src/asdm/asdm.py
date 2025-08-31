@@ -60,6 +60,7 @@ class Parser:
             'LSPAREN': r'\[',
             'RSPAREN': r'\]',
             'DOT': r'\.',
+            'COLON': r':',
         }
 
         self.logic_operators ={
@@ -735,6 +736,12 @@ class Solver(object):
             else:
                 raise Exception(f"Invalid dot operation: {left_operand}.{right_operand}")
         
+        def colon_range(start_operand, end_operand):
+            """Handle colon operator for range selection like A34:A94"""
+            # This will return a range representation that can be used by the solver
+            # For now, return a tuple representing the range
+            return (start_operand, end_operand)
+        
         ### Function mapping ###
 
         self.built_in_functions = {
@@ -766,6 +773,7 @@ class Solver(object):
             'INT':      integer,
             'LOG10':    log10,
             'DOT':      dot_access,
+            'COLON':    colon_range,
         }
 
         self.time_related_functions = [
