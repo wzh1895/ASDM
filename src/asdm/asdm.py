@@ -1280,10 +1280,57 @@ class Solver(object):
             func_name = node_operator
             if func_name == 'SUM':
                 arrayed_var_name = parsed_equation.nodes[node_operands[0]]['value']
-                sum_array = 0
-                for _, sub_val in self.name_space[arrayed_var_name].items():
-                    sum_array += sub_val
-                value = sum_array
+                arrayed_var_subscripts = parsed_equation.nodes[node_operands[0]]['subscripts']
+                if len(arrayed_var_subscripts) == 0: # SUM(Population)
+                    sum_array = 0
+                    for _, sub_val in self.name_space[arrayed_var_name].items():
+                        sum_array += sub_val
+                    value = sum_array
+                elif len(arrayed_var_subscripts) >= 1: 
+                    n_dimensions = len(arrayed_var_subscripts)
+                    # the idea here is to create an allowed list for each dimension - only those element_combinations with all elements appearing in the corresponding list should be summed
+                    list_allowed_elements_per_dimension = []
+                    for i in range(n_dimensions):
+                        list_allowed_elements_per_dimension.append(list())
+                        # which dimension are we talking about?
+                        dimension_name = self.var_dimensions[arrayed_var_name][i]
+                        # which elements does this dimension have?
+                        dimension_elements = self.dimension_elements[dimension_name]
+                        # what does the token say?
+                        dimension_tokens = arrayed_var_subscripts[i]
+                        # case-1
+                        if len(dimension_tokens) == 1: # it's either a specific element like ['NAME', 'A9'] or a * like ['TIMES', '*']
+                            if dimension_tokens[0][1] == '*':
+                                # if it's a *, we take all elements
+                                list_allowed_elements_per_dimension[i] = dimension_elements
+                            else:
+                                # otherwise, we take the specific element
+                                if dimension_tokens[0][1] in dimension_elements:
+                                    list_allowed_elements_per_dimension[i] = [dimension_tokens[0]]
+                                else:
+                                    raise Exception(f"Element {dimension_tokens[0]} is not in dimension {dimension_name}.")
+                        # case-2
+                        if len(dimension_tokens) == 3: # it's a range like ['NAME', 'A9'], ['COLON', ':'], ['NAME', 'A14']
+                            if dimension_tokens[1][1] == ':' and dimension_tokens[2][0] == 'NAME':
+                                start = dimension_tokens[0][1]
+                                end = dimension_tokens[2][1]
+                                if start in dimension_elements and end in dimension_elements:
+                                    list_allowed_elements_per_dimension[i] = dimension_elements[dimension_elements.index(start):dimension_elements.index(end)+1]
+                                else:
+                                    raise Exception(f"Range {start}:{end} is not valid in dimension {dimension_name}.")
+                            else:
+                                raise Exception(f"Invalid range syntax in dimension {dimension_name}.")
+                    sum_array =0
+                    for sub_elements, sub_val in self.name_space[arrayed_var_name].items():
+                        add_this = True
+                        for i in range(n_dimensions):
+                            if sub_elements[i] not in list_allowed_elements_per_dimension[i]:
+                                add_this = False
+                                break
+                        if add_this:
+                            sum_array += sub_val
+                    value = sum_array
+
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10 Array-related Func: {value}")
         
         elif node_operator in self.lookup_functions: # LOOKUP
