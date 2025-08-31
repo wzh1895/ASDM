@@ -179,3 +179,4 @@ clear.bat
 *.xls
 *.xlsx
 *.isdb
+run_tests.sh
