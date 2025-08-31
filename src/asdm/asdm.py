@@ -36,6 +36,8 @@ class Node:
         self.subscripts = subscripts if subscripts is not None else []
         self.operands = operands if operands is not None else []
 
+        # print(f"\nCreated Node: id={self.node_id}, operator={self.operator}, value={self.value}, subscripts={self.subscripts}, operands={[operand.node_id for operand in self.operands]}\n")
+
     def __str__(self):
         if self.operands:
             return f'{self.operator}({", ".join(str(operand) for operand in self.operands)})' 
@@ -106,6 +108,8 @@ class Parser:
             'INT': r'INT(?=\s*\()',
             'LOG10': r'LOG10(?=\s*\()',
             'EXP_FUNC': r'EXP(?=\s*\()', # a^b is equivalent to EXP(a, b)
+            'LOGISTICBOUND': r'LOGISTICBOUND(?=\s*\()',
+            'EXPBOUND': r'EXPBOUND(?=\s*\()',
         }
 
         self.names = {
@@ -743,6 +747,106 @@ class Solver(object):
             # For now, return a tuple representing the range
             return (start_operand, end_operand)
         
+        def logisticbound(yfrom, yto, x, xmiddle, speed, xstart=None, xfinish=None):
+            """
+            LOGISTICBOUND function: transitions from yfrom to yto when x goes from xstart to xfinish
+            following a logistic (s-shaped) curve with given speed.
+            
+            Parameters:
+            - yfrom: starting y value
+            - yto: ending y value  
+            - x: current x value
+            - xmiddle: x value at the middle of the transition (inflection point)
+            - speed: controls the steepness of the curve (higher = steeper)
+            - xstart: starting x value (optional, defaults to -infinity)
+            - xfinish: ending x value (optional, defaults to +infinity)
+            
+            Returns the y value on the logistic curve at position x
+            """
+            import numpy as np
+            
+            # Handle optional parameters
+            if xstart is not None and x <= xstart:
+                return yfrom
+            if xfinish is not None and x >= xfinish:
+                return yto
+            
+            # Calculate the logistic function
+            # Standard logistic: 1 / (1 + exp(-speed * (x - xmiddle)))
+            # Scaled and shifted: yfrom + (yto - yfrom) * logistic
+            try:
+                logistic_value = 1.0 / (1.0 + np.exp(-speed * (x - xmiddle)))
+                result = yfrom + (yto - yfrom) * logistic_value
+                return result
+            except (OverflowError, ZeroDivisionError):
+                # Handle extreme values
+                if x < xmiddle:
+                    return yfrom
+                else:
+                    return yto
+        
+        def expbound(yfrom, yto, x, exponent, xstart, xfinish):
+            """
+            EXPBOUND function: transitions from yfrom to yto when x goes from xstart to xfinish
+            following an exponential curve with the given exponent.
+            
+            Parameters:
+            - yfrom: starting y value
+            - yto: ending y value  
+            - x: current x value
+            - exponent: controls the shape of the exponential curve
+            - xstart: starting x value
+            - xfinish: ending x value
+            
+            Returns the y value on the exponential curve at position x
+            
+            The behavior depends on the exponent:
+            - exponent = 0: linear transition
+            - exponent > 0: slow near xstart, fast near xfinish  
+            - exponent < 0: fast near xstart, slow near xfinish
+            """
+            import numpy as np
+            
+            # Handle boundary conditions
+            if x <= xstart:
+                return yfrom
+            if x >= xfinish:
+                return yto
+            
+            # Normalize x to [0, 1] range
+            normalized_x = (x - xstart) / (xfinish - xstart)
+            
+            try:
+                if exponent == 0:
+                    # Linear interpolation when exponent is 0
+                    exponential_value = normalized_x
+                else:
+                    # Exponential transformation
+                    # Formula: (exp(exponent * normalized_x) - 1) / (exp(exponent) - 1)
+                    if abs(exponent) < 1e-10:  # Very small exponent, treat as linear
+                        exponential_value = normalized_x
+                    else:
+                        exponential_value = (np.exp(exponent * normalized_x) - 1) / (np.exp(exponent) - 1)
+                
+                # Scale and shift to get final result
+                result = yfrom + (yto - yfrom) * exponential_value
+                return result
+                
+            except (OverflowError, ZeroDivisionError):
+                # Handle extreme values
+                if exponent > 0:
+                    # For positive exponent, curve starts slow then accelerates
+                    if normalized_x < 0.5:
+                        return yfrom + (yto - yfrom) * 0.1  # Small progress
+                    else:
+                        return yfrom + (yto - yfrom) * 0.9  # Most progress
+                else:
+                    # For negative exponent, curve starts fast then decelerates
+                    if normalized_x < 0.5:
+                        return yfrom + (yto - yfrom) * 0.9  # Most progress
+                    else:
+                        return yfrom + (yto - yfrom) * 0.99  # Nearly complete
+        
         ### Function mapping ###
 
         self.built_in_functions = {
@@ -775,6 +879,8 @@ class Solver(object):
             'LOG10':    log10,
             'DOT':      dot_access,
             'COLON':    colon_range,
+            'LOGISTICBOUND': logisticbound,
+            'EXPBOUND': expbound,
         }
 
         self.time_related_functions = [
@@ -1921,6 +2027,7 @@ class sdmodel(object):
                         unparsed_equations.append(((var, k), ks, e))
                         counter_all_equations += 1
                         un_parsed = True
+                        exit() # debug line of code: exit on error to examine the log. commented out by default
                 if un_parsed:
                     counter_unparsed_variables += 1
             else:
@@ -1932,7 +2039,7 @@ class sdmodel(object):
                     unparsed_equations.append((var, equation, e))
                     counter_all_equations += 1
                     counter_unparsed_variables += 1
-                    exit()
+                    exit() # debug line of code: exit on error to examine the log. commented out by default
             counter_all_variables += 1
         
         if len(unparsed_equations) > 0:
