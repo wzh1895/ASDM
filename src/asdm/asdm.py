@@ -81,7 +81,7 @@ class Parser:
             'FLOORDIVIDE': r'\/\/',
             'DIVIDE': r'\/',
             'MOD': r'MOD(?=\s)', # there are spaces surronding MOD, but the front space is strip()-ed
-            'EXP': r'\^',
+            'EXP_OP': r'\^',
         }
 
         self.functions = { # use lookahead (?=\s*\() to ensure only match INIT( or INIT  ( not INITIAL
@@ -102,6 +102,7 @@ class Parser:
             'PULSE': r'PULSE(?=\s*\()',
             'INT': r'INT(?=\s*\()',
             'LOG10': r'LOG10(?=\s*\()',
+            'EXP_FUNC': r'EXP(?=\s*\()', # a^b is equivalent to EXP(a, b)
         }
 
         self.names = {
@@ -322,21 +323,21 @@ class Parser:
     def parse_term(self):
         """Parse a term for '*' and '/' with higher precedence."""
         self.logger.debug(f"parse_term         {self.tokens[self.current_index:]} ")
-        nodes = [self.parse_exponent()]
+        nodes = [self.parse_exponent_op()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['TIMES', 'DIVIDE', 'FLOORDIVIDE']:
             op = self.tokens[self.current_index]
             self.current_index += 1
             left = nodes.pop()
-            right = self.parse_exponent()
+            right = self.parse_exponent_op()
             self.node_id += 1
             nodes.append(Node(node_id=self.node_id, operator=op[0], operands=[left, right]))
         return nodes[0]
     
-    def parse_exponent(self):
-        """Parse an EXP (^) operation."""
+    def parse_exponent_op(self):
+        """Parse an EXP_OP (^) operation."""
         self.logger.debug(f"parse_exponent     {self.tokens[self.current_index:]}")
         nodes = [self.parse_factor()]
-        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'EXP':
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'EXP_OP':
             op = self.tokens[self.current_index]
             self.current_index += 1
             left = nodes.pop()
@@ -647,6 +648,9 @@ class Solver(object):
                 
         def exp(a, b):
             return a ** b
+        
+        def exp_e(a):
+            return np.e ** a
 
         def con(a, b, c):
             if a:
@@ -714,7 +718,8 @@ class Solver(object):
             'MOD':      mod,
             'RBINOM':   rbinom,
             'PULSE':    pulse,
-            'EXP':      exp,
+            'EXP_OP':   exp,
+            'EXP_FUNC': exp_e,
             'INT':      integer,
             'LOG10':    log10,
         }
