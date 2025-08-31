@@ -109,7 +109,7 @@ class Parser:
         }
 
         self.names = {
-            'ABSOLUTENAME': r'"[\s\S]*?"',
+            'ABSOLUTENAME': r'"[\s\S]*?"', # match quoted strings
             'NAME': r'[a-zA-Z0-9_£$\?]*', # add support for £ and $ in variable names
         }
 
@@ -225,7 +225,7 @@ class Parser:
     
     def parse_statement(self):
         self.logger.debug("")
-        self.logger.debug(f"parse_statement   {self.tokens[self.current_index:]}")
+        self.logger.debug(f"parse_statement    {self.tokens[self.current_index:]}")
         """Parse a statement. The statement could be an IF-THEN-ELSE statement or an expression."""
         if self.tokens[self.current_index][0] == 'CONIF':
             self.current_index += 1
@@ -389,8 +389,7 @@ class Parser:
         elif token[0] == 'DIMENSION':
             return self.parse_dimension()
         elif token[0] == 'NAME':
-            node = self.parse_variable()
-            return node
+            return self.parse_variable()
         elif token[0] == 'NUMBER':
             self.current_index += 1
             self.node_id += 1
