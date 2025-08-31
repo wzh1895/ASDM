@@ -117,6 +117,8 @@ class Parser:
 
     def tokenise(self, s):
         tokens = []
+        # remove everything after "{"" (inclusive) which are comments
+        s = s.split('{')[0]
         while len(s) > 0:
             self.logger.debug(f"Tokenising: {s} len: {len(s)}")
             for type_name, type_regex in (
