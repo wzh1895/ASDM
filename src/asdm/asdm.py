@@ -1156,7 +1156,7 @@ class Solver(object):
                 for i in range(1, order):
                     self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
-                return outflows[-1] / self.sim_specs['dt']
+                value = outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'DELAY3':
                 # arg values
@@ -1185,7 +1185,7 @@ class Solver(object):
                 for i in range(1, order):
                     self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
-                return outflows[-1] / self.sim_specs['dt']
+                value = outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'HISTORY':
                 # expr value
@@ -1235,7 +1235,7 @@ class Solver(object):
                 for i in range(1, order):
                     self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
-                return outflows[-1] / self.sim_specs['dt']
+                    value = outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'SMTH3':
                 # arg values
@@ -1269,7 +1269,7 @@ class Solver(object):
                 for i in range(1, order):
                     self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
-                return outflows[-1] / self.sim_specs['dt']
+                value = outflows[-1] / self.sim_specs['dt']
 
             else:
                 raise Exception('Unknown time-related operator {}'.format(node_operator))
