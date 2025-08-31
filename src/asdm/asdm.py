@@ -908,7 +908,7 @@ class Solver(object):
 
         self.HEAD = "SOLVER"
 
-    def calculate_node(self, var_name, parsed_equation, node_id='root', subscript=None):        
+    def calculate_node(self, var_name, parsed_equation, mode, node_id='root', subscript=None):        
         self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0 processing node {node_id}:")
 
         self.id_level += 1
@@ -1075,7 +1075,7 @@ class Solver(object):
             oprds = []
             for operand in node_operands:
                 self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.1 operand {operand}")
-                v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=operand, subscript=subscript)
+                v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=operand, subscript=subscript)
                 self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.2 value {v} {subscript}")
                 oprds.append(v)
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.3 operands {oprds}")
@@ -1089,7 +1089,7 @@ class Solver(object):
             oprds = []
             for operand in node_operands:
                 self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operand {operand}")
-                v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=operand, subscript=subscript)
+                v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=operand, subscript=subscript)
                 self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] value {v}")
                 oprds.append(v)
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operands {oprds}")
@@ -1100,174 +1100,174 @@ class Solver(object):
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] time-related func. operator: {node_operator} operands {node_operands}")
             func_name = node_operator
             if func_name == 'INIT':
-                if tuple([parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
-                    value = self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])]
+                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
+                    value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])]
                 else:
-                    value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = value
+                    value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = value
             elif func_name == 'DELAY':
                 # expr value
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
-                if tuple([parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(expr_value)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(expr_value)
                 else:
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = [expr_value]
-                
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = [expr_value]
+
                 # init value
                 if len(node_operands) == 2: # there's no initial value specified -> use the delayed expr's initial value
-                    init_value = self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][0]
+                    init_value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0]
                 elif len(node_operands) == 3: # there's an initial value specified
-                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
                 else:
                     raise Exception("Invalid initial value for DELAY in operands {}".format(node_operands))
 
                 # delay time
-                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
                 if delay_time > (self.sim_specs['current_time'] - self.sim_specs['initial_time']): # (- initial_time) because simulation might not start from time 0
                     value = init_value
                 else:
                     delay_steps = delay_time / self.sim_specs['dt']
-                    value = self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][-int(delay_steps+1)]
+                    value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][-int(delay_steps+1)]
             elif func_name == 'DELAY1':
                 # args values
                 order = 1
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
-                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
 
                 if len(node_operands) == 3:
-                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
                 elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
                     raise Exception('Invalid number of args for DELAY1.')
                 
                 # register
-                if tuple([parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = list()
+                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = list()
                     for i in range(order):
-                        self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(delay_time/order*init_value)
+                        self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(delay_time/order*init_value)
                 # outflows
                 outflows = list()
                 for i in range(order):
-                    outflows.append(self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i]/(delay_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
+                    outflows.append(self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i]/(delay_time/order) * self.sim_specs['dt'])
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
                 # inflows
-                self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
+                self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
                 for i in range(1, order):
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
                 value = outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'DELAY3':
                 # arg values
                 order = 3
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
-                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
                 if len(node_operands) == 3:
-                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
                 elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
                     raise Exception('Invalid number of args for SMTH3.')
                 
                 # register
-                if tuple([parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = list()
+                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = list()
                     for i in range(order):
-                        self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(delay_time/order*init_value)
+                        self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(delay_time/order*init_value)
                 # outflows
                 outflows = list()
                 for i in range(order):
-                    outflows.append(self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i]/(delay_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
+                    outflows.append(self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i]/(delay_time/order) * self.sim_specs['dt'])
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
                 # inflows
-                self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
+                self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
                 for i in range(1, order):
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
                 value = outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'HISTORY':
                 # expr value
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
-                if tuple([parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(expr_value)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(expr_value)
                 else:
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = [expr_value]
-                
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = [expr_value]
+
                 # historical time
-                historical_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                historical_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
                 if historical_time > self.sim_specs['current_time'] or historical_time < self.sim_specs['initial_time']:
                     value = 0
                 else:
                     historical_steps = (historical_time - self.sim_specs['initial_time']) / self.sim_specs['dt']
-                    value = self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][int(historical_steps)]
-            
+                    value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][int(historical_steps)]
+
             elif func_name == 'SMTH1':
                 # arg values
                 order = 1
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
                 if type(expr_value) is dict:
                     if subscript is not None:
                         expr_value = expr_value[subscript]
                     else:
                         raise Exception('Invalid subscript.')
-                smth_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                smth_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
                 if len(node_operands) == 3:
-                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
                 elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
                     raise Exception('Invalid number of args for SMTH1.')
                 
                 # register
-                if tuple([parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = list()
+                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = list()
                     for i in range(order):
-                        self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(smth_time/order*init_value)
+                        self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(smth_time/order*init_value)
                 # outflows
                 outflows = list()
                 for i in range(order):
-                    outflows.append(self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i]/(smth_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
+                    outflows.append(self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i]/(smth_time/order) * self.sim_specs['dt'])
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
                 # inflows
-                self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
+                self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
                 for i in range(1, order):
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
-                    value = outflows[-1] / self.sim_specs['dt']
+                value = outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'SMTH3':
                 # arg values
                 order = 3
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[0], subscript=subscript)
+                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
                 if type(expr_value) is dict:
                     if subscript is not None:
                         expr_value = expr_value[subscript]
                     else:
                         raise Exception('Invalid subscript.')
-                smth_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                smth_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
                 if len(node_operands) == 3:
-                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[2], subscript=subscript)
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
                 elif len(node_operands) == 2:
                     init_value = expr_value
                 else:
                     raise Exception('Invalid number of args for SMTH3.')
                 
                 # register
-                if tuple([parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])] = list()
+                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = list()
                     for i in range(order):
-                        self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])].append(smth_time/order*init_value)
+                        self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(smth_time/order*init_value)
                 # outflows
                 outflows = list()
                 for i in range(order):
-                    outflows.append(self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i]/(smth_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
+                    outflows.append(self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i]/(smth_time/order) * self.sim_specs['dt'])
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
                 # inflows
-                self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
+                self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
                 for i in range(1, order):
-                    self.time_expr_register[tuple([parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
 
                 value = outflows[-1] / self.sim_specs['dt']
 
@@ -1340,7 +1340,7 @@ class Solver(object):
                 look_up_func_node_id = node_operands[0]
                 look_up_func_name = parsed_equation.nodes[look_up_func_node_id]['value']
                 look_up_func = self.graph_functions[look_up_func_name]
-                input_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, node_id=node_operands[1], subscript=subscript)
+                input_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
                 value = look_up_func(input_value)
             else:
                 raise Exception('Unknown Lookup function {}'.format(node_operator))
@@ -2170,12 +2170,12 @@ class sdmodel(object):
                 if not self.conveyors[var]['conveyor'].is_initialized:
                     self.logger.debug(f"    Initializing conveyor {var}")
                     # when initializing, equation of the conveyor needs to be evaluated, using flag conveyor_len=True 
-                    self.calculate_variable(var=var, dg=dg, subscript=subscript, conveyor_len=True)
+                    self.calculate_variable(var=var, dg=dg, mode=mode, subscript=subscript, conveyor_len=True)
                     conveyor_length = self.conveyors[var]['len']
                     length_steps = int(conveyor_length/self.sim_specs['dt'])
                     
                     # when initializing, equation of the conveyor needs to be evaluated, using flag conveyor_init=True 
-                    self.calculate_variable(var=var, dg=dg, subscript=subscript, conveyor_init=True)
+                    self.calculate_variable(var=var, dg=dg, mode=mode, subscript=subscript, conveyor_init=True)
                     conveyor_init_value = self.conveyors[var]['val']
                     
                     leak_flows = self.conveyors[var]['leakflow']
@@ -2183,7 +2183,7 @@ class sdmodel(object):
                         leak_fraction = 0
                     else:
                         for leak_flow in leak_flows.keys():
-                            self.calculate_variable(var=leak_flow, dg=dg, subscript=subscript, leak_frac=True)
+                            self.calculate_variable(var=leak_flow, dg=dg, mode=mode, subscript=subscript, leak_frac=True)
                             leak_fraction = self.conveyors[var]['leakflow'][leak_flow] # TODO multiple leakflows
                     self.conveyors[var]['conveyor'].initialize(length_steps, conveyor_init_value, leak_fraction)
                     
@@ -2215,32 +2215,32 @@ class sdmodel(object):
                 # self.logger.debug('Calculating LEN for {}'.format(var))
                 # it is the intitial value of the conveyoer
                 parsed_equation = self.stock_equations_parsed[var][0]
-                self.conveyors[var]['len'] = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation)
+                self.conveyors[var]['len'] = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode)
 
             elif conveyor_init:
                 # self.logger.debug('Calculating INIT VAL for {}'.format(var))
                 # it is the intitial value of the conveyoer
                 parsed_equation = self.stock_equations_parsed[var][1]
-                self.conveyors[var]['val'] = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation)
-        
+                self.conveyors[var]['val'] = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode)
+
         # B: var is a normal stock
         elif var not in self.conveyors and var in self.stocks:
             if not self.stocks[var].initialized:
                 self.logger.debug(f"    Stock {var} not initialized")
                 if type(parsed_equation) is dict:
                     for sub, sub_parsed_equation in parsed_equation.items():
-                        sub_value = self.solver.calculate_node(var_name=var, parsed_equation=sub_parsed_equation, subscript=sub)
+                        sub_value = self.solver.calculate_node(var_name=var, parsed_equation=sub_parsed_equation, mode=mode, subscript=sub)
                         if var not in self.name_space:
                             self.name_space[var] = dict()
                         self.name_space[var][sub] = sub_value
                 elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
                     for sub in self.dimension_elements[self.var_dimensions[var]]:
-                        sub_value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=sub)
+                        sub_value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode, subscript=sub)
                         if var not in self.name_space:
                             self.name_space[var] = dict()
                         self.name_space[var][sub] = sub_value
                 else: # The variable is not subscripted
-                    value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=subscript)
+                    value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode, subscript=subscript)
                     self.name_space[var] = value
                 
                 self.stocks[var].initialized = True
@@ -2265,34 +2265,34 @@ class sdmodel(object):
                     # then it is the real value of the leak flow that is requested.
                     # then conveyor needs to be calculated. Otherwise it is the conveyor that requires it 
                     if var not in self.name_space: # the leak_flow is not calculated, which means the conveyor has not been initialized
-                        self.calculate_variable(var=self.leak_conveyors[var], dg=dg, subscript=subscript)
+                        self.calculate_variable(var=self.leak_conveyors[var], dg=dg, mode=mode, subscript=subscript)
                 else:
                     # it is the value of the leak_fraction (a percentage) that is requested.    
                     # leak_fraction is calculated using leakflow's equation. 
                     parsed_equation = self.flow_equations_parsed[var]
-                    self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation)
+                    self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode)
 
             elif var in self.outflow_conveyors:
                 # requiring an outflow's value triggers the calculation of its connected conveyor
                 if var not in self.name_space: # the outflow is not calculated, which means the conveyor has not been initialized
-                    self.calculate_variable(var=self.outflow_conveyors[var], dg=dg, subscript=subscript)
+                    self.calculate_variable(var=self.outflow_conveyors[var], dg=dg, mode=mode, subscript=subscript)
 
             elif var in self.flow_equations: # var is a normal flow
                 if var not in self.name_space:
                     if type(parsed_equation) is dict:
                         for sub, sub_parsed_equation in parsed_equation.items():
-                            sub_value = self.solver.calculate_node(var_name=var, parsed_equation=sub_parsed_equation, subscript=sub)
+                            sub_value = self.solver.calculate_node(var_name=var, parsed_equation=sub_parsed_equation, mode=mode, subscript=sub)
                             if var not in self.name_space:
                                 self.name_space[var] = dict()
                             self.name_space[var][sub] = sub_value
                     elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
                         for sub in self.dimension_elements[self.var_dimensions[var]]:
-                            sub_value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=sub)
+                            sub_value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode, subscript=sub)
                             if var not in self.name_space:
                                 self.name_space[var] = dict()
                             self.name_space[var][sub] = sub_value
                     else:
-                        value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=subscript)
+                        value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode, subscript=subscript)
                         self.name_space[var] = value
 
                     # control flow positivity by itself
@@ -2382,18 +2382,18 @@ class sdmodel(object):
             if var not in self.name_space:
                 if type(parsed_equation) is dict:
                     for sub, sub_parsed_equation in parsed_equation.items():
-                        value = self.solver.calculate_node(var_name=var, parsed_equation=sub_parsed_equation, subscript=sub)
+                        value = self.solver.calculate_node(var_name=var, parsed_equation=sub_parsed_equation, mode=mode, subscript=sub)
                         if var not in self.name_space:
                             self.name_space[var] = dict()
                         self.name_space[var][sub] = value
                 elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
                     for sub in self.dimension_elements[self.var_dimensions[var]]:
-                        value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=sub)
+                        value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode, subscript=sub)
                         if var not in self.name_space:
                             self.name_space[var] = dict()
                         self.name_space[var][sub] = value
                 else:
-                    value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, subscript=subscript)
+                    value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode, subscript=subscript)
                     self.name_space[var] = value
                 self.logger.debug('    '+'Aux {} = {}'.format(var, value))
                         
@@ -2511,7 +2511,7 @@ class sdmodel(object):
                     self.stock_non_negative_temp_value[stock] = None
 
             for var in self.ordered_vars_init:
-                self.calculate_variable(var=var, dg=self.dg_init)
+                self.calculate_variable(var=var, dg=self.dg_init, mode='init')
         
             # Since it's just loaded, we need 2 iterations (if we were to simulate 1 DT)
             # The 1st iteration is to calculate the flows (and auxiliaries) based on the initialilized stocks (1st row of outcome) and update the stocks (2nd row of outcome)
@@ -2535,7 +2535,7 @@ class sdmodel(object):
             
             # Iter step 1: calculate flows and auxiliaries they depend on
             for var in self.ordered_vars_iter:
-                self.calculate_variable(var=var, dg=self.dg_iter)
+                self.calculate_variable(var=var, dg=self.dg_iter, mode='iter')
 
             # Iter step 2: update stocks using flows and conveyors
             self.update_stocks() # update stock shadow values using flows
@@ -2841,7 +2841,7 @@ class sdmodel(object):
         dg = nx.DiGraph()
 
         for var in vars:
-            dg_var = self.create_variable_dependency_graph(var)
+            dg_var = self.create_variable_dependency_graph(var, mode='iter')
             dg = nx.compose(dg, dg_var)
 
         # create flow-to-stock edges if loop=True
@@ -2877,7 +2877,7 @@ class sdmodel(object):
         # Initialization phase
         dg_init = nx.DiGraph()
         for stock in stocks:
-            dg_stock = self.create_variable_dependency_graph(stock)
+            dg_stock = self.create_variable_dependency_graph(stock, mode='init')
             dg_init = nx.compose(dg_init, dg_stock)
         
         # check each non-negative stock for dependencies of inflow and outflow and add to dg_init
@@ -2977,7 +2977,7 @@ class sdmodel(object):
                 dg_init.add_edge(conveyor_name, leakflow) 
 
                 # the conveyor depends on the leak_fraction 
-                dg_leakflow = self.create_variable_dependency_graph(leakflow)
+                dg_leakflow = self.create_variable_dependency_graph(leakflow, mode='init')
                 dg_leak_fraction = deepcopy(dg_leakflow)
                 # replace leakflow with conveyor in the graph
                 dg_leak_fraction.remove_node(leakflow)
@@ -2990,13 +2990,13 @@ class sdmodel(object):
         # Iteration phase
         dg_iter = nx.DiGraph()
         for flow in flows:
-            dg_flow = self.create_variable_dependency_graph(flow)
+            dg_flow = self.create_variable_dependency_graph(flow, mode='iter')
             dg_iter = nx.compose(dg_iter, dg_flow)
 
         # add obsolete flows and auxiliaries to the dg_iter
         for var in (self.flow_equations | self.aux_equations):
             if var not in dg_iter.nodes:
-                dg_obsolete = self.create_variable_dependency_graph(var)
+                dg_obsolete = self.create_variable_dependency_graph(var, mode='iter')
                 dg_iter = nx.compose(dg_iter, dg_obsolete)
 
         # check each non-negative stock for dependencies of inflow and outflow and add to dg_iter
