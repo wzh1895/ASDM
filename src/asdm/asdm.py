@@ -46,9 +46,10 @@ class Node:
                 return f'{self.operator}({self.value})'
 
 class Parser:
-    def __init__(self):
+    def __init__(self, dimension_elements={}):
         self.logger = logger_parser
-        
+        self.dimension_elements = dimension_elements
+
         self.numbers = {
             'NUMBER': r'(?<![a-zA-Z0-9)])[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?'
         }
@@ -58,6 +59,7 @@ class Parser:
             'RPAREN': r'\)',
             'LSPAREN': r'\[',
             'RSPAREN': r'\]',
+            'DOT': r'\.',
         }
 
         self.logic_operators ={
@@ -336,8 +338,21 @@ class Parser:
     def parse_exponent_op(self):
         """Parse an EXP_OP (^) operation."""
         self.logger.debug(f"parse_exponent     {self.tokens[self.current_index:]}")
-        nodes = [self.parse_factor()]
+        nodes = [self.parse_dot()]
         while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'EXP_OP':
+            op = self.tokens[self.current_index]
+            self.current_index += 1
+            left = nodes.pop()
+            right = self.parse_dot()
+            self.node_id += 1
+            nodes.append(Node(node_id=self.node_id, operator=op[0], operands=[left, right]))
+        return nodes[0]
+    
+    def parse_dot(self):
+        """Parse a DOT (.) operation with left-to-right associativity."""
+        self.logger.debug(f"parse_dot          {self.tokens[self.current_index:]}")
+        nodes = [self.parse_factor()]
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] == 'DOT':
             op = self.tokens[self.current_index]
             self.current_index += 1
             left = nodes.pop()
@@ -370,6 +385,8 @@ class Parser:
             return node
         elif token[0] == 'FUNC':
             return self.parse_function_call()
+        elif token[0] == 'DIMENSION':
+            return self.parse_dimension()
         elif token[0] == 'NAME':
             node = self.parse_variable()
             return node
@@ -393,6 +410,16 @@ class Parser:
         self.node_id += 1
         return Node(node_id=self.node_id, operator=func_name[1], operands=args)
     
+    def parse_dimension(self):
+        """Parse a dimension name."""
+        self.logger.debug(f"parse_dimension     {self.tokens[self.current_index:]}")
+        dimension_name = self.tokens[self.current_index]
+        if dimension_name[0] == 'DIMENSION':
+            self.current_index += 1
+            self.node_id += 1
+            return Node(node_id=self.node_id, operator='DIMENSION', value=dimension_name[1])
+        raise ValueError(f"Unexpected token: {dimension_name}")
+
     def parse_variable(self):
         """Parse a variable. The variable may be subscripted."""
         self.logger.debug(f"parse_variable     {self.tokens[self.current_index:]}")
@@ -699,6 +726,15 @@ class Solver(object):
         def log10(a):
             return np.log10(a)
         
+        def dot_access(left_operand, right_operand):
+            """Handle dot operator for dimension.element access"""
+            # left_operand should be a dimension name (string)
+            # right_operand should be an element name or number (string)
+            if isinstance(left_operand, str) and left_operand in self.dimension_elements:
+                return f"{right_operand}" # at current version, only dimension.element needs dot, so returning just right is sufficient
+            else:
+                raise Exception(f"Invalid dot operation: {left_operand}.{right_operand}")
+        
         ### Function mapping ###
 
         self.built_in_functions = {
@@ -729,6 +765,7 @@ class Solver(object):
             'EXP_FUNC': exp_e,
             'INT':      integer,
             'LOG10':    log10,
+            'DOT':      dot_access,
         }
 
         self.time_related_functions = [
@@ -796,9 +833,12 @@ class Solver(object):
                     self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.2 EQUALS: subscript not present {value}")
                 
                 self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3 EQUALS: {value}")
+            else:
+                raise Exception(f'Name {node_value} is not defined in the name space. var: {var_name}')
 
+        elif node_operator == 'DIMENSION':
             # Case 2: node_value is a dimension name, e.g. "Age"
-            elif node_value in self.var_dimensions[var_name]: # only consider the dimension of the variable we are calculating
+            if node_value in self.var_dimensions[var_name]: # only consider the dimension of the variable we are calculating
                 # In this case, evaluate something like "Age=1" to determine if the current element is the one we are looking for.
                 # Our job here is to return the order of the element (we are currently calculating) in the dimension.
                 if subscript is not None:
@@ -819,10 +859,10 @@ class Solver(object):
                     raise Exception(f'Subscript is not provided for dimension {node_value}. var: {var_name}')
             # Raise Exception('Dimension name should not be used as a variable name. var:', node_value)
             else:
-                self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3 EQUALS: name {node_value} is not defined in the name space or dimension elements.")
-                raise Exception(f'Name {node_value} is not defined in the name space or dimension elements. var: {var_name}')
+                self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3 EQUALS: dimension name {node_value} is not defined in the dimension elements.")
+                raise Exception(f'Dimension name {node_value} is not defined in the dimension elements. var: {var_name}')
 
-        elif node_operator == 'SPAREN': # TODO this part is too dynamic, therefore can be slow.
+        elif node_operator == 'SPAREN': # TODO this part is very dynamic, therefore can be slow.
             var_name = node_value
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1 context subscript {subscript}")
             if node_subscripts_in_token is None: # only var_name; no subscript is specified
@@ -845,11 +885,11 @@ class Solver(object):
                 node_subscripts = []
                 for subscript_in_token in node_subscripts_in_token:
                     # Case 1: just a subscript in the context, e.g. a[Element_1]
-                    if len(subscript_in_token) == 1 and subscript_in_token[0][0] in ['NAME', 'NUMBER']:
-                        node_subscripts.append(subscript_in_token[0][1]) # it's a dimension name, e.g. Dimension-1
-                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.2.1 subscript in token: {subscript_in_token[0][1]}")
-                    # Case 2: subscript has in-line referencing to another element in the same dimension, e.g. a[Dimension-1]
-                    elif len(subscript_in_token) == 3:
+                    if len(subscript_in_token) == 1 and subscript_in_token[0][0] in ['DIMENSION', 'NAME', 'NUMBER']:
+                        node_subscripts.append(subscript_in_token[0][1]) # it's a dimension name, e.g. Age
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.2.1 subscript in token: {subscript_in_token[0][1]} ({subscript_in_token[0][0]})")
+                    # Case 2: subscript has in-line referencing to another element in the same dimension, e.g. a[Age-1]
+                    elif len(subscript_in_token) == 3 and subscript_in_token[0][0] == 'DIMENSION':
                         # step 1: find out the dimension name
                         dimension_name = subscript_in_token[0][1]
                         self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1.2.2.1 dimension name: {dimension_name}")
@@ -1405,47 +1445,11 @@ class sdmodel(object):
             'DT': 0.25
         }
 
-        # parser
-        self.parser = Parser()
-
-        # parser debug level
-        if parser_debug_level == 'debug':
-            self.parser.logger.setLevel(logging.DEBUG)
-        elif parser_debug_level == 'info':
-            self.parser.logger.setLevel(logging.INFO)
-        elif parser_debug_level == 'warning':
-            self.parser.logger.setLevel(logging.WARNING)
-        elif parser_debug_level == 'error':
-            self.parser.logger.setLevel(logging.ERROR)
-        else:
-            raise Exception('Unknown debug level {}'.format(parser_debug_level))
-
         # dependency graphs
         self.dg_init = nx.DiGraph()
         self.dg_iter = nx.DiGraph()
         self.ordered_vars_init = list()
         self.ordered_vars_iter = list()
-
-        # solver
-        self.solver = Solver(
-            sim_specs=self.sim_specs,
-            dimension_elements=self.dimension_elements,
-            var_dimensions=self.var_dimensions,
-            name_space=self.name_space,
-            graph_functions=self.graph_functions,
-        )
-
-        # solver debug level
-        if solver_debug_level == 'debug':
-            self.solver.logger.setLevel(logging.DEBUG)
-        elif solver_debug_level == 'info':
-            self.solver.logger.setLevel(logging.INFO)
-        elif solver_debug_level == 'warning':
-            self.solver.logger.setLevel(logging.WARNING)
-        elif solver_debug_level == 'error':
-            self.solver.logger.setLevel(logging.ERROR)
-        else:
-            raise Exception('Unknown debug level {}'.format(solver_debug_level))
 
         # custom functions
         self.custom_functions = {}
@@ -1656,6 +1660,42 @@ class sdmodel(object):
                 raise Exception("Specified model file does not exist.")
 
         self.name_space.update(self.env_variables)
+
+        # parser
+        self.parser = Parser(dimension_elements=self.dimension_elements)
+
+        # parser debug level
+        if parser_debug_level == 'debug':
+            self.parser.logger.setLevel(logging.DEBUG)
+        elif parser_debug_level == 'info':
+            self.parser.logger.setLevel(logging.INFO)
+        elif parser_debug_level == 'warning':
+            self.parser.logger.setLevel(logging.WARNING)
+        elif parser_debug_level == 'error':
+            self.parser.logger.setLevel(logging.ERROR)
+        else:
+            raise Exception('Unknown debug level {}'.format(parser_debug_level))
+        
+        # solver
+        self.solver = Solver(
+            sim_specs=self.sim_specs,
+            dimension_elements=self.dimension_elements,
+            var_dimensions=self.var_dimensions,
+            name_space=self.name_space,
+            graph_functions=self.graph_functions,
+        )
+
+        # solver debug level
+        if solver_debug_level == 'debug':
+            self.solver.logger.setLevel(logging.DEBUG)
+        elif solver_debug_level == 'info':
+            self.solver.logger.setLevel(logging.INFO)
+        elif solver_debug_level == 'warning':
+            self.solver.logger.setLevel(logging.WARNING)
+        elif solver_debug_level == 'error':
+            self.solver.logger.setLevel(logging.ERROR)
+        else:
+            raise Exception('Unknown debug level {}'.format(solver_debug_level))
 
     # utilities
     def name_handler(self, name):
