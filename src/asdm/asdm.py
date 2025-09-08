@@ -107,7 +107,7 @@ class Parser:
             'PULSE': r'PULSE(?=\s*\()',
             'INT': r'INT(?=\s*\()',
             'LOG10': r'LOG10(?=\s*\()',
-            'EXP_FUNC': r'EXP(?=\s*\()', # a^b is equivalent to EXP(a, b)
+            'EXP': r'EXP(?=\s*\()', # e^a is equivalent to EXP(a)
             'LOGISTICBOUND': r'LOGISTICBOUND(?=\s*\()',
             'EXPBOUND': r'EXPBOUND(?=\s*\()',
         }
@@ -874,7 +874,7 @@ class Solver(object):
             'RBINOM':   rbinom,
             'PULSE':    pulse,
             'EXP_OP':   exp,
-            'EXP_FUNC': exp_e,
+            'EXP': exp_e,
             'INT':      integer,
             'LOG10':    log10,
             'DOT':      dot_access,
