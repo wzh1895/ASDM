@@ -1638,210 +1638,7 @@ class sdmodel(object):
 
         # If the model is based on an XMILE file
         if from_xmile is not None:
-            # self.logger.debug(self.HEAD, 'Reading XMILE model from {}'.format(from_xmile))
-            from pathlib import Path
-            xmile_path = Path(from_xmile)
-            if xmile_path.exists():
-                with open(xmile_path, encoding='utf-8') as f:
-                    xmile_content = f.read()
-                    f.close()
-                from bs4 import BeautifulSoup
-
-                # read sim_specs
-                sim_specs_root = BeautifulSoup(xmile_content, 'xml').find('sim_specs')
-                time_units = sim_specs_root.get('time_units')
-                sim_start = float(sim_specs_root.find('start').text)
-                sim_stop = float(sim_specs_root.find('stop').text)
-                sim_duration = sim_stop - sim_start
-                sim_dt_root = sim_specs_root.find('dt')
-                sim_dt = float(sim_dt_root.text)
-                if sim_dt_root.get('reciprocal') == 'true':
-                    sim_dt = 1/sim_dt
-                
-                self.sim_specs['initial_time'] = sim_start
-                self.sim_specs['current_time'] = sim_start
-                self.env_variables['TIME'] = sim_start
-                self.sim_specs['dt'] = sim_dt
-                self.env_variables['DT'] =sim_dt
-                self.sim_specs['simulation_time'] = sim_duration
-                self.sim_specs['time_units'] = time_units
-
-                # read subscritps
-                try:
-                    subscripts_root = BeautifulSoup(xmile_content, 'xml').find('dimensions')
-                    dimensions = subscripts_root.find_all('dim')
-
-                    dims = dict()
-                    for dimension in dimensions:
-                        name = dimension.get('name')
-                        try:
-                            size = dimension.get('size')
-                            dims[name] = [str(i) for i in range(1, int(size)+1)]
-                        except:
-                            elems = dimension.find_all('elem')
-                            elem_names = list()
-                            for elem in elems:
-                                elem_names.append(elem.get('name'))
-                            dims[name] = elem_names
-                    self.dimension_elements.update(dims) # need to use update here to do the 'True' assignment
-                except AttributeError:
-                    pass
-                
-                # read variables
-                variables_root = BeautifulSoup(xmile_content, 'xml').find('variables') # omit names in view
-                stocks = variables_root.find_all('stock')
-                flows = variables_root.find_all('flow')
-                auxiliaries = variables_root.find_all('aux')
-                
-                # read graph functions
-                def read_graph_func(var):
-                    gf = var.find('gf')
-                    out_of_bound_type = gf.get('type')
-                    if gf.find('xscale'):
-                        xscale = [
-                            float(gf.find('xscale').get('min')),
-                            float(gf.find('xscale').get('max'))
-                        ]
-                    else:
-                        xscale = None
-                    
-                    if gf.find('xpts'):
-                        xpts = [float(t) for t in gf.find('xpts').text.split(',')]
-                    else:
-                        xpts = None
-                    
-                    if xscale is None and xpts is None:
-                        raise Exception("GraphFunc: xscale and xpts cannot both be None.")
-
-                    yscale = [
-                        float(gf.find('yscale').get('min')),
-                        float(gf.find('yscale').get('max'))
-                    ]
-                    ypts = [float(t) for t in gf.find('ypts').text.split(',')]
-
-                    equation = GraphFunc(out_of_bound_type=out_of_bound_type, yscale=yscale, ypts=ypts, xscale=xscale, xpts=xpts)
-                    return equation
-
-                # create var subscripted equation
-                def subscripted_equation(var):
-                    if var.find('dimensions'):
-                        self.var_dimensions[self.name_handler(var.get('name'))] = list()
-                        var_dimensions = var.find('dimensions').find_all('dim')
-                        # self.logger.debug('Found dimensions {}:'.format(var), var_dimensions)
-
-                        var_dims = dict()
-                        for dimension in var_dimensions:
-                            dim_name = dimension.get('name')
-                            self.var_dimensions[self.name_handler(var.get('name'))].append(dim_name)
-                            var_dims[dim_name] = dims[dim_name]
-                        
-                        var_subscripted_eqn = dict()
-                        var_elements = var.find_all('element')
-                        if len(var_elements) != 0:
-                            for var_element in var_elements:
-
-                                element_combination_text = var_element.get('subscript') # something like "1, First"
-                                elements = self.process_subscript(element_combination_text) # "1, First" -> 1__cmm__First
-                                # list_of_elements = element_combination_text.split(', ')
-                                # tuple_of_elements = tuple(list_of_elements)
-                                if var.find('conveyor'):
-                                    equation = var_element.find('eqn').text
-                                    length = var.find('len').text
-                                    equation = Conveyor(length, equation)
-                                elif var_element.find('gf'): 
-                                    equation = read_graph_func(var_element)
-                                    equation.eqn = var.find('eqn').text # subscripted graph function must share the same eqn
-                                elif var_element.find('eqn'): # eqn is per element
-                                    element_equation = var_element.find('eqn').text
-                                    equation = element_equation
-                                var_subscripted_eqn[elements] = equation
-
-                        else: # all elements share the same equation
-                            if var.find('conveyor'):
-                                equation = var.find('eqn').text
-                                length = int(var.find('len').text)
-                                equation = Conveyor(length, equation)
-                            elif var.find('gf'):
-                                equation = read_graph_func(var)
-                                equation.eqn = var.find('eqn').text
-                            elif var.find('eqn'):
-                                var_equation = var.find('eqn').text
-                                equation = var_equation
-                            else:
-                                raise Exception('No meaningful definition found for variable {}'.format(self.name_handler(var.get('name'))))
-                            
-                            # fetch lists of elements and generate elements trings
-                            element_combinations = product(*list(var_dims.values()))
-
-                            for ect in element_combinations:
-                                var_subscripted_eqn[ect] =equation
-                        return(var_subscripted_eqn)
-                    else:
-                        self.var_dimensions[self.name_handler(var.get('name'))] = None
-                        var_subscripted_eqn = dict()
-                        if var.find('conveyor'):
-                            equation = var.find('eqn').text
-                            length = var.find('len').text
-                            equation = Conveyor(length, equation)
-                        elif var.find('gf'):
-                            equation = read_graph_func(var)
-                            equation.eqn = var.find('eqn').text
-                        elif var.find('eqn'):
-                            equation = var.find('eqn').text
-                        return equation
-                        
-
-                # create stocks
-                for stock in stocks:
-                    name = self.name_handler(stock.get('name'))
-                    non_negative = False
-                    if stock.find('non_negative'):
-                        # self.logger.debug('nonnegstock', stock)
-                        non_negative = True
-                    
-                    is_conveyor = False
-                    if stock.find('conveyor'):
-                        is_conveyor = True
-
-                    inflows = stock.find_all('inflow')
-                    outflows = stock.find_all('outflow')
-                    self.add_stock(
-                        name, 
-                        equation=subscripted_equation(stock), 
-                        non_negative=non_negative,
-                        is_conveyor=is_conveyor,
-                        in_flows=[f.text for f in inflows],
-                        out_flows=[f.text for f in outflows],
-                        )
-                    
-                # create auxiliaries
-                for auxiliary in auxiliaries:
-                    # if after <eqn> tag there is <isee:delay_aux/>
-                    delay_aux = auxiliary.find('isee:delay_aux')
-                    if delay_aux is not None:
-                        self.add_delayed_aux(self.name_handler(auxiliary.get('name')), equation=subscripted_equation(auxiliary))
-                    else:
-                        self.add_aux(self.name_handler(auxiliary.get('name')), equation=subscripted_equation(auxiliary))
-
-                # create flows
-                for flow in flows:
-                    
-                    # check if flow is a leakage flow
-                    if flow.find('leak'):
-                        leak = True
-                    else:
-                        leak = False
-
-                    # check if can be negative
-                    non_negative = False
-                    if flow.find('non_negative'):
-                        non_negative = True
-                    self.add_flow(self.name_handler(flow.get('name')), equation=subscripted_equation(flow), leak=leak, non_negative=non_negative)
-
-                self.state = 'loaded'
-
-            else:
-                raise Exception("Specified model file does not exist.")
+            self._load_xmile_model(from_xmile)
 
         self.name_space.update(self.env_variables)
 
@@ -1880,6 +1677,241 @@ class sdmodel(object):
             self.solver.logger.setLevel(logging.ERROR)
         else:
             raise Exception('Unknown debug level {}'.format(solver_debug_level))
+
+    def _load_xmile_model(self, from_xmile):
+        """Load and parse an XMILE model file."""
+        from pathlib import Path
+        xmile_path = Path(from_xmile)
+        if not xmile_path.exists():
+            raise Exception("Specified model file does not exist.")
+            
+        with open(xmile_path, encoding='utf-8') as f:
+            xmile_content = f.read()
+            
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(xmile_content, 'xml')
+        
+        # Parse different sections of the XMILE file
+        self._parse_sim_specs(soup)
+        self._parse_dimensions(soup)
+        self._parse_variables(soup)
+        
+        self.state = 'loaded'
+
+    def _parse_sim_specs(self, soup):
+        """Parse simulation specifications from XMILE content."""
+        sim_specs_root = soup.find('sim_specs')
+        if sim_specs_root is None:
+            return
+            
+        time_units = sim_specs_root.get('time_units')
+        sim_start = float(sim_specs_root.find('start').text)
+        sim_stop = float(sim_specs_root.find('stop').text)
+        sim_duration = sim_stop - sim_start
+        
+        sim_dt_root = sim_specs_root.find('dt')
+        sim_dt = float(sim_dt_root.text)
+        if sim_dt_root.get('reciprocal') == 'true':
+            sim_dt = 1/sim_dt
+        
+        self.sim_specs['initial_time'] = sim_start
+        self.sim_specs['current_time'] = sim_start
+        self.env_variables['TIME'] = sim_start
+        self.sim_specs['dt'] = sim_dt
+        self.env_variables['DT'] = sim_dt
+        self.sim_specs['simulation_time'] = sim_duration
+        self.sim_specs['time_units'] = time_units
+
+    def _parse_dimensions(self, soup):
+        """Parse dimensions/subscripts from XMILE content."""
+        try:
+            subscripts_root = soup.find('dimensions')
+            if subscripts_root is None:
+                return
+                
+            dimensions = subscripts_root.find_all('dim')
+            dims = dict()
+            
+            for dimension in dimensions:
+                name = dimension.get('name')
+                try:
+                    size = dimension.get('size')
+                    dims[name] = [str(i) for i in range(1, int(size)+1)]
+                except:
+                    elems = dimension.find_all('elem')
+                    elem_names = list()
+                    for elem in elems:
+                        elem_names.append(elem.get('name'))
+                    dims[name] = elem_names
+                    
+            self.dimension_elements.update(dims)
+        except AttributeError:
+            pass
+
+    def _parse_variables(self, soup):
+        """Parse variables (stocks, flows, auxiliaries) from XMILE content."""
+        variables_root = soup.find('variables')
+        if variables_root is None:
+            return
+            
+        stocks = variables_root.find_all('stock')
+        flows = variables_root.find_all('flow')
+        auxiliaries = variables_root.find_all('aux')
+        
+        # Create stocks
+        for stock in stocks:
+            self._create_stock(stock)
+            
+        # Create auxiliaries
+        for auxiliary in auxiliaries:
+            self._create_auxiliary(auxiliary)
+            
+        # Create flows
+        for flow in flows:
+            self._create_flow(flow)
+
+    def _create_stock(self, stock):
+        """Create a stock variable from XMILE stock element."""
+        name = self.name_handler(stock.get('name'))
+        non_negative = stock.find('non_negative') is not None
+        is_conveyor = stock.find('conveyor') is not None
+        
+        inflows = stock.find_all('inflow')
+        outflows = stock.find_all('outflow')
+        
+        self.add_stock(
+            name, 
+            equation=self._create_subscripted_equation(stock), 
+            non_negative=non_negative,
+            is_conveyor=is_conveyor,
+            in_flows=[f.text for f in inflows],
+            out_flows=[f.text for f in outflows],
+        )
+
+    def _create_auxiliary(self, auxiliary):
+        """Create an auxiliary variable from XMILE aux element."""
+        name = self.name_handler(auxiliary.get('name'))
+        equation = self._create_subscripted_equation(auxiliary)
+        
+        # Check if it's a delayed auxiliary
+        delay_aux = auxiliary.find('isee:delay_aux')
+        if delay_aux is not None:
+            self.add_delayed_aux(name, equation=equation)
+        else:
+            self.add_aux(name, equation=equation)
+
+    def _create_flow(self, flow):
+        """Create a flow variable from XMILE flow element."""
+        name = self.name_handler(flow.get('name'))
+        leak = flow.find('leak') is not None
+        non_negative = flow.find('non_negative') is not None
+        
+        self.add_flow(
+            name, 
+            equation=self._create_subscripted_equation(flow), 
+            leak=leak, 
+            non_negative=non_negative
+        )
+
+    def _create_subscripted_equation(self, var):
+        """Create subscripted equations for variables from XMILE variable element."""
+        if var.find('dimensions'):
+            return self._create_subscripted_equation_with_dimensions(var)
+        else:
+            return self._create_simple_equation(var)
+
+    def _create_subscripted_equation_with_dimensions(self, var):
+        """Create subscripted equation for variables with dimensions."""
+        var_name = self.name_handler(var.get('name'))
+        self.var_dimensions[var_name] = list()
+        var_dimensions = var.find('dimensions').find_all('dim')
+        
+        var_dims = dict()
+        for dimension in var_dimensions:
+            dim_name = dimension.get('name')
+            self.var_dimensions[var_name].append(dim_name)
+            var_dims[dim_name] = self.dimension_elements[dim_name]
+        
+        var_subscripted_eqn = dict()
+        var_elements = var.find_all('element')
+        
+        if len(var_elements) != 0:
+            # Different equation for each element
+            for var_element in var_elements:
+                element_combination_text = var_element.get('subscript')
+                elements = self.process_subscript(element_combination_text)
+                equation = self._parse_variable_equation(var, var_element)
+                var_subscripted_eqn[elements] = equation
+        else:
+            # All elements share the same equation
+            equation = self._parse_variable_equation(var, None)
+            element_combinations = product(*list(var_dims.values()))
+            for ect in element_combinations:
+                var_subscripted_eqn[ect] = equation
+                
+        return var_subscripted_eqn
+
+    def _create_simple_equation(self, var):
+        """Create equation for variables without dimensions."""
+        var_name = self.name_handler(var.get('name'))
+        self.var_dimensions[var_name] = None
+        return self._parse_variable_equation(var, None)
+
+    def _parse_variable_equation(self, var, var_element=None):
+        """Parse the equation for a variable, handling different types (conveyor, graph function, etc.)."""
+        # Determine which element to check for equation types
+        element_to_check = var_element if var_element is not None else var
+        
+        if var.find('conveyor'):
+            equation_text = element_to_check.find('eqn').text if element_to_check.find('eqn') else var.find('eqn').text
+            length = var.find('len').text
+            equation = Conveyor(length, equation_text)
+        elif element_to_check.find('gf'):
+            equation = self._read_graph_function(element_to_check)
+            equation.eqn = var.find('eqn').text
+        elif element_to_check.find('eqn'):
+            equation = element_to_check.find('eqn').text
+        else:
+            var_name = self.name_handler(var.get('name'))
+            raise Exception('No meaningful definition found for variable {}'.format(var_name))
+            
+        return equation
+
+    def _read_graph_function(self, var):
+        """Read and create a GraphFunc object from XMILE graph function element."""
+        gf = var.find('gf')
+        out_of_bound_type = gf.get('type')
+        
+        if gf.find('xscale'):
+            xscale = [
+                float(gf.find('xscale').get('min')),
+                float(gf.find('xscale').get('max'))
+            ]
+        else:
+            xscale = None
+        
+        if gf.find('xpts'):
+            xpts = [float(t) for t in gf.find('xpts').text.split(',')]
+        else:
+            xpts = None
+        
+        if xscale is None and xpts is None:
+            raise Exception("GraphFunc: xscale and xpts cannot both be None.")
+
+        yscale = [
+            float(gf.find('yscale').get('min')),
+            float(gf.find('yscale').get('max'))
+        ]
+        ypts = [float(t) for t in gf.find('ypts').text.split(',')]
+
+        equation = GraphFunc(
+            out_of_bound_type=out_of_bound_type, 
+            yscale=yscale, 
+            ypts=ypts, 
+            xscale=xscale, 
+            xpts=xpts
+        )
+        return equation
 
     # utilities
     def name_handler(self, name):
