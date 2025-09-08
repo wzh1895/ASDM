@@ -2811,6 +2811,9 @@ class sdmodel(object):
         plt.show()
 
     def create_variable_dependency_graph(self, var, mode, graph=None, visited=None):
+        if self.state == 'loaded':
+            self.parse()
+        
         self.logger.debug(f"Creating dependency graph for variable '{var}' in mode '{mode}'")
         if graph is None:
             graph = nx.DiGraph()
@@ -2823,8 +2826,6 @@ class sdmodel(object):
         
         visited.add(var)
 
-        if self.state == 'loaded':
-            self.parse()
 
         all_equations = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed | self.delayed_auxiliary_equations_parsed)
         if var in self.env_variables: # like 'TIME'
