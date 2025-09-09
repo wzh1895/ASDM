@@ -1,6 +1,7 @@
 import networkx as nx
 import numpy as np
 import re
+import pandas as pd
 from itertools import product
 from pprint import pprint
 from scipy import stats
@@ -8,6 +9,7 @@ from scipy.interpolate import interp1d
 from copy import deepcopy
 import matplotlib.pyplot as plt
 import logging
+from pathlib import Path
 
 logger_parser = logging.getLogger('asdm.parser')
 logger_solver = logging.getLogger('asdm.solver')
@@ -15,6 +17,7 @@ logger_graph_function = logging.getLogger('asdm.graph_function')
 logger_conveyor = logging.getLogger('asdm.conveyor')
 logger_data_feeder = logging.getLogger('asdm.data_feeder')
 logger_sdmodel = logging.getLogger('asdm.simrun')
+logger_model_creation = logging.getLogger('asdm.model_creation')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,6 +30,7 @@ logger_graph_function.setLevel(logging.INFO)
 logger_conveyor.setLevel(logging.INFO)
 logger_data_feeder.setLevel(logging.INFO)
 logger_sdmodel.setLevel(logging.INFO)
+logger_model_creation.setLevel(logging.INFO)
 
 class Node:
     def __init__(self, node_id, operator=None, value=None, operands=None, subscripts=None):
@@ -455,7 +459,7 @@ class Parser:
         return Node(node_id=self.node_id, operator='EQUALS', value=var_name)
 
 class Solver(object):
-    def __init__(self, sim_specs=None, dimension_elements=None, var_dimensions=None, name_space=None, graph_functions=None):
+    def __init__(self, sim_specs=None, dimension_elements=None, var_dimensions=None, name_space=None, graph_functions=None, data_feeder_functions=None):
         self.logger = logger_solver
 
         self.sim_specs = sim_specs # current_time, initial_time, dt, simulation_time, time_units
@@ -463,6 +467,7 @@ class Solver(object):
         self.var_dimensions = var_dimensions
         self.name_space = name_space
         self.graph_functions = graph_functions
+        self.data_feeder_functions = data_feeder_functions
 
         ### Functions ###
 
@@ -1095,6 +1100,20 @@ class Solver(object):
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operands {oprds}")
             value = function(*oprds)
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v8 GraphFunc: {value}")
+        
+        elif node_operator in self.data_feeder_functions.keys(): # data feeders
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] data feeder operator {node_operator}")
+            func_name = node_operator
+            function = self.data_feeder_functions[func_name]
+            oprds = []
+            for operand in node_operands:
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operand {operand}")
+                v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=operand, subscript=subscript)
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] value {v}")
+                oprds.append(v)
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operands {oprds}")
+            value = function(*oprds)
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v9 DataFeeder: {value}")
 
         elif node_operator in self.time_related_functions: # init, delay, etc
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] time-related func. operator: {node_operator} operands {node_operands}")
@@ -1545,11 +1564,12 @@ class DataFeeder(object):
 
 class sdmodel(object):
     # equations
-    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info'):
+    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info', model_creation_debug_level='info'):
         # Debug
         self.HEAD = 'ENGINE'
         self.debug_level_trace_error = 0
         self.logger = logger_sdmodel
+        self.logger_model_creation = logger_model_creation
 
         # model debug level
         if simulator_debug_level == 'debug':
@@ -1562,6 +1582,18 @@ class sdmodel(object):
             self.logger.setLevel(logging.ERROR)
         else:
             raise Exception('Unknown debug level {}'.format(simulator_debug_level))
+
+        # model creation debug level
+        if model_creation_debug_level == 'debug':
+            self.logger_model_creation.setLevel(logging.DEBUG)
+        elif model_creation_debug_level == 'info':
+            self.logger_model_creation.setLevel(logging.INFO)
+        elif model_creation_debug_level == 'warning':
+            self.logger_model_creation.setLevel(logging.WARNING)
+        elif model_creation_debug_level == 'error':
+            self.logger_model_creation.setLevel(logging.ERROR)
+        else:
+            raise Exception('Unknown debug level {}'.format(model_creation_debug_level))
 
         # sim_specs
         self.sim_specs = {
@@ -1633,6 +1665,10 @@ class sdmodel(object):
         # custom functions
         self.custom_functions = {}
         
+        # data feeder functions (DataFeeder)
+        self.data_feeder_functions = {}
+        self.data_feeders_renamed = {}
+        
         # state
         self.state = 'created'
 
@@ -1664,8 +1700,9 @@ class sdmodel(object):
             var_dimensions=self.var_dimensions,
             name_space=self.name_space,
             graph_functions=self.graph_functions,
+            data_feeder_functions=self.data_feeder_functions,
         )
-
+        
         # solver debug level
         if solver_debug_level == 'debug':
             self.solver.logger.setLevel(logging.DEBUG)
@@ -1685,6 +1722,9 @@ class sdmodel(object):
         if not xmile_path.exists():
             raise Exception("Specified model file does not exist.")
             
+        # Store the XMILE file path for relative path resolution
+        self.xmile_path = xmile_path
+            
         with open(xmile_path, encoding='utf-8') as f:
             xmile_content = f.read()
             
@@ -1695,6 +1735,7 @@ class sdmodel(object):
         self._parse_sim_specs(soup)
         self._parse_dimensions(soup)
         self._parse_variables(soup)
+        self._parse_data(soup)
         
         self.state = 'loaded'
 
@@ -1913,6 +1954,417 @@ class sdmodel(object):
         )
         return equation
 
+    def _parse_data(self, soup):
+        """Parse data import/export specifications from XMILE content."""
+        data_root = soup.find('data')
+        if data_root is None:
+            return
+            
+        # Initialize data storage if not already present
+        if not hasattr(self, 'export_specs'):
+            self.export_specs = []
+        if not hasattr(self, 'import_specs'):
+            self.import_specs = []
+            
+        logger_model_creation.debug("Parsing data import/export specifications")
+            
+        # Parse export specifications
+        exports = data_root.find_all('export')
+        for export in exports:
+            export_spec = {
+                'resource': export.get('resource'),
+                'interval': export.get('interval'),
+                'precomputed': export.get('precomputed') == 'true',
+                'format': export.get('isee:format', 'numbers')
+            }
+            self.export_specs.append(export_spec)
+            logger_model_creation.debug(f"Found export specification: {export_spec['resource']}")
+            
+        # Parse import specifications
+        imports = data_root.find_all('import')
+        for import_elem in imports:
+            # Skip disabled imports
+            if import_elem.get('enabled') == 'false':
+                logger_model_creation.debug(f"Skipping disabled import: {import_elem.get('resource')}")
+                continue
+                
+            import_spec = {
+                'resource': import_elem.get('resource'),
+                'overwrite': import_elem.get('isee:overwrite') == 'true',
+                'timevarying': import_elem.get('isee:timevarying') == 'true',
+                'orientation': import_elem.get('orientation', 'vertical')
+            }
+            
+            self.import_specs.append(import_spec)
+            logger_model_creation.debug(f"Processing import: {import_spec['resource']} (overwrite={import_spec['overwrite']}, timevarying={import_spec['timevarying']})")
+            
+            # Process the import based on its type
+            self._process_import(import_spec)
+
+    def _process_import(self, import_spec):
+        """Process a single import specification."""
+        try:
+            # Resolve resource path - handle relative paths starting with 'r../'
+            resource_path = import_spec['resource']
+            if resource_path.startswith('r../'):
+                # Convert relative path to actual path relative to XMILE file
+                xmile_dir = Path(self.xmile_path).parent if hasattr(self, 'xmile_path') else Path('.')
+                resource_path = xmile_dir / resource_path[4:]
+                resource_path = str(resource_path)
+            
+            if not Path(resource_path).exists():
+                logger_model_creation.warning(f"Import file not found: {resource_path}")
+                return
+                
+            logger_model_creation.debug(f"Reading CSV file: {resource_path}")
+                
+            # Read CSV data
+            try:
+                if import_spec['orientation'] == 'horizontal':
+                    if import_spec['timevarying']:
+                        # For time-varying horizontal data, first row is time, first column is variable names
+                        df = pd.read_csv(resource_path, index_col=0).transpose()
+                    else:
+                        # For parameter horizontal data, first column is variable names, second is values
+                        df = pd.read_csv(resource_path, header=None, names=['variable', 'value'])
+                else:
+                    # Default vertical orientation
+                    df = pd.read_csv(resource_path)
+            except Exception as e:
+                logger_model_creation.warning(f"Error reading CSV file {resource_path}: {e}")
+                return
+                
+            if import_spec['overwrite'] and not import_spec['timevarying']:
+                # Case 1: Set parameters (overwrite=true, timevarying=false)
+                self._process_parameter_import(df, resource_path)
+            elif not import_spec['overwrite'] and import_spec['timevarying']:
+                # Case 2: Load time varying values (overwrite=false, timevarying=true)
+                self._process_timevarying_import(df, resource_path)
+            elif not import_spec['overwrite'] and not import_spec['timevarying']:
+                # Case 3: Set parameters without overwrite flag (treat as parameter import)
+                logger_model_creation.debug(f"Treating non-overwrite, non-timevarying import as parameter import: {resource_path}")
+                self._process_parameter_import(df, resource_path)
+            else:
+                logger_model_creation.warning(f"Unsupported import configuration: overwrite={import_spec['overwrite']}, timevarying={import_spec['timevarying']}")
+                
+        except Exception as e:
+            logger_model_creation.error(f"Error processing import {import_spec['resource']}: {e}")
+
+    def _process_parameter_import(self, df, resource_path):
+        """Process parameter imports (set parameters, replace equations once)."""
+        try:
+            logger_model_creation.debug(f"Processing parameter import from {resource_path}")
+            
+            # For parameter imports, we expect variable names in first column and values in second
+            # Handle both DataFrame formats: indexed or with 'variable' and 'value' columns
+            if 'variable' in df.columns and 'value' in df.columns:
+                # Horizontal format with named columns
+                for index, row in df.iterrows():
+                    if pd.isna(row['variable']) or str(row['variable']).strip() == '':
+                        continue
+                        
+                    var_name = str(row['variable']).strip()
+                    var_value = row['value']
+                    
+                    if pd.isna(var_value):
+                        continue
+                        
+                    self._apply_parameter_value(var_name, var_value, resource_path)
+            else:
+                # Vertical format or other format
+                for index, row in df.iterrows():
+                    if pd.isna(row.iloc[0]) or str(row.iloc[0]).strip() == '':
+                        continue
+                        
+                    var_name = str(row.iloc[0]).strip()
+                    var_value = row.iloc[1]
+                    
+                    if pd.isna(var_value):
+                        continue
+                        
+                    self._apply_parameter_value(var_name, var_value, resource_path)
+                    
+        except Exception as e:
+            logger_model_creation.error(f"Error processing parameter import from {resource_path}: {e}")
+
+    def _apply_parameter_value(self, var_name, var_value, resource_path):
+        """Apply a parameter value to a variable with proper arrayed variable handling."""
+        try:
+            # Handle subscripted variables (e.g., "variable[subscript]")
+            if '[' in var_name and ']' in var_name:
+                base_name = var_name.split('[')[0].strip()
+                subscript_part = var_name.split('[')[1].split(']')[0].strip()
+                processed_name = self.name_handler(base_name)
+                
+                # Parse subscript (may contain multiple dimensions separated by commas)
+                subscript_elements = [elem.strip() for elem in subscript_part.split(',')]
+                subscript_tuple = tuple(subscript_elements)
+                
+                # Check if the variable exists in the model
+                variable_found = False
+                target_dict = None
+                
+                for var_dict, var_type in [(self.stock_equations, 'stock'), 
+                                         (self.aux_equations, 'auxiliary'), 
+                                         (self.flow_equations, 'flow')]:
+                    if processed_name in var_dict:
+                        target_dict = var_dict
+                        variable_found = True
+                        logger_model_creation.debug(f"Found {var_type} variable {processed_name} for parameter import")
+                        break
+                
+                if not variable_found:
+                    logger_model_creation.warning(f"Variable {processed_name} not found in model for parameter import from {resource_path}")
+                    return
+                
+                # Check if this is an arrayed variable
+                if isinstance(target_dict[processed_name], dict):
+                    # Arrayed variable - check if the subscript exists
+                    if subscript_tuple in target_dict[processed_name]:
+                        # Use replace_element_equation for proper processing
+                        new_equation = {subscript_tuple: str(var_value)}
+                        self.replace_element_equation(processed_name, new_equation)
+                        logger_model_creation.debug(f"Set parameter {processed_name}[{subscript_part}] = {var_value}")
+                    else:
+                        available_keys = list(target_dict[processed_name].keys())
+                        logger_model_creation.warning(f"Subscript {subscript_tuple} not found for variable {processed_name}. Available: {available_keys}")
+                else:
+                    logger_model_creation.warning(f"Variable {processed_name} is not arrayed but subscript provided: {subscript_part}")
+                    
+            else:
+                # Non-subscripted variable
+                processed_name = self.name_handler(var_name)
+                
+                # Check if the variable exists in the model
+                variable_found = False
+                
+                for var_dict, var_type in [(self.stock_equations, 'stock'), 
+                                         (self.aux_equations, 'auxiliary'), 
+                                         (self.flow_equations, 'flow')]:
+                    if processed_name in var_dict:
+                        # Use replace_element_equation for proper processing
+                        self.replace_element_equation(processed_name, str(var_value))
+                        variable_found = True
+                        logger_model_creation.debug(f"Set parameter {processed_name} = {var_value}")
+                        break
+                
+                if not variable_found:
+                    logger_model_creation.warning(f"Variable {processed_name} not found in model for parameter import from {resource_path}")
+                
+        except Exception as e:
+            logger_model_creation.error(f"Error applying parameter {var_name} = {var_value}: {e}")
+
+    def _process_timevarying_import(self, df, resource_path):
+        """Process time-varying imports (replace equations with DataFeeder objects)."""
+        try:
+            logger_model_creation.debug(f"Processing time-varying import from {resource_path}")
+            
+            # Extract time values from DataFrame
+            time_values = self._extract_time_values(df, resource_path)
+            if time_values is None:
+                return
+                
+            # Get simulation period from sim_specs for missing time handling
+            sim_start = self.sim_specs.get('initial_time', 0.0)
+            sim_end = sim_start + self.sim_specs.get('simulation_time', 10.0)
+            sim_dt = self.sim_specs.get('dt', 1.0)
+            
+            logger_model_creation.debug(f"Simulation period: {sim_start} to {sim_end} with dt={sim_dt}")
+            logger_model_creation.debug(f"Data time range: {min(time_values)} to {max(time_values)}")
+                
+            # Process each variable column
+            variable_columns = [col for col in df.columns if not self._is_time_column(col)]
+            
+            for col in variable_columns:
+                # Extract data for this variable
+                data_values = df[col].dropna().values
+                if len(data_values) == 0:
+                    logger_model_creation.warning(f"No data found for variable {col} in {resource_path}")
+                    continue
+                    
+                # Handle missing time by processing data to cover simulation period
+                processed_data, processed_time_values = self._handle_missing_time(
+                    data_values, time_values, sim_start, sim_end, sim_dt, col, resource_path
+                )
+                
+                if len(processed_data) == 0:
+                    logger_model_creation.warning(f"No valid data after processing for variable {col}")
+                    continue
+                
+                # Determine time step (dt) and starting time from processed data
+                if len(processed_time_values) > 1:
+                    data_dt = float(processed_time_values[1]) - float(processed_time_values[0])
+                    from_time = float(processed_time_values[0])
+                else:
+                    data_dt = sim_dt
+                    from_time = float(processed_time_values[0]) if len(processed_time_values) > 0 else sim_start
+                
+                # Apply time-varying data to arrayed variables properly
+                self._apply_timevarying_data(col, processed_data, from_time, data_dt, resource_path)
+                    
+        except Exception as e:
+            logger_model_creation.error(f"Error processing time-varying import from {resource_path}: {e}")
+
+    def _extract_time_values(self, df, resource_path):
+        """Extract time values from DataFrame."""
+        # Check if time column exists (common names: year, time, month, etc.)
+        time_col = None
+        common_time_cols = ['year', 'time', 'month', 'day', 'week', 'quarter']
+        
+        for col_name in common_time_cols:
+            if col_name.lower() in [c.lower() for c in df.columns]:
+                # Find the exact column name (case-insensitive)
+                time_col = next(c for c in df.columns if c.lower() == col_name.lower())
+                break
+        
+        if time_col is not None:
+            time_values = [float(val) for val in df[time_col].values]
+            logger_model_creation.debug(f"Found time column '{time_col}' with values: {time_values}")
+            return time_values
+        
+        # Check if the index contains time values (for transposed horizontal data)
+        if len(df.index) > 0 and all(str(val).replace('.', '').replace('-', '').isdigit() for val in df.index[:3]):
+            # Index appears to contain numeric time values
+            time_values = [float(val) for val in df.index.values]
+            logger_model_creation.debug(f"Using index as time values: {time_values}")
+            return time_values
+        elif df.index.name in common_time_cols or (hasattr(df.index, 'name') and df.index.name and df.index.name.lower() in [c.lower() for c in common_time_cols]):
+            # Time is in index with appropriate name
+            time_values = [float(val) for val in df.index.values]
+            logger_model_creation.debug(f"Using named index '{df.index.name}' as time values: {time_values}")
+            return time_values
+        else:
+            logger_model_creation.warning(f"No time column found in {resource_path}, assuming sequential time steps")
+            time_values = list(range(len(df)))
+            return time_values
+
+    def _is_time_column(self, col_name):
+        """Check if a column name represents time."""
+        common_time_cols = ['year', 'time', 'month', 'day', 'week', 'quarter']
+        return col_name.lower() in [c.lower() for c in common_time_cols]
+
+    def _handle_missing_time(self, data_values, time_values, sim_start, sim_end, sim_dt, variable_name, resource_path):
+        """Handle missing time data by interpolation/extrapolation according to simulation period."""
+        logger_model_creation.debug(f"Handling missing time for {variable_name}")
+        
+        # Create time-data pairs and sort by time
+        time_data_pairs = list(zip(time_values, data_values))
+        time_data_pairs.sort(key=lambda x: x[0])
+        
+        sorted_times = [pair[0] for pair in time_data_pairs]
+        sorted_data = [pair[1] for pair in time_data_pairs]
+        
+        # Generate simulation time steps
+        sim_times = []
+        current_time = sim_start
+        while current_time <= sim_end + sim_dt/2:  # Add small tolerance
+            sim_times.append(current_time)
+            current_time += sim_dt
+            
+        # Interpolate/extrapolate data for simulation times
+        from scipy.interpolate import interp1d
+        
+        if len(sorted_times) == 1:
+            # Only one data point - use constant extrapolation
+            processed_data = [sorted_data[0]] * len(sim_times)
+            logger_model_creation.debug(f"Single data point for {variable_name}, using constant value: {sorted_data[0]}")
+        else:
+            # Multiple data points - use interpolation with constant extrapolation (per XMILE convention)
+            # Create interpolation function once for efficiency
+            interp_func = interp1d(sorted_times, sorted_data, kind='linear')
+            
+            processed_data = []
+            for t in sim_times:
+                if t < sorted_times[0]:
+                    # Before first data point - use first value (constant extrapolation)
+                    value = sorted_data[0]
+                elif t > sorted_times[-1]:
+                    # After last data point - use last value (constant extrapolation)
+                    value = sorted_data[-1]
+                else:
+                    # Within data range - use linear interpolation
+                    value = float(interp_func(t))
+                processed_data.append(value)
+            logger_model_creation.debug(f"Interpolated/extrapolated {len(processed_data)} data points for {variable_name} (constant extrapolation beyond bounds)")
+        
+        return processed_data, sim_times
+
+    def _apply_timevarying_data(self, col_name, data_values, from_time, data_dt, resource_path):
+        """Apply time-varying data to arrayed variables with proper key matching."""
+        # Handle subscripted variables
+        if '[' in col_name and ']' in col_name:
+            base_name = col_name.split('[')[0].strip()
+            subscript_part = col_name.split('[')[1].split(']')[0].strip()
+            processed_name = self.name_handler(base_name)
+            
+            # Parse subscript (may contain multiple dimensions separated by commas)
+            subscript_elements = [elem.strip() for elem in subscript_part.split(',')]
+            subscript_tuple = tuple(subscript_elements)
+            
+            # Check if the variable exists in the model
+            variable_found = False
+            target_dict = None
+            
+            for var_dict, var_type in [(self.stock_equations, 'stock'), 
+                                     (self.aux_equations, 'auxiliary'), 
+                                     (self.flow_equations, 'flow')]:
+                if processed_name in var_dict:
+                    target_dict = var_dict
+                    variable_found = True
+                    logger_model_creation.debug(f"Found {var_type} variable {processed_name} for time-varying import")
+                    break
+            
+            if not variable_found:
+                logger_model_creation.warning(f"Variable {processed_name} not found in model for time-varying import from {resource_path}")
+                return
+            
+            # Check if this is an arrayed variable and if the subscript exists
+            if isinstance(target_dict[processed_name], dict):
+                if subscript_tuple in target_dict[processed_name]:
+                    # Create DataFeeder for this specific subscript
+                    data_feeder = DataFeeder(
+                        data=data_values,
+                        from_time=from_time,
+                        data_dt=data_dt,
+                        interpolate=True
+                    )
+                    # Use replace_element_equation for proper processing
+                    new_equation = {subscript_tuple: data_feeder}
+                    self.replace_element_equation(processed_name, new_equation)
+                    logger_model_creation.debug(f"Set time-varying data for {processed_name}[{subscript_part}] with {len(data_values)} data points")
+                else:
+                    available_keys = list(target_dict[processed_name].keys())
+                    logger_model_creation.warning(f"Subscript {subscript_tuple} not found for variable {processed_name}. Available: {available_keys}")
+            else:
+                logger_model_creation.warning(f"Variable {processed_name} is not arrayed but subscript provided: {subscript_part}")
+                
+        else:
+            # Non-subscripted variable
+            processed_name = self.name_handler(col_name)
+            
+            # Check if the variable exists in the model
+            variable_found = False
+            
+            for var_dict, var_type in [(self.stock_equations, 'stock'), 
+                                     (self.aux_equations, 'auxiliary'), 
+                                     (self.flow_equations, 'flow')]:
+                if processed_name in var_dict:
+                    # Create DataFeeder for the entire variable
+                    data_feeder = DataFeeder(
+                        data=data_values,
+                        from_time=from_time,
+                        data_dt=data_dt,
+                        interpolate=True
+                    )
+                    # Use replace_element_equation for proper processing
+                    self.replace_element_equation(processed_name, data_feeder)
+                    variable_found = True
+                    logger_model_creation.debug(f"Set time-varying data for {processed_name} with {len(data_values)} data points")
+                    break
+            
+            if not variable_found:
+                logger_model_creation.warning(f"Variable {processed_name} not found in model for time-varying import from {resource_path}")
+
     # utilities
     def name_handler(self, name):
         return name.replace(' ', '_').replace('\\n', '_')
@@ -2073,6 +2525,19 @@ class sdmodel(object):
                                             # this is also how the XMILE spec handles GraphFunc
             parsed_equation = self.parser.parse(equation)
             return parsed_equation
+
+        elif type(equation) is DataFeeder:
+            # Handle DataFeeder similar to GraphFunc but in separate function dictionary
+            data_name = 'DATA{}'.format(len(self.data_feeders_renamed))
+            self.data_feeders_renamed[data_name] = equation
+            # Register in parser as a function
+            self.parser.functions.update({data_name: data_name + r"(?=\()"})
+            # Register in solver as a data feeder function
+            self.data_feeder_functions.update({data_name: equation})
+            # Create equation that calls the DataFeeder function with TIME as argument
+            equation = data_name + '(TIME)'
+            parsed_equation = self.parser.parse(equation)
+            return parsed_equation
         
         elif type(equation) is Conveyor: # TODO we should also consider arrayed conveyors
             self.conveyors[var] = {
@@ -2099,9 +2564,6 @@ class sdmodel(object):
                 parsed_equation_len, 
                 parsed_equation_val
                 ]
-
-        elif type(equation) is DataFeeder:
-            return equation
 
         elif type(equation) in [str, int, float, np.int_, np.float64]:
             parsed_equation = self.parser.parse(equation)
