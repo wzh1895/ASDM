@@ -3358,6 +3358,7 @@ class sdmodel(object):
         elif format == 'df':
             import pandas as pd
             self.full_result_df = pd.DataFrame.from_dict(self.full_result_flattened)
+            self.full_result_df.reindex(sorted(self.full_result_df.columns), axis=1)
             if to_csv:
                 if type(to_csv) is not str:
                     self.full_result_df.to_csv('asdm.csv', index=False)
