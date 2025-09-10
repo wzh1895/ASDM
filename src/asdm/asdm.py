@@ -1317,18 +1317,20 @@ class Solver(object):
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v9 Time-related Func: {value}")
         
         elif node_operator in self.array_related_functions: # Array-RELATED
-            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] array-related func. operator: {node_operator} operands: {node_operands}")
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10 Array-related func. operator: {node_operator} operands: {node_operands}")
             func_name = node_operator
             if func_name == 'SUM':
                 arrayed_target_var_name = parsed_equation.nodes[node_operands[0]]['value']
                 arrayed_target_var_subscripts = parsed_equation.nodes[node_operands[0]]['subscripts']
                 self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] arrayed target var: {arrayed_target_var_name} subscripts: {arrayed_target_var_subscripts}")
                 if len(arrayed_target_var_subscripts) == 0: # SUM(Population)
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.1 arrayed target var: {arrayed_target_var_name} all elements in the variable")
                     sum_array = 0
                     for _, sub_val in self.name_space[arrayed_target_var_name].items():
                         sum_array += sub_val
                     value = sum_array
                 elif len(arrayed_target_var_subscripts) >= 1: 
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2 arrayed target var: {arrayed_target_var_name} subscripts: {arrayed_target_var_subscripts}")
                     n_dimensions = len(arrayed_target_var_subscripts)
                     # the idea here is to create an allowed list for each dimension - only those element_combinations with all elements appearing in the corresponding list should be summed
                     list_allowed_elements_per_dimension = []
@@ -1342,21 +1344,39 @@ class Solver(object):
                         dimension_tokens = arrayed_target_var_subscripts[i]
                         # case-1
                         if len(dimension_tokens) == 1: # it's either a specific element like ['NAME', 'A9'] or a * like ['TIMES', '*'] or a dimension like ['DIMENSION', Age]
+                            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1 arrayed target var: {arrayed_target_var_name} dimension: {dimension_name} tokens: {dimension_tokens}")
                             if dimension_tokens[0][1] == '*':
-                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] arrayed target var: {arrayed_target_var_name} all elements in dimension: {dimension_name}")
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1.1 arrayed target var: {arrayed_target_var_name} all elements in dimension: {dimension_name}")
                                 # if it's a *, we take all elements
                                 list_allowed_elements_per_dimension[i] = dimension_elements
                             elif dimension_tokens[0][0] == 'DIMENSION':
-                                # if it's a dimension, we take all elements in that dimension
                                 dimension_name = dimension_tokens[0][1]
-                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] arrayed target var: {arrayed_target_var_name} dimension: {dimension_name}")
-                                if dimension_name in self.dimension_elements:
-                                    list_allowed_elements_per_dimension[i] = self.dimension_elements[dimension_name]
+                                # if it's a dimension, there are two cases:
+                                # case-1.1: the current variable is not subscripted at all. take all elements in the dimension
+                                if subscript is None:
+                                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1.2.1.1 arrayed target var: {arrayed_target_var_name} dimension: {dimension_name} is not subscripted at all, taking all elements in the dimension")
+                                    list_allowed_elements_per_dimension[i] = dimension_elements
+                                # case-1.2: the current variable (the one that is currently being caculated) is subscripted, but not subscripted with this dimension)
+                                # In this case, we take all elements in that dimension
+                                elif subscript is not None and dimension_name not in self.var_dimensions[var_name]:
+                                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1.2.2 arrayed target var: {arrayed_target_var_name} dimension: {dimension_name} is not subscripted with this dimension, taking all elements in the dimension")
+                                    list_allowed_elements_per_dimension[i] = dimension_elements
+                                # case-1.3: the current variable (the one that is currently being caculated) is subscripted with this dimension.
+                                # In this case, the dimension should be replaced with the current element in the subscript.
+                                elif subscript is not None and dimension_name in self.var_dimensions[var_name]:
+                                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1.2.1 arrayed target var: {arrayed_target_var_name} dimension: {dimension_name} is subscripted with this dimension, taking only the element in its subscript")
+                                    # find out which element is the current element of dimension_name in the subscript. we have to go through the subscript instead of relying onn the order of the elements in the subscript, to avoid order issues
+                                    for element in subscript:
+                                        if element in dimension_elements:
+                                            list_allowed_elements_per_dimension[i] = [element]
+                                            break
+                                        else:
+                                            raise Exception(f"Element {element} is not in dimension {dimension_name}.")   
                                 else:
-                                    raise Exception(f"Dimension {dimension_name} is not valid.")
+                                    raise Exception(f"Invalid subscript in dimension {dimension_name}.")
                             else:
                                 element_name = dimension_tokens[0][1]
-                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] arrayed target var: {arrayed_target_var_name} element: {element_name}")
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1.3 arrayed target var: {arrayed_target_var_name} element: {element_name}")
                                 # otherwise, we take the specific element
                                 if element_name in dimension_elements:
                                     list_allowed_elements_per_dimension[i] = [element_name]
@@ -1364,6 +1384,7 @@ class Solver(object):
                                     raise Exception(f"Element {element_name} is not in dimension {dimension_name}.")
                         # case-2
                         if len(dimension_tokens) == 3: # it's a range like ['NAME', 'A9'], ['COLON', ':'], ['NAME', 'A14']
+                            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.2 arrayed target var: {arrayed_target_var_name} dimension: {dimension_name} tokens: {dimension_tokens}")
                             if dimension_tokens[1][1] == ':' and dimension_tokens[2][0] == 'NAME':
                                 start = dimension_tokens[0][1]
                                 end = dimension_tokens[2][1]
@@ -1375,15 +1396,22 @@ class Solver(object):
                                 raise Exception(f"Invalid range syntax in dimension {dimension_name}.")
                     sum_array =0
                     for sub_elements, sub_val in self.name_space[arrayed_target_var_name].items():
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.3 adding up arrayed target var: {arrayed_target_var_name} checking: {sub_elements} with value: {sub_val}")
                         add_this = True
                         for i in range(n_dimensions):
                             if sub_elements[i] not in list_allowed_elements_per_dimension[i]:
-                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] {sub_elements[i]} not in allowed list {list_allowed_elements_per_dimension[i]} for dimension {self.var_dimensions[arrayed_target_var_name][i]}")
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.3.1 {sub_elements[i]} not in allowed list {list_allowed_elements_per_dimension[i]} for dimension {self.var_dimensions[arrayed_target_var_name][i]}")
                                 add_this = False
                                 break
+                            else:
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.3.2 {sub_elements[i]} in allowed list {list_allowed_elements_per_dimension[i]} for dimension {self.var_dimensions[arrayed_target_var_name][i]}")
                         if add_this:
+                            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.3.3 adding up {sub_elements} with value: {sub_val}")
                             sum_array += sub_val
+                            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.3.4 current sum_array: {sum_array}")
                     value = sum_array
+            else:
+                raise Exception('v10 Unknown Array-related function {}'.format(node_operator))
 
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10 Array-related Func: {value}")
         
