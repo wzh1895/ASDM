@@ -3537,9 +3537,9 @@ class sdmodel(object):
                     self.create_variable_dependency_graph(dependent_var, mode=mode, graph=graph, visited=visited)
                 else:
                     # Circular dependency detected
-                    self.logger.warning(f"Warning: Circular dependency detected between {dependent_var} and {var}")
-                    self.logger.warning(f"Warning: Full dependency path - direction A: {nx.shortest_path(graph, dependent_var, var)}")
-                    self.logger.warning(f"Warning: Full dependency path - direction B: {nx.shortest_path(graph, var, dependent_var)}\n")
+                    self.logger.error(f"Warning: Circular dependency detected between {dependent_var} and {var}")
+                    self.logger.error(f"Warning: Full dependency path - direction A: {nx.shortest_path(graph, dependent_var, var)}")
+                    self.logger.error(f"Warning: Full dependency path - direction B: {nx.shortest_path(graph, var, dependent_var)}\n")
 
             visited.remove(var)
             return graph
