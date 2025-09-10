@@ -19,6 +19,28 @@ logger_data_feeder = logging.getLogger('asdm.data_feeder')
 logger_sdmodel = logging.getLogger('asdm.simrun')
 logger_model_creation = logging.getLogger('asdm.model_creation')
 
+class VariableLogFilter(logging.Filter):
+    """Filter logs to show only specific variables."""
+    
+    def __init__(self, variable_names=None):
+        super().__init__()
+        self.variable_names = variable_names or []
+        # Convert to set for faster lookup
+        self.variable_set = set(self.variable_names)
+    
+    def filter(self, record):
+        # If no variables specified, allow all logs
+        if not self.variable_set:
+            return True
+        
+        # Check if any of the target variables are mentioned in the log message
+        message = record.getMessage()
+        for var_name in self.variable_set:
+            if var_name in message:
+                return True
+        
+        return False
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s: | %(name)s | %(message)s"
@@ -1564,7 +1586,7 @@ class DataFeeder(object):
 
 class sdmodel(object):
     # equations
-    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info', model_creation_debug_level='info'):
+    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info', model_creation_debug_level='info', variable_filter=None):
         # Debug
         self.HEAD = 'ENGINE'
         self.debug_level_trace_error = 0
@@ -1714,6 +1736,15 @@ class sdmodel(object):
             self.solver.logger.setLevel(logging.ERROR)
         else:
             raise Exception('Unknown debug level {}'.format(solver_debug_level))
+            
+        # Apply variable filter if specified
+        if variable_filter:
+            self.variable_filter = VariableLogFilter(variable_filter)
+            # Apply filter to relevant loggers
+            self.solver.logger.addFilter(self.variable_filter)
+            self.parser.logger.addFilter(self.variable_filter)
+            self.logger_model_creation.addFilter(self.variable_filter)
+            self.logger.info(f"Applied variable filter for: {variable_filter}")
 
     def _load_xmile_model(self, from_xmile):
         """Load and parse an XMILE model file."""
