@@ -2013,25 +2013,16 @@ class sdmodel(object):
                 resource_path = str(resource_path)
             
             if not Path(resource_path).exists():
-                logger_model_creation.warning(f"Import file not found: {resource_path}")
+                logger_model_creation.error(f"Import file not found: {resource_path}")
                 return
                 
             logger_model_creation.debug(f"Reading CSV file: {resource_path}")
                 
-            # Read CSV data
+            # Read CSV data and normalize to unified format: columns = variables
             try:
-                if import_spec['orientation'] == 'horizontal':
-                    if import_spec['timevarying']:
-                        # For time-varying horizontal data, first row is time, first column is variable names
-                        df = pd.read_csv(resource_path, index_col=0).transpose()
-                    else:
-                        # For parameter horizontal data, first column is variable names, second is values
-                        df = pd.read_csv(resource_path, header=None, names=['variable', 'value'])
-                else:
-                    # Default vertical orientation
-                    df = pd.read_csv(resource_path)
+                df = self._read_and_normalize_csv(resource_path, import_spec)
             except Exception as e:
-                logger_model_creation.warning(f"Error reading CSV file {resource_path}: {e}")
+                logger_model_creation.error(f"Error reading CSV file {resource_path}: {e}")
                 return
                 
             if import_spec['overwrite'] and not import_spec['timevarying']:
@@ -2045,51 +2036,118 @@ class sdmodel(object):
                 logger_model_creation.debug(f"Treating non-overwrite, non-timevarying import as parameter import: {resource_path}")
                 self._process_parameter_import(df, resource_path)
             else:
-                logger_model_creation.warning(f"Unsupported import configuration: overwrite={import_spec['overwrite']}, timevarying={import_spec['timevarying']}")
+                logger_model_creation.error(f"Unsupported import configuration: overwrite={import_spec['overwrite']}, timevarying={import_spec['timevarying']}")
                 
         except Exception as e:
             logger_model_creation.error(f"Error processing import {import_spec['resource']}: {e}")
+
+    def _read_and_normalize_csv(self, resource_path, import_spec):
+        """
+        Read CSV file and normalize to unified format: columns = variables, rows = observations.
+        
+        This unifies all CSV formats to have:
+        - Columns represent variables 
+        - Rows represent observations (time points for time-varying, single values for parameters)
+        - First column contains time values for time-varying data (or index for parameters)
+        """
+        orientation = import_spec.get('orientation', 'vertical')
+        is_timevarying = import_spec['timevarying']
+        
+        if orientation == 'horizontal':
+            if is_timevarying:
+                # Horizontal time-varying: rows=variables, columns=time
+                # After transpose: columns=variables, rows=time (desired format)
+                df = pd.read_csv(resource_path).dropna().transpose()
+
+                # Reset index to avoid assuming any column as index
+                df = df.reset_index(drop=False)
+                
+                # Set first row as column headers to remove the index row and make data start at row 0
+                df.columns = df.iloc[0]  # Use first row as column names
+                df = df.drop(df.index[0])  # Drop the first row
+                df = df.reset_index(drop=True)  # Reset index so data starts at 0
+                df.columns.name = None  # Remove column name
+
+                logger_model_creation.debug(f"Processed resource path: {resource_path}")
+                logger_model_creation.debug(f"Normalized horizontal time-varying CSV: {df.shape} (rows=time, cols=variables)")
+                logger_model_creation.debug(f"Normalized horizontal time-varying CSV: \n{df.head()}")
+            else:
+                # Horizontal parameters: rows=variables with values
+                # Transform to: columns=variables, single row=values
+                temp_df = pd.read_csv(resource_path, header=None, names=['variable', 'value'])
+                # drop empty rows
+                temp_df = temp_df.dropna()
+                # Pivot to get variables as columns
+                df = temp_df.set_index('variable').T
+                logger_model_creation.debug(f"Processed resource path: {resource_path}")
+                logger_model_creation.debug(f"Normalized horizontal parameter CSV: {df.shape} (single row, cols=variables)")
+                logger_model_creation.debug(f"Normalized horizontal parameter CSV: \n{df.head()}")
+        else:
+            # Vertical orientation (default)
+            if is_timevarying:
+                # Already in desired format: columns=variables, rows=time
+                df = pd.read_csv(resource_path)
+                logger_model_creation.debug(f"Processed resource path: {resource_path}")
+                logger_model_creation.debug(f"Normalized vertical time-varying CSV: {df.shape} (rows=time, cols=variables)")
+                logger_model_creation.debug(f"Normalized vertical time-varying CSV: \n{df.head()}")
+            else:
+                # Vertical parameters: assume 2-column format (variable, value)
+                # Transform to: columns=variables, single row=values  
+                temp_df = pd.read_csv(resource_path)
+                if len(temp_df.columns) == 2:
+                    # Standard 2-column format
+                    var_col, val_col = temp_df.columns[0], temp_df.columns[1]
+                    df = temp_df.set_index(var_col)[val_col].to_frame().T
+                    df.index = [0]  # Ensure single row index
+                    logger_model_creation.debug(f"Processed resource path: {resource_path}")
+                    logger_model_creation.debug(f"Normalized vertical parameter CSV: {df.shape} (single row, cols=variables)")
+                    logger_model_creation.debug(f"Normalized vertical parameter CSV: \n{df.head()}")
+                else:
+                    # Assume already in correct format
+                    df = temp_df
+                    logger_model_creation.debug(f"Processed resource path: {resource_path}")
+                    logger_model_creation.debug(f"Normalized vertical parameter CSV: {df.shape} (single row, cols=variables)")
+                    logger_model_creation.debug(f"Normalized vertical parameter CSV: \n{df.head()}")
+        
+        return df
 
     def _process_parameter_import(self, df, resource_path):
         """Process parameter imports (set parameters, replace equations once)."""
         try:
             logger_model_creation.debug(f"Processing parameter import from {resource_path}")
             
-            # For parameter imports, we expect variable names in first column and values in second
-            # Handle both DataFrame formats: indexed or with 'variable' and 'value' columns
-            if 'variable' in df.columns and 'value' in df.columns:
-                # Horizontal format with named columns
-                for index, row in df.iterrows():
-                    if pd.isna(row['variable']) or str(row['variable']).strip() == '':
-                        continue
-                        
-                    var_name = str(row['variable']).strip()
-                    var_value = row['value']
-                    
+            # With unified format: columns = variables, single row = values
+            # Process each column as a variable
+            for var_name in df.columns:
+                # Skip invalid column names
+                if pd.isna(var_name) or str(var_name).strip() == '' or str(var_name).lower() in ['nan', 'unnamed']:
+                    continue
+                
+                # Get the value from the first (and typically only) row
+                if len(df) > 0:
+                    var_value = df[var_name].iloc[0]
+                    # Skip if the value itself is NaN
                     if pd.isna(var_value):
                         continue
-                        
-                    self._apply_parameter_value(var_name, var_value, resource_path)
-            else:
-                # Vertical format or other format
-                for index, row in df.iterrows():
-                    if pd.isna(row.iloc[0]) or str(row.iloc[0]).strip() == '':
-                        continue
-                        
-                    var_name = str(row.iloc[0]).strip()
-                    var_value = row.iloc[1]
+                else:
+                    continue
                     
-                    if pd.isna(var_value):
-                        continue
-                        
-                    self._apply_parameter_value(var_name, var_value, resource_path)
+                var_name_str = str(var_name).strip()
+                self._apply_parameter_value(var_name_str, var_value, resource_path)
                     
         except Exception as e:
             logger_model_creation.error(f"Error processing parameter import from {resource_path}: {e}")
 
     def _apply_parameter_value(self, var_name, var_value, resource_path):
         """Apply a parameter value to a variable with proper arrayed variable handling."""
+        if self._is_time_column(var_name):
+            return
         try:
+            # Parse the value to handle comma separators and other formatting
+            parsed_value = self._parse_number(var_value)
+            if pd.isna(parsed_value):
+                logger_model_creation.error(f"Could not parse parameter value '{var_value}' for {var_name}")
+                return
             # Handle subscripted variables (e.g., "variable[subscript]")
             if '[' in var_name and ']' in var_name:
                 base_name = var_name.split('[')[0].strip()
@@ -2114,7 +2172,7 @@ class sdmodel(object):
                         break
                 
                 if not variable_found:
-                    logger_model_creation.warning(f"Variable {processed_name} not found in model for parameter import from {resource_path}")
+                    logger_model_creation.error(f"Variable {processed_name} not found in model for parameter import from {resource_path}")
                     return
                 
                 # Check if this is an arrayed variable
@@ -2122,14 +2180,14 @@ class sdmodel(object):
                     # Arrayed variable - check if the subscript exists
                     if subscript_tuple in target_dict[processed_name]:
                         # Use replace_element_equation for proper processing
-                        new_equation = {subscript_tuple: str(var_value)}
+                        new_equation = {subscript_tuple: str(parsed_value)}
                         self.replace_element_equation(processed_name, new_equation)
-                        logger_model_creation.debug(f"Set parameter {processed_name}[{subscript_part}] = {var_value}")
+                        logger_model_creation.debug(f"Set parameter {processed_name}[{subscript_part}] = {parsed_value}")
                     else:
                         available_keys = list(target_dict[processed_name].keys())
-                        logger_model_creation.warning(f"Subscript {subscript_tuple} not found for variable {processed_name}. Available: {available_keys}")
+                        logger_model_creation.error(f"Subscript {subscript_tuple} not found for variable {processed_name}. Available: {available_keys}")
                 else:
-                    logger_model_creation.warning(f"Variable {processed_name} is not arrayed but subscript provided: {subscript_part}")
+                    logger_model_creation.error(f"Variable {processed_name} is not arrayed but subscript provided: {subscript_part}")
                     
             else:
                 # Non-subscripted variable
@@ -2143,13 +2201,13 @@ class sdmodel(object):
                                          (self.flow_equations, 'flow')]:
                     if processed_name in var_dict:
                         # Use replace_element_equation for proper processing
-                        self.replace_element_equation(processed_name, str(var_value))
+                        self.replace_element_equation(processed_name, str(parsed_value))
                         variable_found = True
-                        logger_model_creation.debug(f"Set parameter {processed_name} = {var_value}")
+                        logger_model_creation.debug(f"Set parameter {processed_name} = {parsed_value}")
                         break
                 
                 if not variable_found:
-                    logger_model_creation.warning(f"Variable {processed_name} not found in model for parameter import from {resource_path}")
+                    logger_model_creation.error(f"Variable {processed_name} not found in model for parameter import from {resource_path}")
                 
         except Exception as e:
             logger_model_creation.error(f"Error applying parameter {var_name} = {var_value}: {e}")
@@ -2165,21 +2223,31 @@ class sdmodel(object):
                 return
                 
             # Get simulation period from sim_specs for missing time handling
-            sim_start = self.sim_specs.get('initial_time', 0.0)
-            sim_end = sim_start + self.sim_specs.get('simulation_time', 10.0)
-            sim_dt = self.sim_specs.get('dt', 1.0)
+            sim_start = self.sim_specs.get('initial_time')
+            sim_end = sim_start + self.sim_specs.get('simulation_time')
+            sim_dt = self.sim_specs.get('dt')
             
             logger_model_creation.debug(f"Simulation period: {sim_start} to {sim_end} with dt={sim_dt}")
             logger_model_creation.debug(f"Data time range: {min(time_values)} to {max(time_values)}")
                 
-            # Process each variable column
-            variable_columns = [col for col in df.columns if not self._is_time_column(col)]
-            
-            for col in variable_columns:
-                # Extract data for this variable
-                data_values = df[col].dropna().values
+            # With unified format: all columns are variables (except time column for vertical CSVs)
+            # Process each variable column, excluding time columns
+            for col in df.columns:
+                # Skip time columns for vertical CSVs (horizontal CSVs already have time in index)
+                if self._is_time_column(col):
+                    continue
+                    
+                # Skip invalid column names
+                if pd.isna(col) or str(col).lower().strip() in ['nan', 'unnamed', '']:
+                    continue
+                # Extract data for this variable (parse numbers to handle comma separators)
+                raw_data = df[col].dropna().values
+                data_values = [self._parse_number(val) for val in raw_data]
+                # Filter out NaN values that couldn't be parsed
+                data_values = [val for val in data_values if not pd.isna(val)]
+                
                 if len(data_values) == 0:
-                    logger_model_creation.warning(f"No data found for variable {col} in {resource_path}")
+                    logger_model_creation.error(f"No data found for variable {col} in {resource_path}")
                     continue
                     
                 # Handle missing time by processing data to cover simulation period
@@ -2188,7 +2256,7 @@ class sdmodel(object):
                 )
                 
                 if len(processed_data) == 0:
-                    logger_model_creation.warning(f"No valid data after processing for variable {col}")
+                    logger_model_creation.error(f"No valid data after processing for variable {col}")
                     continue
                 
                 # Determine time step (dt) and starting time from processed data
@@ -2206,42 +2274,54 @@ class sdmodel(object):
             logger_model_creation.error(f"Error processing time-varying import from {resource_path}: {e}")
 
     def _extract_time_values(self, df, resource_path):
-        """Extract time values from DataFrame."""
-        # Check if time column exists (common names: year, time, month, etc.)
-        time_col = None
-        common_time_cols = ['year', 'time', 'month', 'day', 'week', 'quarter']
+        """Extract time values from DataFrame with unified format."""
+        # for every column name, check if it is a time column
+        for col in df.columns:
+            if self._is_time_column(col):
+                time_values = [self._parse_number(val) for val in df[col].values]
+                logger_model_creation.debug(f"Using column {col} as time values: {time_values}")
+                return time_values
         
-        for col_name in common_time_cols:
-            if col_name.lower() in [c.lower() for c in df.columns]:
-                # Find the exact column name (case-insensitive)
-                time_col = next(c for c in df.columns if c.lower() == col_name.lower())
-                break
-        
-        if time_col is not None:
-            time_values = [float(val) for val in df[time_col].values]
-            logger_model_creation.debug(f"Found time column '{time_col}' with values: {time_values}")
-            return time_values
-        
-        # Check if the index contains time values (for transposed horizontal data)
-        if len(df.index) > 0 and all(str(val).replace('.', '').replace('-', '').isdigit() for val in df.index[:3]):
-            # Index appears to contain numeric time values
-            time_values = [float(val) for val in df.index.values]
-            logger_model_creation.debug(f"Using index as time values: {time_values}")
-            return time_values
-        elif df.index.name in common_time_cols or (hasattr(df.index, 'name') and df.index.name and df.index.name.lower() in [c.lower() for c in common_time_cols]):
-            # Time is in index with appropriate name
-            time_values = [float(val) for val in df.index.values]
-            logger_model_creation.debug(f"Using named index '{df.index.name}' as time values: {time_values}")
-            return time_values
-        else:
-            logger_model_creation.warning(f"No time column found in {resource_path}, assuming sequential time steps")
-            time_values = list(range(len(df)))
-            return time_values
+        logger_model_creation.error(f"No time values found in {resource_path}")
 
     def _is_time_column(self, col_name):
-        """Check if a column name represents time."""
-        common_time_cols = ['year', 'time', 'month', 'day', 'week', 'quarter']
-        return col_name.lower() in [c.lower() for c in common_time_cols]
+        """Check if a column name represents time based on sim_specs time_units."""
+        sim_time_units = self.sim_specs.get('time_units', 'time')
+        
+        # Create list of valid time column names (singular and plural)
+        time_col_candidates = []
+        if sim_time_units:
+            # Add the exact time units
+            time_col_candidates.append(sim_time_units.lower())
+            # Add singular form (remove 's' if it ends with 's')
+            if sim_time_units.lower().endswith('s'):
+                time_col_candidates.append(sim_time_units.lower()[:-1])
+            # Add plural form (add 's' if it doesn't end with 's')
+            else:
+                time_col_candidates.append(sim_time_units.lower() + 's')
+        
+        return col_name.lower() in time_col_candidates
+
+    def _parse_number(self, value):
+        """Parse a number that might have comma separators (e.g., '1,234' or '1,234.56')."""
+        if pd.isna(value):
+            return float('nan')
+        
+        # Convert to string and handle common formatting
+        str_val = str(value).strip()
+        
+        # Remove quotes if present
+        if str_val.startswith('"') and str_val.endswith('"'):
+            str_val = str_val[1:-1]
+        
+        # Remove thousands separators (commas)
+        str_val = str_val.replace(',', '')
+        
+        try:
+            return float(str_val)
+        except (ValueError, TypeError) as e:
+            logger_model_creation.error(f"Could not parse number '{value}': {e}")
+            return float('nan')
 
     def _handle_missing_time(self, data_values, time_values, sim_start, sim_end, sim_dt, variable_name, resource_path):
         """Handle missing time data by interpolation/extrapolation according to simulation period."""
@@ -2250,14 +2330,14 @@ class sdmodel(object):
         # Create time-data pairs and sort by time
         time_data_pairs = list(zip(time_values, data_values))
         time_data_pairs.sort(key=lambda x: x[0])
-        
+
         sorted_times = [pair[0] for pair in time_data_pairs]
         sorted_data = [pair[1] for pair in time_data_pairs]
         
         # Generate simulation time steps
         sim_times = []
         current_time = sim_start
-        while current_time <= sim_end + sim_dt/2:  # Add small tolerance
+        while current_time <= sim_end:
             sim_times.append(current_time)
             current_time += sim_dt
             
@@ -2315,7 +2395,7 @@ class sdmodel(object):
                     break
             
             if not variable_found:
-                logger_model_creation.warning(f"Variable {processed_name} not found in model for time-varying import from {resource_path}")
+                logger_model_creation.error(f"Variable {processed_name} not found in model for time-varying import from {resource_path}")
                 return
             
             # Check if this is an arrayed variable and if the subscript exists
@@ -2334,9 +2414,9 @@ class sdmodel(object):
                     logger_model_creation.debug(f"Set time-varying data for {processed_name}[{subscript_part}] with {len(data_values)} data points")
                 else:
                     available_keys = list(target_dict[processed_name].keys())
-                    logger_model_creation.warning(f"Subscript {subscript_tuple} not found for variable {processed_name}. Available: {available_keys}")
+                    logger_model_creation.error(f"Subscript {subscript_tuple} not found for variable {processed_name}. Available: {available_keys}")
             else:
-                logger_model_creation.warning(f"Variable {processed_name} is not arrayed but subscript provided: {subscript_part}")
+                logger_model_creation.error(f"Variable {processed_name} is not arrayed but subscript provided: {subscript_part}")
                 
         else:
             # Non-subscripted variable
@@ -2363,7 +2443,7 @@ class sdmodel(object):
                     break
             
             if not variable_found:
-                logger_model_creation.warning(f"Variable {processed_name} not found in model for time-varying import from {resource_path}")
+                logger_model_creation.error(f"Variable {processed_name} not found in model for time-varying import from {resource_path}")
 
     # utilities
     def name_handler(self, name):
