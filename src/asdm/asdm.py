@@ -197,7 +197,7 @@ class Parser:
         
         ast = self.parse_statement()
         if self.current_index != len(self.tokens):
-            raise ValueError("Unexpected end of parsing of expression {} at index {} of tokens {}".format(expression, self.current_index, self.tokens))
+            raise ValueError(f"Unexpected end of parsing of expression {expression} at index {self.current_index} of tokens {self.tokens}")
         self.logger.debug("Completed parse")
         self.logger.debug(f"AST: {ast}")
         
@@ -941,7 +941,7 @@ class Solver(object):
         self.id_level += 1
         
         if type(parsed_equation) is dict:  
-            raise Exception('Parsed equation should not be a dict. var:', var_name)
+            raise Exception(f'Parsed equation should not be a dict. var: {var_name}')
 
         if node_id == 'root':
             node_id = list(parsed_equation.successors('root'))[0]
@@ -1160,7 +1160,7 @@ class Solver(object):
                 elif len(node_operands) == 3: # there's an initial value specified
                     init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
                 else:
-                    raise Exception("Invalid initial value for DELAY in operands {}".format(node_operands))
+                    raise Exception(f"Invalid initial value for DELAY in operands {node_operands}")
 
                 # delay time
                 delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
@@ -1313,7 +1313,7 @@ class Solver(object):
                 value = outflows[-1] / self.sim_specs['dt']
 
             else:
-                raise Exception('Unknown time-related operator {}'.format(node_operator))
+                raise Exception(f'Unknown time-related operator {node_operator}')
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v9 Time-related Func: {value}")
         
         elif node_operator in self.array_related_functions: # Array-RELATED
@@ -1411,7 +1411,7 @@ class Solver(object):
                             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.3.4 current sum_array: {sum_array}")
                     value = sum_array
             else:
-                raise Exception('v10 Unknown Array-related function {}'.format(node_operator))
+                raise Exception(f'v10 Unknown Array-related function {node_operator}')
 
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10 Array-related Func: {value}")
         
@@ -1425,10 +1425,10 @@ class Solver(object):
                 input_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
                 value = look_up_func(input_value)
             else:
-                raise Exception('Unknown Lookup function {}'.format(node_operator))
+                raise Exception(f'Unknown Lookup function {node_operator}')
         
         else:
-            raise Exception('Unknown operator {}'.format(node_operator))
+            raise Exception(f'Unknown operator {node_operator}')
         
         self.id_level -= 1
 
@@ -1482,7 +1482,7 @@ class GraphFunc(object):
                         return self.ypts[i-1]
                 return self.ypts[-1]
         else:
-            raise Exception('Unknown out_of_bound_type {}'.format(self.out_of_bound_type))
+            raise Exception(f'Unknown out_of_bound_type {self.out_of_bound_type}')
     
     def overwrite_xpts(self, xpts):
         # if len(self.xpts) != len(xpts):
@@ -1631,7 +1631,7 @@ class sdmodel(object):
         elif simulator_debug_level == 'error':
             self.logger.setLevel(logging.ERROR)
         else:
-            raise Exception('Unknown debug level {}'.format(simulator_debug_level))
+            raise Exception(f'Unknown debug level {simulator_debug_level}')
 
         # model creation debug level
         if model_creation_debug_level == 'debug':
@@ -1643,7 +1643,7 @@ class sdmodel(object):
         elif model_creation_debug_level == 'error':
             self.logger_model_creation.setLevel(logging.ERROR)
         else:
-            raise Exception('Unknown debug level {}'.format(model_creation_debug_level))
+            raise Exception(f'Unknown debug level {model_creation_debug_level}')
 
         # sim_specs
         self.sim_specs = {
@@ -1741,7 +1741,7 @@ class sdmodel(object):
         elif parser_debug_level == 'error':
             self.parser.logger.setLevel(logging.ERROR)
         else:
-            raise Exception('Unknown debug level {}'.format(parser_debug_level))
+            raise Exception(f'Unknown debug level {parser_debug_level}')
         
         # solver
         self.solver = Solver(
@@ -1763,7 +1763,7 @@ class sdmodel(object):
         elif solver_debug_level == 'error':
             self.solver.logger.setLevel(logging.ERROR)
         else:
-            raise Exception('Unknown debug level {}'.format(solver_debug_level))
+            raise Exception(f'Unknown debug level {solver_debug_level}')
             
         # Apply variable filter if specified
         if variable_filter:
@@ -1973,7 +1973,7 @@ class sdmodel(object):
             equation = element_to_check.find('eqn').text
         else:
             var_name = self.name_handler(var.get('name'))
-            raise Exception('No meaningful definition found for variable {}'.format(var_name))
+            raise Exception(f'No meaningful definition found for variable {var_name}')
             
         return equation
 
@@ -2572,7 +2572,7 @@ class sdmodel(object):
         elif type(new_equation) is dict:
             pass
         else:
-            raise Exception('Unsupported new equation {} type {}'.format(new_equation, type(new_equation)))
+            raise Exception(f'Unsupported new equation {new_equation} type {type(new_equation)}')
         return new_equation
 
     def replace_element_equation(self, name, new_equation):
@@ -2615,7 +2615,7 @@ class sdmodel(object):
             else:
                 self.aux_equations[name] = new_equation
         else:
-            raise Exception('Unable to find {} in the current model'.format(name))
+            raise Exception(f'Unable to find {name} in the current model')
 
         if self.state == 'loaded':
             pass
@@ -2624,7 +2624,7 @@ class sdmodel(object):
 
     def overwrite_graph_function_points(self, name, new_xpts=None, new_xscale=None, new_ypts=None):
         if new_xpts is None and new_xscale is None and new_ypts is None:
-            raise Exception("Inputs cannot all be None.")
+            raise Exception("Inputs cannot all be None")
 
         if name in self.stock_equations:
             graph_func_equation = self.stock_equations[name]
@@ -2633,7 +2633,7 @@ class sdmodel(object):
         elif name in self.aux_equations:
             graph_func_equation = self.aux_equations[name]
         else:
-            raise Exception('Unable to find {} in the current model'.format(name))
+            raise Exception(f'Unable to find {name} in the current model')
         
         if new_xpts is not None:
             # self.logger.debug('Old xpts:', graph_func_equation.xpts)
@@ -2654,12 +2654,12 @@ class sdmodel(object):
 
     def parse_equation(self, var, equation):
         if type(equation) is GraphFunc:
-            gfunc_name = 'GFUNC{}'.format(len(self.graph_functions_renamed))
+            gfunc_name = f'GFUNC{len(self.graph_functions_renamed)}'
             self.graph_functions_renamed[gfunc_name] = equation # just for length ... for now
             self.graph_functions[var] = equation
             self.parser.functions.update({gfunc_name:gfunc_name+r"(?=\()"}) # make name var also a function name and add it to the parser
             self.solver.custom_functions.update({gfunc_name:equation})
-            equation = gfunc_name+'('+ equation.eqn + ')'  # make equation into form like var(eqn), 
+            equation = f'{gfunc_name}({equation.eqn})'  # make equation into form like var(eqn), 
                                             # where eqn is the euqaiton whose outcome is the input to GraphFunc var()
                                             # this is also how the XMILE spec handles GraphFunc
             parsed_equation = self.parser.parse(equation)
@@ -2667,14 +2667,14 @@ class sdmodel(object):
 
         elif type(equation) is DataFeeder:
             # Handle DataFeeder similar to GraphFunc but in separate function dictionary
-            data_name = 'DATA{}'.format(len(self.data_feeders_renamed))
+            data_name = f'DATA{len(self.data_feeders_renamed)}'
             self.data_feeders_renamed[data_name] = equation
             # Register in parser as a function
             self.parser.functions.update({data_name: data_name + r"(?=\()"})
             # Register in solver as a data feeder function
             self.data_feeder_functions.update({data_name: equation})
             # Create equation that calls the DataFeeder function with TIME as argument
-            equation = data_name + '(TIME)'
+            equation = f'{data_name}(TIME)'
             parsed_equation = self.parser.parse(equation)
             return parsed_equation
         
@@ -2709,7 +2709,7 @@ class sdmodel(object):
             return parsed_equation
 
         else:
-            raise Exception('Unsupported equation {} type {}'.format(equation, type(equation)))
+            raise Exception(f'Unsupported equation {equation} type {type(equation)}')
     
     def batch_parse(self, equations, parsed_equations):
         # Debug logic: collect all equations that cannot be parsed and log them, then end the parsing process.
@@ -2730,7 +2730,7 @@ class sdmodel(object):
                         parsed_equations[var][k] = self.parse_equation(var=var, equation=ks)
                         counter_all_equations += 1
                     except Exception as e:
-                        self.logger.error("Error parsing equation for variable {}: {}".format(var, e))
+                        self.logger.error(f"Error parsing equation for variable {var}: {e}")
                         unparsed_equations.append(((var, k), ks, e))
                         counter_all_equations += 1
                         un_parsed = True
@@ -2742,7 +2742,7 @@ class sdmodel(object):
                     parsed_equations[var] = self.parse_equation(var=var, equation=equation)
                     counter_all_equations += 1
                 except Exception as e:
-                    self.logger.error("Error parsing equation for variable {}: {}".format(var, e))
+                    self.logger.error(f"Error parsing equation for variable {var}: {e}")
                     unparsed_equations.append((var, equation, e))
                     counter_all_equations += 1
                     counter_unparsed_variables += 1
@@ -2754,9 +2754,9 @@ class sdmodel(object):
             self.logger.error("")
             for i in range(len(unparsed_equations)):
                 var, eqn, error = unparsed_equations[i]
-                self.logger.error("{} Variable: {}".format(i+1, var))
-                self.logger.error("{} Equation: {}".format(i+1, eqn))
-                self.logger.error("{} Error: {}".format(i+1, error))
+                self.logger.error(f"{i+1} Variable: {var}")
+                self.logger.error(f"{i+1} Equation: {eqn}")
+                self.logger.error(f"{i+1} Error: {error}")
                 self.logger.error("")
             raise Exception(f"Parsing failed for {len(unparsed_equations)} equations out of {counter_all_equations} ({counter_unparsed_variables} variables out of {counter_all_variables}). See logs for details.")
 
@@ -2961,16 +2961,16 @@ class sdmodel(object):
                             for sub, sub_value in self.name_space[var].items():
                                 if sub_value < 0:
                                     self.name_space[var][sub] = np.float64(0)
-                                    self.logger.debug(f"    Flow {var}[{sub}] is negative, set to 0")
+                                    self.logger.debug(f"    Non-negative flow {var}[{sub}] cannot be negative, set to 0")
                         else:
                             if self.name_space[var] < 0:
                                 self.name_space[var] = np.float64(0)
-                                self.logger.debug('    '+"Flow {} is negative, set to 0".format(var))
+                                self.logger.debug(f'    '+"Non-negative flow {var} cannot be negative, set to 0")
 
                     # do not use 'value' from here on, use 'self.name_space[var]' instead
                     # check flow attributes for its constraints from non-negative stocks
                     flow_attributes = dg.nodes[var]
-                    self.logger.debug('    '+'Checking attributes: {}'.format(flow_attributes))
+                    self.logger.debug(f'    '+'Checking attributes: {flow_attributes}')
                     
                     if 'considered_for_non_negative_stock' in flow_attributes:
                         if flow_attributes['considered_for_non_negative_stock'] is True:
@@ -3026,7 +3026,7 @@ class sdmodel(object):
                             for sub, sub_value in self.name_space[var].items():
                                 if self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] - sub_value * self.sim_specs['dt'] < 0:
                                     self.name_space[var][sub] = self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] / self.sim_specs['dt']
-                                    self.logger.debug('    '+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
+                                    self.logger.debug(f'    ----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] = np.float64(0)
                                 else:
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] -= sub_value * self.sim_specs['dt']
@@ -3034,21 +3034,21 @@ class sdmodel(object):
                             for sub in self.stock_non_negative_temp_value[out_from_non_negative_stock]:
                                 if self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] - self.name_space[var] * self.sim_specs['dt'] < 0:
                                     self.name_space[var] = self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] / self.sim_specs['dt']
-                                    self.logger.debug('    '+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
+                                    self.logger.debug(f'    ----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] = np.float64(0)
                                 else:
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] -= self.name_space[var] * self.sim_specs['dt']
                         else:                        
                             if self.stock_non_negative_temp_value[out_from_non_negative_stock] - self.name_space[var] * self.sim_specs['dt'] < 0:
                                 self.name_space[var] = self.stock_non_negative_temp_value[out_from_non_negative_stock] / self.sim_specs['dt']
-                                self.logger.debug('    '+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
+                                self.logger.debug(f'    ----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
                                 self.stock_non_negative_temp_value[out_from_non_negative_stock] = np.float64(0)
                             else:
                                 self.stock_non_negative_temp_value[out_from_non_negative_stock] -= self.name_space[var] * self.sim_specs['dt']
 
-                    self.logger.debug('    '+'Flow {} = {}'.format(var, self.name_space[var]))
+                    self.logger.debug(f'    ----Flow {var} = {self.name_space[var]}')
                 else:
-                    self.logger.debug('    '+'Flow {} is already in name space.'.format(var))
+                    self.logger.debug(f'    ----Flow {var} is already in name space.')
                     # raise Warning('Flow {} is already in name space.'.format(var)) # this should not happen, just in case of any bugs as we switched from dynamic calculation to static calculation
         
         # D: var is an auxiliary
@@ -3069,27 +3069,27 @@ class sdmodel(object):
                 else:
                     value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode, subscript=subscript)
                     self.name_space[var] = value
-                self.logger.debug('    '+'Aux {} = {}'.format(var, value))
+                self.logger.debug(f'    '+'Aux {var} = {value}')
                         
             else:
                 pass
         
         else:
-            raise Exception("Undefined var: {}".format(var))
+            raise Exception(f"Undefined var: {var}")
 
     def update_stocks(self):
         for stock, in_out_flows in self.stock_flows.items():
             if stock not in self.conveyors: # coneyors are updated separately
                 if stock in self.stock_shadow_values:
-                    self.logger.debug('updating stock {} shadow_value is {}'.format(stock, self.stock_shadow_values[stock]))
+                    self.logger.debug(f'updating stock {stock} shadow_value is {self.stock_shadow_values[stock]}')
                 else:
-                    self.logger.debug('updating stock {} shadow_value not exist, name_space value is {}'.format(stock, self.name_space[stock]))
+                    self.logger.debug(f'updating stock {stock} shadow_value not exist, name_space value is {self.name_space[stock]}')
                 
                 if len(in_out_flows) != 0:
                     for direction, flows in in_out_flows.items():
                         if direction == 'in':
                             for flow in flows:
-                                self.logger.debug('--inflow {} = {}'.format(flow, self.name_space[flow]))
+                                self.logger.debug(f'--inflow {flow} = {self.name_space[flow]}')
                                 if stock not in self.stock_shadow_values:
                                     self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
                                 if type(self.stock_shadow_values[stock]) is dict:
@@ -3101,10 +3101,10 @@ class sdmodel(object):
                                             self.stock_shadow_values[stock][sub] += self.name_space[flow] * self.sim_specs['dt']
                                 else:
                                     self.stock_shadow_values[stock] += self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug('----stock_shadow_value {} bcomes {}'.format(stock, self.stock_shadow_values[stock]))
+                                self.logger.debug(f'----stock_shadow_value {stock} bcomes {self.stock_shadow_values[stock]}')
                         elif direction == 'out':
                             for flow in flows:
-                                self.logger.debug('--outflow {} = {}'.format(flow, self.name_space[flow]))
+                                self.logger.debug(f'--outflow {flow} = {self.name_space[flow]}')
                                 if stock not in self.stock_shadow_values:
                                     self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
                                 if type(self.stock_shadow_values[stock]) is dict:
@@ -3116,17 +3116,17 @@ class sdmodel(object):
                                             self.stock_shadow_values[stock][sub] -= self.name_space[flow] * self.sim_specs['dt']
                                 else:
                                     self.stock_shadow_values[stock] -= self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug('----stock_shadow_value {} becomes {}'.format(stock, self.stock_shadow_values[stock]))
+                                self.logger.debug(f'    ----stock_shadow_value {stock} becomes {self.stock_shadow_values[stock]}')
                 else: # there are obsolete stocks that are not connected to any flows
-                    self.logger.debug('stock {} is not connected to any flows'.format(stock))
+                    self.logger.debug(f'stock {stock} is not connected to any flows')
                     self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
-                    self.logger.debug('stock_shadow_value {} remains {}'.format(stock, self.stock_shadow_values[stock]))
+                    self.logger.debug(f'stock_shadow_value {stock} remains {self.stock_shadow_values[stock]}')
             else:
                 pass # conveyors are updated separately
     
     def update_conveyors(self):
         for conveyor_name, conveyor in self.conveyors.items(): # Stock is a Conveyor
-            self.logger.debug('updating conveyor {}'.format(conveyor_name))
+            self.logger.debug(f'updating conveyor {conveyor_name}')
             total_flow_effect = 0
             connected_flows = self.stock_flows[conveyor_name]
             for direction, flows in connected_flows.items():
@@ -3139,8 +3139,8 @@ class sdmodel(object):
             self.stock_shadow_values[conveyor_name] = conveyor['conveyor'].level()
 
     def simulate(self, time=None, dt=None):
-        self.logger.debug('Simulation started with specs: {}'.format(self.sim_specs))
-        self.logger.debug('Equations: {}'.format(self.stock_equations | self.flow_equations | self.aux_equations))
+        self.logger.debug(f'Simulation started with specs: {self.sim_specs}')
+        self.logger.debug(f'Equations: {self.stock_equations | self.flow_equations | self.aux_equations}')
         
         if time is None:
             time = self.sim_specs['simulation_time']
@@ -3167,7 +3167,7 @@ class sdmodel(object):
             # self.name_space['TIME'] = self.sim_specs['current_time']
             # self.name_space['DT'] = self.sim_specs['dt']
 
-            self.logger.debug('Continuing simulation from time {} for {} iteration'.format(self.sim_specs['current_time'], iterations))
+            self.logger.debug(f'Continuing simulation from time {self.sim_specs["current_time"]} for {iterations} iteration')
         
         elif self.state == 'loaded':
             # parse equations and order execution (compile)
@@ -3177,7 +3177,7 @@ class sdmodel(object):
             self.logger.debug("")
             self.logger.debug("*** Initialization ***")
             self.logger.debug("")
-            self.logger.debug("self.ordered_vars_init {}".format(self.ordered_vars_init))
+            self.logger.debug(f"self.ordered_vars_init {self.ordered_vars_init}")
 
             # Initialize self.stock_non_negative_temp_value
             for stock, is_non_negative in self.stock_non_negative.items():
@@ -3197,42 +3197,44 @@ class sdmodel(object):
         self.logger.debug("")
         self.logger.debug("*** Iteration ***")
         self.logger.debug("")
-        self.logger.debug("self.ordered_vars_iter {}".format(self.ordered_vars_iter))
-        self.logger.debug("Current name_space: {}".format(self.name_space))
+        self.logger.debug(f"self.ordered_vars_iter {self.ordered_vars_iter}")
+        self.logger.debug(f"Current name_space: {self.name_space}")
 
         # self.current_iteration = 0
 
         for s in range(iterations):
-            self.logger.debug('--iteration {} start, current time {}--'.format(s, self.sim_specs['current_time']))
-            # self.logger.debug('--time {} --'.format(self.sim_specs['current_time']))
-            # self.logger.debug('\n--step {} start--\n'.format(s), self.name_space)
+            self.logger.debug(f'--iteration {s} start, current time {self.sim_specs["current_time"]}--')
             
             # Iter step 1: calculate flows and auxiliaries they depend on
+            self.logger.debug('calculating flows and auxiliaries they depend on')
             for var in self.ordered_vars_iter:
                 self.calculate_variable(var=var, dg=self.dg_iter, mode='iter')
 
             # Iter step 2: update stocks using flows and conveyors
+            self.logger.debug('updating stocks using flows and conveyors')
             self.update_stocks() # update stock shadow values using flows
             self.update_conveyors() # update stock shadow values as well as conveyors 
 
             # Snapshot current name space
+            self.logger.debug('snapshotting current name space as a new time slice')
             current_snapshot = deepcopy(self.name_space)
             current_snapshot[self.sim_specs['time_units']] = current_snapshot['TIME']
             current_snapshot.pop('TIME')
             
             self.time_slice[self.sim_specs['current_time']] = current_snapshot
 
-            self.logger.debug('--step {} finished--'.format(s)) 
-            self.logger.debug('name_space {}'.format(self.name_space))
-            self.logger.debug('shadow_val {}'.format(self.stock_shadow_values))
+            self.logger.debug(f'--step {s} finished--') 
+            self.logger.debug(f'name_space {self.name_space}')
+            self.logger.debug(f'shadow_val {self.stock_shadow_values}')
 
             
             # Iter step 3: update simulation time
+            self.logger.debug('updating simulation time (current_time)')
             self.sim_specs['current_time'] += dt
             # self.current_iteration += 1
 
             # prepare name_space for next step
-            self.logger.debug('--- prepared name_space for next step ---')
+            self.logger.debug('--- preparing name_space for next step ---')
             self.logger.debug('clear name space')
             self.name_space.clear()
             self.logger.debug(f'name space: {self.name_space}')
@@ -3253,10 +3255,10 @@ class sdmodel(object):
             self.stock_shadow_values.clear()
             self.logger.debug(f'shadow value: {self.stock_shadow_values}')
 
-            self.logger.debug('populate non-negative temp value')
+            self.logger.debug('populate non-negative temp value with their name_space values')
             for k, v in self.stock_non_negative_temp_value.items():
                 self.stock_non_negative_temp_value[k] = deepcopy(self.name_space[k])
-            self.logger.debug('non-negative temp value: {}'.format(self.stock_non_negative_temp_value))
+            self.logger.debug(f'non-negative temp value: {self.stock_non_negative_temp_value}')
             
             self.name_space['TIME'] = self.sim_specs['current_time']
             self.name_space['DT'] = self.sim_specs['dt']
@@ -3314,7 +3316,7 @@ class sdmodel(object):
         if sub is None:
             series_key = var.replace('_', ' ')
         else:
-            series_key = "{}[{}]".format(var, ', '.join(sub)).replace('_', ' ')
+            series_key = f"{var}[{', '.join(sub)}]".replace('_', ' ')
         
         if series_key[0].isdigit() or series_key[-1] == ')': # 1 day -> "1 day", a(b)-> "a(b)"
             series_key = '\"'+ series_key + '\"'
@@ -3387,7 +3389,7 @@ class sdmodel(object):
                 try:
                     result.append(slice[name][subscript])
                 except KeyError as e:
-                    print('Subscript {} not found for variable {}; available subscripts: {}'.format(subscript, name, list(slice[name].keys())))
+                    print(f'Subscript {subscript} not found for variable {name}; available subscripts: {list(slice[name].keys())}')
                     raise e
             return result
             
@@ -3420,7 +3422,7 @@ class sdmodel(object):
         for var, result in self.full_result.items():
             if type(result) is dict:
                 for sub, subresult in result.items():
-                    self.full_result_flattened[var+'[{}]'.format(', '.join(sub))] = subresult
+                    self.full_result_flattened[f'{var}[{", ".join(sub)}]'] = subresult
             else:
                 self.full_result_flattened[var] = result
         if format == 'dict':
@@ -3451,10 +3453,10 @@ class sdmodel(object):
         for var in variables:
             result = self.full_result[var]
             if type(result) is list:
-                ax.plot(result, label='{}'.format(var))
+                ax.plot(result, label=f'{var}')
             else:
                 for sub, subresult in self.full_result[var].items():
-                    ax.plot(subresult, label='{}[{}]'.format(var, ', '.join(sub)))
+                    ax.plot(subresult, label=f'{var}[{", ".join(sub)}]')
         ax.legend()
         plt.show()
 
@@ -3562,7 +3564,7 @@ class sdmodel(object):
                 dependent_variables = list(set(dep_graph_len + dep_graph_val))
             else:
                 visited.remove(var)
-                raise Exception("Non-conveyor variable with parsed equation as list: {}".format(var))
+                raise Exception(f"Non-conveyor variable with parsed equation as list: {var}")
         else: # this is a normal variable
             # now check is it a delay or smooth
             dependent_variables = get_dependent_variables(parsed_equation)
@@ -3850,7 +3852,7 @@ class sdmodel(object):
             elif show == 'iter':
                 dg = dg_iter
             else:
-                raise Exception('Invalid show parameter {}. Use "init" or "iter"'.format(show))
+                raise Exception(f'Invalid show parameter {show}. Use "init" or "iter"')
 
             import matplotlib.pyplot as plt
             from networkx.drawing.nx_agraph import graphviz_layout
