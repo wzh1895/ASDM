@@ -3267,51 +3267,6 @@ class sdmodel(object):
 
         self.state = 'simulated'
 
-    # def trace_error(self, var_with_error, sub=None):
-    #     self.debug_level_trace_error += 1
-
-    #     self.logger.debug(self.debug_level_trace_error*'    '+'Tracing error on {} ...'.format(var_with_error))
-    #     self.logger.debug(self.debug_level_trace_error*'    '+'asdm value    :', self.name_space[var_with_error])
-    #     self.logger.debug(self.debug_level_trace_error*'    '+'Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_with_error)])
-        
-    #     if sub is not None:
-    #         parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var_with_error][sub]
-    #     else:
-    #         parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var_with_error]
-        
-    #     leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
-    #     self.logger.debug(self.debug_level_trace_error*'    '+'Dependencies of {}:'.format(var_with_error))
-        
-    #     for leaf in leafs:
-    #         # self.logger.debug(self.debug_level_trace_error*'    '+parsed_equation.nodes[leaf])
-    #         if parsed_equation.nodes[leaf]['operator'][0] in ['EQUALS', 'SPAREN']:
-    #             operands = parsed_equation.nodes[leaf]['operands']
-    #             if operands[0][0] == 'NUMBER':
-    #                 pass
-    #             elif operands[0][0] == 'NAME': # this refers to a variable like 'a'
-    #                 var_dependent = operands[0][1]
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'-- Dependent:', var_dependent)
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   asdm value    :', self.name_space[var_dependent])
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_dependent)])
-        
-    #             elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
-    #                 # need to find that 'SPAREN' node
-    #                 var_dependent_node_id = operands[0][2]
-    #                 var_dependent = parsed_equation.nodes[var_dependent_node_id]['operands'][0][1]
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'-- Dependent:', var_dependent)
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   asdm value    :', self.name_space[var_dependent])
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_dependent)])
-        
-    #     if var_with_error in self.flow_stocks:
-    #         connected_stocks = self.flow_stocks[var_with_error]
-    #         for direction, connected_stock in connected_stocks.items():
-    #             self.logger.debug(self.debug_level_trace_error*'    '+'-- Connected stock: {:<4} {}'.format(direction, connected_stock))
-    #             self.logger.debug(self.debug_level_trace_error*'    '+'   asdm value    :', self.name_space[connected_stock])
-    #             self.logger.debug(self.debug_level_trace_error*'    '+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(connected_stock)])
-        
-    #     self.logger.debug()
-    #     self.debug_level_trace_error -= 1
-
     def var_name_to_csv_entry(self, var, sub=None):
         if sub is None:
             series_key = var.replace('_', ' ')
