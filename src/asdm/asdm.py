@@ -1664,6 +1664,7 @@ class sdmodel(object):
         self.stock_equations = dict()
         self.stock_equations_parsed = dict()
         self.stock_non_negative = dict()
+        self.stock_shadow_values = dict() # temporary device to store in/out flows' effect on stocks.
         self.stock_non_negative_temp_value = dict()
         self.stock_non_negative_out_flows = dict()
 
@@ -1695,7 +1696,6 @@ class sdmodel(object):
 
         # variable_values
         self.name_space = dict()
-        self.stock_shadow_values = dict() # temporary device to store in/out flows' effect on stocks.
         self.time_slice = dict()
         self.full_result = dict()
         self.full_result_flattened = dict()
