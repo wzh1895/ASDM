@@ -2975,10 +2975,11 @@ class sdmodel(object):
                     if 'considered_for_non_negative_stock' in flow_attributes:
                         if flow_attributes['considered_for_non_negative_stock'] is True:
                             flow_to_stock = self.flow_stocks[var]['to']
-                            self.logger.debug('    '+f'----considering inflow {var} into non-negative stocks {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
-                            # this is an in_flow and this in_flow should be considered before constraining out_flows
+                            self.logger.debug(f'    ----considering inflow {var} into non-negative stocks {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
+                            # this is an in_flow to a non-negative stock and this in_flow should be considered before constraining out_flows using that stock
 
-                            # To prevent a negative inflow from making the stock negative, we need to constrain the inflow
+                            # situation 1:
+                            # To prevent a negative inflow from making its "flow-to" stock negative, we need to constrain the inflow
                             # This only happens if the inflow is a biflow
                             if self.flow_positivity[var] is False:
                                 if type(self.name_space[var]) is dict:
@@ -3001,6 +3002,19 @@ class sdmodel(object):
                                         self.stock_non_negative_temp_value[flow_to_stock] = np.float64(0)
                                     else:
                                         self.stock_non_negative_temp_value[flow_to_stock] += self.name_space[var] * self.sim_specs['dt']
+                            # situation 2:
+                            # Even if the flow is a unidirectional (positive) flow, it still can add to the "flow-to" stock's temp value, and this will affect how that stock constrains its out_flows
+                            else:
+                                self.logger.debug(f'    ----Flow {var} is a unidirectional (positive flow), adding its value {self.name_space[var]} to the "flow-to" stock {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
+                                if type(self.name_space[var]) is dict:
+                                    for sub, sub_value in self.name_space[var].items():
+                                        self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
+                                elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
+                                    for sub in self.stock_non_negative_temp_value[flow_to_stock]:
+                                        self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
+                                else:
+                                    self.stock_non_negative_temp_value[flow_to_stock] += self.name_space[var] * self.sim_specs['dt']
+                            
 
                     if 'out_from_non_negative_stock' in flow_attributes:
                         out_from_non_negative_stock = flow_attributes['out_from_non_negative_stock']
