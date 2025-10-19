@@ -40,7 +40,8 @@ where = ["src"]
 ]
 
 [project.scripts]
-"asdm.simulator" = "asdm.simulator.app:main"
+asdm = "asdm.cli:main"
+"asdm.simulator" = "asdm.cli:main_legacy"
 
 [project.urls]
 Homepage = "https://github.com/wzh1895/ASDM"

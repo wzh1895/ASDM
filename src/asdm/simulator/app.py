@@ -124,16 +124,14 @@ def is_port_in_use(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('127.0.0.1', port)) == 0
 
-def main():
-    parser = argparse.ArgumentParser(description="Run the ASDM simulator web server.")
-    parser.add_argument("--host", default="127.0.0.1",
-                        help="Host/IP address to bind to (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8080,
-                        help="Port to run the server on (default: 8080)")
-    args = parser.parse_args()
-
-    host, port = args.host, args.port
-
+def run_simulator(host="127.0.0.1", port=8080):
+    """
+    Core function to run the ASDM simulator web server.
+    
+    Args:
+        host (str): Host/IP address to bind to
+        port (int): Port to run the server on
+    """
     # Check if the server is already running
     if is_port_in_use(port):
         print(f"ASDM simulator is already running on port {port}. Exiting.")
@@ -145,3 +143,15 @@ def main():
     threading.Timer(1, open_browser, [host, port]).start()
 
     app.run(debug=False, host=host, port=port)
+
+
+def main():
+    """Legacy entry point with argument parsing."""
+    parser = argparse.ArgumentParser(description="Run the ASDM simulator web server.")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="Host/IP address to bind to (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=8080,
+                        help="Port to run the server on (default: 8080)")
+    args = parser.parse_args()
+
+    run_simulator(args.host, args.port)
