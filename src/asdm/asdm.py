@@ -759,15 +759,6 @@ class Solver(object):
         def log10(a):
             return np.log10(a)
         
-        def dot_access(left_operand, right_operand):
-            """Handle dot operator for dimension.element access"""
-            # left_operand should be a dimension name (string)
-            # right_operand should be an element name or number (string)
-            if isinstance(left_operand, str) and left_operand in self.dimension_elements:
-                return f"{right_operand}" # at current version, only dimension.element needs dot, so returning just right is sufficient
-            else:
-                raise Exception(f"Invalid dot operation: {left_operand}.{right_operand}")
-        
         def colon_range(start_operand, end_operand):
             """Handle colon operator for range selection like A34:A94"""
             # This will return a range representation that can be used by the solver
@@ -904,7 +895,6 @@ class Solver(object):
             'EXP': exp_e,
             'INT':      integer,
             'LOG10':    log10,
-            'DOT':      dot_access,
             'COLON':    colon_range,
             'LOGISTICBOUND': logisticbound,
             'EXPBOUND': expbound,
@@ -936,7 +926,7 @@ class Solver(object):
         self.HEAD = "SOLVER"
 
     def calculate_node(self, var_name, parsed_equation, mode, node_id='root', subscript=None):        
-        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0 processing node {node_id}:")
+        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0.0 processing node {node_id}:")
 
         self.id_level += 1
         
@@ -984,26 +974,37 @@ class Solver(object):
                 # In this case, evaluate something like "Age=1" to determine if the current element is the one we are looking for.
                 # Our job here is to return the order of the element (we are currently calculating) in the dimension.
                 if subscript is not None:
-                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3 EQUALS: subscript present {subscript}")
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.0 EQUALS: subscript present {subscript}")
                     dimension_order = list(self.var_dimensions[var_name]).index(node_value) # get the index of the dimension name in var_dimensions
                     self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.1 EQUALS: dimension {node_value} within {self.var_dimensions[var_name]} order {dimension_order}")
                     try:
                         element_order = self.dimension_elements[node_value].index(subscript[dimension_order])
-                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.2 EQUALS: element {subscript[dimension_order]} within {self.var_dimensions[var_name][dimension_order]} order {element_order}")
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.2.1 EQUALS: element {subscript[dimension_order]} within {self.var_dimensions[var_name][dimension_order]} order {element_order}, number {element_order + 1}")
                     except ValueError:
-                        self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.2 EQUALS: element {subscript[dimension_order]} not found within dimension: elements {node_value}: {list(self.dimension_elements[node_value])}")
+                        self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.2.2 EQUALS: element {subscript[dimension_order]} not found within dimension: elements {node_value}: {list(self.dimension_elements[node_value])}")
                         raise
 
                     value = element_order + 1 # +1 because the order starts from 0, but we want to return 1, 2, 3, etc.
-                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3 EQUALS: value {value}")
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.3 EQUALS: value {value}")
                 else:
-                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.4 EQUALS: subscript not present")
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.4 EQUALS: subscript not present")
                     raise Exception(f'Subscript is not provided for dimension {node_value}. var: {var_name}')
             # Raise Exception('Dimension name should not be used as a variable name. var:', node_value)
             else:
-                self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3 EQUALS: dimension name {node_value} is not defined in the dimension elements.")
+                self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.5 EQUALS: dimension name {node_value} is not defined in the dimension elements.")
                 raise Exception(f'Dimension name {node_value} is not defined in the dimension elements. var: {var_name}')
 
+        elif node_operator == 'DOT': 
+            # 20251019 temporary solution for dimension.element access
+            # Dimension names are reserved (cannot be used as variable names), but element names are not. We therefore do not give element names a different token type
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.4.0 DOT: operands: {node_operands}")
+            dot_dimension = parsed_equation.nodes[node_operands[0]]['value'] # directly access the 'DIMENSION' node
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.4.1 DOT: dimension name: {dot_dimension}")
+            dot_element = parsed_equation.nodes[node_operands[1]]['value'] # directly access the 'EQUALS' node
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.4.2 DOT: element name: {dot_element}")
+            element_order_number = self.dimension_elements[dot_dimension].index(dot_element) + 1
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.4.3 DOT: element order number: {element_order_number}")
+            value = element_order_number
         elif node_operator == 'SPAREN': # TODO this part is very dynamic, therefore can be slow.
             var_name = node_value
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1 context subscript {subscript}")
@@ -1103,7 +1104,7 @@ class Solver(object):
             for operand in node_operands:
                 self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.1 operand {operand}")
                 v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=operand, subscript=subscript)
-                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.2 value {v} {subscript}")
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.2 operand {operand} value {v} {subscript}")
                 oprds.append(v)
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.3 operands {oprds}")
             value = function(*oprds)
@@ -1432,7 +1433,7 @@ class Solver(object):
         
         self.id_level -= 1
 
-        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0 value for node {node_id}: {value}")
+        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0.1 value for node {node_id}: {value}")
 
         return value
 
@@ -1658,6 +1659,7 @@ class sdmodel(object):
         # dimensions
         self.var_dimensions = dict() # 'dim1':['ele1', 'ele2']
         self.dimension_elements = dict()
+        self.element_names = list() # dimension names and dimension elements can not be used as variables
         
         # stocks
         self.stocks = dict()
@@ -1843,7 +1845,7 @@ class sdmodel(object):
                     for elem in elems:
                         elem_names.append(elem.get('name'))
                     dims[name] = elem_names
-                    
+                    self.element_names.extend(elem_names)
             self.dimension_elements.update(dims)
         except AttributeError:
             pass
@@ -3497,6 +3499,8 @@ class sdmodel(object):
                 for leaf in leafs:
                     if parsed_equation.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
                         dependent_name = parsed_equation.nodes[leaf]['value']
+                        if dependent_name in self.element_names:
+                            continue
                         # if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out # 20250831: Dimension now is a different kind of token
                         dependent_variables.append(dependent_name)
                         
@@ -3506,6 +3510,8 @@ class sdmodel(object):
                     for leaf in leafs:
                         if sub_eqn.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
                             dependent_name = sub_eqn.nodes[leaf]['value']
+                            if dependent_name in self.element_names:
+                                continue
                             if dependent_name not in dependent_variables: # remove duplicates
                                 # if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out # 20250831: Dimension now is a different kind of token
                                 dependent_variables.append(dependent_name)
