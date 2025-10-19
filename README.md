@@ -67,17 +67,23 @@ ASDM now includes a **web-based simulation interface** that allows users to:
 ### **Quick Start**
 Run the ASDM web simulator with:
 ```sh
-asdm.simulator
+asdm simulator
 ```
 By default, this starts a local server at `http://127.0.0.1:8080`. If port 8080 is unavailable, specify a different port, for example:
 ```sh
-asdm.simulator --port 8081
+asdm simulator --port 8081
 ```
 You can also bind to all network interfaces to allow access from others:
 ```sh
-asdm.simulator --host 0.0.0.0
+asdm simulator --host 0.0.0.0
 ```
 Once started, the browser will automatically open the simulator page.
+
+You can also provide a model file directly to run it automatically:
+```sh
+asdm simulator path/to/model.stmx
+```
+This will launch the simulator and automatically run the specified model, displaying results immediately.
 
 ### **Features**
 - **Drag-and-drop file upload**: Upload your `.stmx` or `.xmile` model file.
