@@ -1,6 +1,7 @@
 import networkx as nx
 import numpy as np
 import re
+import pandas as pd
 from itertools import product
 from pprint import pprint
 from scipy import stats
@@ -8,6 +9,7 @@ from scipy.interpolate import interp1d
 from copy import deepcopy
 import matplotlib.pyplot as plt
 import logging
+from pathlib import Path
 
 logger_parser = logging.getLogger('asdm.parser')
 logger_solver = logging.getLogger('asdm.solver')
@@ -15,6 +17,29 @@ logger_graph_function = logging.getLogger('asdm.graph_function')
 logger_conveyor = logging.getLogger('asdm.conveyor')
 logger_data_feeder = logging.getLogger('asdm.data_feeder')
 logger_sdmodel = logging.getLogger('asdm.simrun')
+logger_model_creation = logging.getLogger('asdm.model_creation')
+
+class VariableLogFilter(logging.Filter):
+    """Filter logs to show only specific variables."""
+    
+    def __init__(self, variable_names=None):
+        super().__init__()
+        self.variable_names = variable_names or []
+        # Convert to set for faster lookup
+        self.variable_set = set(self.variable_names)
+    
+    def filter(self, record):
+        # If no variables specified, allow all logs
+        if not self.variable_set:
+            return True
+        
+        # Check if any of the target variables are mentioned in the log message
+        message = record.getMessage()
+        for var_name in self.variable_set:
+            if var_name in message:
+                return True
+        
+        return False
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,6 +52,7 @@ logger_graph_function.setLevel(logging.INFO)
 logger_conveyor.setLevel(logging.INFO)
 logger_data_feeder.setLevel(logging.INFO)
 logger_sdmodel.setLevel(logging.INFO)
+logger_model_creation.setLevel(logging.INFO)
 
 class Node:
     def __init__(self, node_id, operator=None, value=None, operands=None, subscripts=None):
@@ -107,7 +133,7 @@ class Parser:
             'PULSE': r'PULSE(?=\s*\()',
             'INT': r'INT(?=\s*\()',
             'LOG10': r'LOG10(?=\s*\()',
-            'EXP_FUNC': r'EXP(?=\s*\()', # a^b is equivalent to EXP(a, b)
+            'EXP': r'EXP(?=\s*\()', # e^a is equivalent to EXP(a)
             'LOGISTICBOUND': r'LOGISTICBOUND(?=\s*\()',
             'EXPBOUND': r'EXPBOUND(?=\s*\()',
         }
@@ -171,7 +197,7 @@ class Parser:
         
         ast = self.parse_statement()
         if self.current_index != len(self.tokens):
-            raise ValueError("Unexpected end of parsing of expression {} at index {} of tokens {}".format(expression, self.current_index, self.tokens))
+            raise ValueError(f"Unexpected end of parsing of expression {expression} at index {self.current_index} of tokens {self.tokens}")
         self.logger.debug("Completed parse")
         self.logger.debug(f"AST: {ast}")
         
@@ -455,7 +481,7 @@ class Parser:
         return Node(node_id=self.node_id, operator='EQUALS', value=var_name)
 
 class Solver(object):
-    def __init__(self, sim_specs=None, dimension_elements=None, var_dimensions=None, name_space=None, graph_functions=None):
+    def __init__(self, sim_specs=None, dimension_elements=None, var_dimensions=None, name_space=None, graph_functions=None, data_feeder_functions=None):
         self.logger = logger_solver
 
         self.sim_specs = sim_specs # current_time, initial_time, dt, simulation_time, time_units
@@ -463,6 +489,7 @@ class Solver(object):
         self.var_dimensions = var_dimensions
         self.name_space = name_space
         self.graph_functions = graph_functions
+        self.data_feeder_functions = data_feeder_functions
 
         ### Functions ###
 
@@ -732,15 +759,6 @@ class Solver(object):
         def log10(a):
             return np.log10(a)
         
-        def dot_access(left_operand, right_operand):
-            """Handle dot operator for dimension.element access"""
-            # left_operand should be a dimension name (string)
-            # right_operand should be an element name or number (string)
-            if isinstance(left_operand, str) and left_operand in self.dimension_elements:
-                return f"{right_operand}" # at current version, only dimension.element needs dot, so returning just right is sufficient
-            else:
-                raise Exception(f"Invalid dot operation: {left_operand}.{right_operand}")
-        
         def colon_range(start_operand, end_operand):
             """Handle colon operator for range selection like A34:A94"""
             # This will return a range representation that can be used by the solver
@@ -874,10 +892,9 @@ class Solver(object):
             'RBINOM':   rbinom,
             'PULSE':    pulse,
             'EXP_OP':   exp,
-            'EXP_FUNC': exp_e,
+            'EXP': exp_e,
             'INT':      integer,
             'LOG10':    log10,
-            'DOT':      dot_access,
             'COLON':    colon_range,
             'LOGISTICBOUND': logisticbound,
             'EXPBOUND': expbound,
@@ -909,12 +926,12 @@ class Solver(object):
         self.HEAD = "SOLVER"
 
     def calculate_node(self, var_name, parsed_equation, mode, node_id='root', subscript=None):        
-        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0 processing node {node_id}:")
+        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0.0 processing node {node_id}:")
 
         self.id_level += 1
         
         if type(parsed_equation) is dict:  
-            raise Exception('Parsed equation should not be a dict. var:', var_name)
+            raise Exception(f'Parsed equation should not be a dict. var: {var_name}')
 
         if node_id == 'root':
             node_id = list(parsed_equation.successors('root'))[0]
@@ -957,26 +974,37 @@ class Solver(object):
                 # In this case, evaluate something like "Age=1" to determine if the current element is the one we are looking for.
                 # Our job here is to return the order of the element (we are currently calculating) in the dimension.
                 if subscript is not None:
-                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3 EQUALS: subscript present {subscript}")
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.0 EQUALS: subscript present {subscript}")
                     dimension_order = list(self.var_dimensions[var_name]).index(node_value) # get the index of the dimension name in var_dimensions
                     self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.1 EQUALS: dimension {node_value} within {self.var_dimensions[var_name]} order {dimension_order}")
                     try:
                         element_order = self.dimension_elements[node_value].index(subscript[dimension_order])
-                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.2 EQUALS: element {subscript[dimension_order]} within {self.var_dimensions[var_name][dimension_order]} order {element_order}")
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.2.1 EQUALS: element {subscript[dimension_order]} within {self.var_dimensions[var_name][dimension_order]} order {element_order}, number {element_order + 1}")
                     except ValueError:
-                        self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.2 EQUALS: element {subscript[dimension_order]} not found within dimension: elements {node_value}: {list(self.dimension_elements[node_value])}")
+                        self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.2.2 EQUALS: element {subscript[dimension_order]} not found within dimension: elements {node_value}: {list(self.dimension_elements[node_value])}")
                         raise
 
                     value = element_order + 1 # +1 because the order starts from 0, but we want to return 1, 2, 3, etc.
-                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3 EQUALS: value {value}")
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.3 EQUALS: value {value}")
                 else:
-                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.4 EQUALS: subscript not present")
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.4 EQUALS: subscript not present")
                     raise Exception(f'Subscript is not provided for dimension {node_value}. var: {var_name}')
             # Raise Exception('Dimension name should not be used as a variable name. var:', node_value)
             else:
-                self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3 EQUALS: dimension name {node_value} is not defined in the dimension elements.")
+                self.logger.error(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.3.5 EQUALS: dimension name {node_value} is not defined in the dimension elements.")
                 raise Exception(f'Dimension name {node_value} is not defined in the dimension elements. var: {var_name}')
 
+        elif node_operator == 'DOT': 
+            # 20251019 temporary solution for dimension.element access
+            # Dimension names are reserved (cannot be used as variable names), but element names are not. We therefore do not give element names a different token type
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.4.0 DOT: operands: {node_operands}")
+            dot_dimension = parsed_equation.nodes[node_operands[0]]['value'] # directly access the 'DIMENSION' node
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.4.1 DOT: dimension name: {dot_dimension}")
+            dot_element = parsed_equation.nodes[node_operands[1]]['value'] # directly access the 'EQUALS' node
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.4.2 DOT: element name: {dot_element}")
+            element_order_number = self.dimension_elements[dot_dimension].index(dot_element) + 1
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v3.4.3 DOT: element order number: {element_order_number}")
+            value = element_order_number
         elif node_operator == 'SPAREN': # TODO this part is very dynamic, therefore can be slow.
             var_name = node_value
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] a1 context subscript {subscript}")
@@ -1076,7 +1104,7 @@ class Solver(object):
             for operand in node_operands:
                 self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.1 operand {operand}")
                 v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=operand, subscript=subscript)
-                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.2 value {v} {subscript}")
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.2 operand {operand} value {v} {subscript}")
                 oprds.append(v)
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v7.3 operands {oprds}")
             value = function(*oprds)
@@ -1095,6 +1123,20 @@ class Solver(object):
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operands {oprds}")
             value = function(*oprds)
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v8 GraphFunc: {value}")
+        
+        elif node_operator in self.data_feeder_functions.keys(): # data feeders
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] data feeder operator {node_operator}")
+            func_name = node_operator
+            function = self.data_feeder_functions[func_name]
+            oprds = []
+            for operand in node_operands:
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operand {operand}")
+                v = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=operand, subscript=subscript)
+                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] value {v}")
+                oprds.append(v)
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] operands {oprds}")
+            value = function(*oprds)
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v9 DataFeeder: {value}")
 
         elif node_operator in self.time_related_functions: # init, delay, etc
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] time-related func. operator: {node_operator} operands {node_operands}")
@@ -1119,7 +1161,7 @@ class Solver(object):
                 elif len(node_operands) == 3: # there's an initial value specified
                     init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
                 else:
-                    raise Exception("Invalid initial value for DELAY in operands {}".format(node_operands))
+                    raise Exception(f"Invalid initial value for DELAY in operands {node_operands}")
 
                 # delay time
                 delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
@@ -1272,22 +1314,24 @@ class Solver(object):
                 value = outflows[-1] / self.sim_specs['dt']
 
             else:
-                raise Exception('Unknown time-related operator {}'.format(node_operator))
+                raise Exception(f'Unknown time-related operator {node_operator}')
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v9 Time-related Func: {value}")
         
         elif node_operator in self.array_related_functions: # Array-RELATED
-            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] array-related func. operator: {node_operator} operands: {node_operands}")
+            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10 Array-related func. operator: {node_operator} operands: {node_operands}")
             func_name = node_operator
             if func_name == 'SUM':
                 arrayed_target_var_name = parsed_equation.nodes[node_operands[0]]['value']
                 arrayed_target_var_subscripts = parsed_equation.nodes[node_operands[0]]['subscripts']
                 self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] arrayed target var: {arrayed_target_var_name} subscripts: {arrayed_target_var_subscripts}")
                 if len(arrayed_target_var_subscripts) == 0: # SUM(Population)
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.1 arrayed target var: {arrayed_target_var_name} all elements in the variable")
                     sum_array = 0
                     for _, sub_val in self.name_space[arrayed_target_var_name].items():
                         sum_array += sub_val
                     value = sum_array
                 elif len(arrayed_target_var_subscripts) >= 1: 
+                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2 arrayed target var: {arrayed_target_var_name} subscripts: {arrayed_target_var_subscripts}")
                     n_dimensions = len(arrayed_target_var_subscripts)
                     # the idea here is to create an allowed list for each dimension - only those element_combinations with all elements appearing in the corresponding list should be summed
                     list_allowed_elements_per_dimension = []
@@ -1301,21 +1345,39 @@ class Solver(object):
                         dimension_tokens = arrayed_target_var_subscripts[i]
                         # case-1
                         if len(dimension_tokens) == 1: # it's either a specific element like ['NAME', 'A9'] or a * like ['TIMES', '*'] or a dimension like ['DIMENSION', Age]
+                            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1 arrayed target var: {arrayed_target_var_name} dimension: {dimension_name} tokens: {dimension_tokens}")
                             if dimension_tokens[0][1] == '*':
-                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] arrayed target var: {arrayed_target_var_name} all elements in dimension: {dimension_name}")
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1.1 arrayed target var: {arrayed_target_var_name} all elements in dimension: {dimension_name}")
                                 # if it's a *, we take all elements
                                 list_allowed_elements_per_dimension[i] = dimension_elements
                             elif dimension_tokens[0][0] == 'DIMENSION':
-                                # if it's a dimension, we take all elements in that dimension
                                 dimension_name = dimension_tokens[0][1]
-                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] arrayed target var: {arrayed_target_var_name} dimension: {dimension_name}")
-                                if dimension_name in self.dimension_elements:
-                                    list_allowed_elements_per_dimension[i] = self.dimension_elements[dimension_name]
+                                # if it's a dimension, there are two cases:
+                                # case-1.1: the current variable is not subscripted at all. take all elements in the dimension
+                                if subscript is None:
+                                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1.2.1.1 arrayed target var: {arrayed_target_var_name} dimension: {dimension_name} is not subscripted at all, taking all elements in the dimension")
+                                    list_allowed_elements_per_dimension[i] = dimension_elements
+                                # case-1.2: the current variable (the one that is currently being caculated) is subscripted, but not subscripted with this dimension)
+                                # In this case, we take all elements in that dimension
+                                elif subscript is not None and dimension_name not in self.var_dimensions[var_name]:
+                                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1.2.2 arrayed target var: {arrayed_target_var_name} dimension: {dimension_name} is not subscripted with this dimension, taking all elements in the dimension")
+                                    list_allowed_elements_per_dimension[i] = dimension_elements
+                                # case-1.3: the current variable (the one that is currently being caculated) is subscripted with this dimension.
+                                # In this case, the dimension should be replaced with the current element in the subscript.
+                                elif subscript is not None and dimension_name in self.var_dimensions[var_name]:
+                                    self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1.2.1 arrayed target var: {arrayed_target_var_name} dimension: {dimension_name} is subscripted with this dimension, taking only the element in its subscript")
+                                    # find out which element is the current element of dimension_name in the subscript. we have to go through the subscript instead of relying onn the order of the elements in the subscript, to avoid order issues
+                                    for element in subscript:
+                                        if element in dimension_elements:
+                                            list_allowed_elements_per_dimension[i] = [element]
+                                            break
+                                        else:
+                                            raise Exception(f"Element {element} is not in dimension {dimension_name}.")   
                                 else:
-                                    raise Exception(f"Dimension {dimension_name} is not valid.")
+                                    raise Exception(f"Invalid subscript in dimension {dimension_name}.")
                             else:
                                 element_name = dimension_tokens[0][1]
-                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] arrayed target var: {arrayed_target_var_name} element: {element_name}")
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.1.3 arrayed target var: {arrayed_target_var_name} element: {element_name}")
                                 # otherwise, we take the specific element
                                 if element_name in dimension_elements:
                                     list_allowed_elements_per_dimension[i] = [element_name]
@@ -1323,6 +1385,7 @@ class Solver(object):
                                     raise Exception(f"Element {element_name} is not in dimension {dimension_name}.")
                         # case-2
                         if len(dimension_tokens) == 3: # it's a range like ['NAME', 'A9'], ['COLON', ':'], ['NAME', 'A14']
+                            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.2 arrayed target var: {arrayed_target_var_name} dimension: {dimension_name} tokens: {dimension_tokens}")
                             if dimension_tokens[1][1] == ':' and dimension_tokens[2][0] == 'NAME':
                                 start = dimension_tokens[0][1]
                                 end = dimension_tokens[2][1]
@@ -1334,15 +1397,22 @@ class Solver(object):
                                 raise Exception(f"Invalid range syntax in dimension {dimension_name}.")
                     sum_array =0
                     for sub_elements, sub_val in self.name_space[arrayed_target_var_name].items():
+                        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.3 adding up arrayed target var: {arrayed_target_var_name} checking: {sub_elements} with value: {sub_val}")
                         add_this = True
                         for i in range(n_dimensions):
                             if sub_elements[i] not in list_allowed_elements_per_dimension[i]:
-                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] {sub_elements[i]} not in allowed list {list_allowed_elements_per_dimension[i]} for dimension {self.var_dimensions[arrayed_target_var_name][i]}")
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.3.1 {sub_elements[i]} not in allowed list {list_allowed_elements_per_dimension[i]} for dimension {self.var_dimensions[arrayed_target_var_name][i]}")
                                 add_this = False
                                 break
+                            else:
+                                self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.3.2 {sub_elements[i]} in allowed list {list_allowed_elements_per_dimension[i]} for dimension {self.var_dimensions[arrayed_target_var_name][i]}")
                         if add_this:
+                            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.3.3 adding up {sub_elements} with value: {sub_val}")
                             sum_array += sub_val
+                            self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10.2.3.4 current sum_array: {sum_array}")
                     value = sum_array
+            else:
+                raise Exception(f'v10 Unknown Array-related function {node_operator}')
 
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v10 Array-related Func: {value}")
         
@@ -1356,14 +1426,14 @@ class Solver(object):
                 input_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
                 value = look_up_func(input_value)
             else:
-                raise Exception('Unknown Lookup function {}'.format(node_operator))
+                raise Exception(f'Unknown Lookup function {node_operator}')
         
         else:
-            raise Exception('Unknown operator {}'.format(node_operator))
+            raise Exception(f'Unknown operator {node_operator}')
         
         self.id_level -= 1
 
-        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0 value for node {node_id}: {value}")
+        self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0.1 value for node {node_id}: {value}")
 
         return value
 
@@ -1413,7 +1483,7 @@ class GraphFunc(object):
                         return self.ypts[i-1]
                 return self.ypts[-1]
         else:
-            raise Exception('Unknown out_of_bound_type {}'.format(self.out_of_bound_type))
+            raise Exception(f'Unknown out_of_bound_type {self.out_of_bound_type}')
     
     def overwrite_xpts(self, xpts):
         # if len(self.xpts) != len(xpts):
@@ -1545,11 +1615,12 @@ class DataFeeder(object):
 
 class sdmodel(object):
     # equations
-    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info'):
+    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info', model_creation_debug_level='info', variable_filter=None):
         # Debug
         self.HEAD = 'ENGINE'
         self.debug_level_trace_error = 0
         self.logger = logger_sdmodel
+        self.logger_model_creation = logger_model_creation
 
         # model debug level
         if simulator_debug_level == 'debug':
@@ -1561,7 +1632,19 @@ class sdmodel(object):
         elif simulator_debug_level == 'error':
             self.logger.setLevel(logging.ERROR)
         else:
-            raise Exception('Unknown debug level {}'.format(simulator_debug_level))
+            raise Exception(f'Unknown debug level {simulator_debug_level}')
+
+        # model creation debug level
+        if model_creation_debug_level == 'debug':
+            self.logger_model_creation.setLevel(logging.DEBUG)
+        elif model_creation_debug_level == 'info':
+            self.logger_model_creation.setLevel(logging.INFO)
+        elif model_creation_debug_level == 'warning':
+            self.logger_model_creation.setLevel(logging.WARNING)
+        elif model_creation_debug_level == 'error':
+            self.logger_model_creation.setLevel(logging.ERROR)
+        else:
+            raise Exception(f'Unknown debug level {model_creation_debug_level}')
 
         # sim_specs
         self.sim_specs = {
@@ -1576,12 +1659,14 @@ class sdmodel(object):
         # dimensions
         self.var_dimensions = dict() # 'dim1':['ele1', 'ele2']
         self.dimension_elements = dict()
+        self.element_names = list() # dimension names and dimension elements can not be used as variables
         
         # stocks
         self.stocks = dict()
         self.stock_equations = dict()
         self.stock_equations_parsed = dict()
         self.stock_non_negative = dict()
+        self.stock_shadow_values = dict() # temporary device to store in/out flows' effect on stocks.
         self.stock_non_negative_temp_value = dict()
         self.stock_non_negative_out_flows = dict()
 
@@ -1613,7 +1698,6 @@ class sdmodel(object):
 
         # variable_values
         self.name_space = dict()
-        self.stock_shadow_values = dict() # temporary device to store in/out flows' effect on stocks.
         self.time_slice = dict()
         self.full_result = dict()
         self.full_result_flattened = dict()
@@ -1633,215 +1717,16 @@ class sdmodel(object):
         # custom functions
         self.custom_functions = {}
         
+        # data feeder functions (DataFeeder)
+        self.data_feeder_functions = {}
+        self.data_feeders_renamed = {}
+        
         # state
         self.state = 'created'
 
         # If the model is based on an XMILE file
         if from_xmile is not None:
-            # self.logger.debug(self.HEAD, 'Reading XMILE model from {}'.format(from_xmile))
-            from pathlib import Path
-            xmile_path = Path(from_xmile)
-            if xmile_path.exists():
-                with open(xmile_path, encoding='utf-8') as f:
-                    xmile_content = f.read()
-                    f.close()
-                from bs4 import BeautifulSoup
-
-                # read sim_specs
-                sim_specs_root = BeautifulSoup(xmile_content, 'xml').find('sim_specs')
-                time_units = sim_specs_root.get('time_units')
-                sim_start = float(sim_specs_root.find('start').text)
-                sim_stop = float(sim_specs_root.find('stop').text)
-                sim_duration = sim_stop - sim_start
-                sim_dt_root = sim_specs_root.find('dt')
-                sim_dt = float(sim_dt_root.text)
-                if sim_dt_root.get('reciprocal') == 'true':
-                    sim_dt = 1/sim_dt
-                
-                self.sim_specs['initial_time'] = sim_start
-                self.sim_specs['current_time'] = sim_start
-                self.env_variables['TIME'] = sim_start
-                self.sim_specs['dt'] = sim_dt
-                self.env_variables['DT'] =sim_dt
-                self.sim_specs['simulation_time'] = sim_duration
-                self.sim_specs['time_units'] = time_units
-
-                # read subscritps
-                try:
-                    subscripts_root = BeautifulSoup(xmile_content, 'xml').find('dimensions')
-                    dimensions = subscripts_root.find_all('dim')
-
-                    dims = dict()
-                    for dimension in dimensions:
-                        name = dimension.get('name')
-                        try:
-                            size = dimension.get('size')
-                            dims[name] = [str(i) for i in range(1, int(size)+1)]
-                        except:
-                            elems = dimension.find_all('elem')
-                            elem_names = list()
-                            for elem in elems:
-                                elem_names.append(elem.get('name'))
-                            dims[name] = elem_names
-                    self.dimension_elements.update(dims) # need to use update here to do the 'True' assignment
-                except AttributeError:
-                    pass
-                
-                # read variables
-                variables_root = BeautifulSoup(xmile_content, 'xml').find('variables') # omit names in view
-                stocks = variables_root.find_all('stock')
-                flows = variables_root.find_all('flow')
-                auxiliaries = variables_root.find_all('aux')
-                
-                # read graph functions
-                def read_graph_func(var):
-                    gf = var.find('gf')
-                    out_of_bound_type = gf.get('type')
-                    if gf.find('xscale'):
-                        xscale = [
-                            float(gf.find('xscale').get('min')),
-                            float(gf.find('xscale').get('max'))
-                        ]
-                    else:
-                        xscale = None
-                    
-                    if gf.find('xpts'):
-                        xpts = [float(t) for t in gf.find('xpts').text.split(',')]
-                    else:
-                        xpts = None
-                    
-                    if xscale is None and xpts is None:
-                        raise Exception("GraphFunc: xscale and xpts cannot both be None.")
-
-                    yscale = [
-                        float(gf.find('yscale').get('min')),
-                        float(gf.find('yscale').get('max'))
-                    ]
-                    ypts = [float(t) for t in gf.find('ypts').text.split(',')]
-
-                    equation = GraphFunc(out_of_bound_type=out_of_bound_type, yscale=yscale, ypts=ypts, xscale=xscale, xpts=xpts)
-                    return equation
-
-                # create var subscripted equation
-                def subscripted_equation(var):
-                    if var.find('dimensions'):
-                        self.var_dimensions[self.name_handler(var.get('name'))] = list()
-                        var_dimensions = var.find('dimensions').find_all('dim')
-                        # self.logger.debug('Found dimensions {}:'.format(var), var_dimensions)
-
-                        var_dims = dict()
-                        for dimension in var_dimensions:
-                            dim_name = dimension.get('name')
-                            self.var_dimensions[self.name_handler(var.get('name'))].append(dim_name)
-                            var_dims[dim_name] = dims[dim_name]
-                        
-                        var_subscripted_eqn = dict()
-                        var_elements = var.find_all('element')
-                        if len(var_elements) != 0:
-                            for var_element in var_elements:
-
-                                element_combination_text = var_element.get('subscript') # something like "1, First"
-                                elements = self.process_subscript(element_combination_text) # "1, First" -> 1__cmm__First
-                                # list_of_elements = element_combination_text.split(', ')
-                                # tuple_of_elements = tuple(list_of_elements)
-                                if var.find('conveyor'):
-                                    equation = var_element.find('eqn').text
-                                    length = var.find('len').text
-                                    equation = Conveyor(length, equation)
-                                elif var_element.find('gf'): 
-                                    equation = read_graph_func(var_element)
-                                    equation.eqn = var.find('eqn').text # subscripted graph function must share the same eqn
-                                elif var_element.find('eqn'): # eqn is per element
-                                    element_equation = var_element.find('eqn').text
-                                    equation = element_equation
-                                var_subscripted_eqn[elements] = equation
-
-                        else: # all elements share the same equation
-                            if var.find('conveyor'):
-                                equation = var.find('eqn').text
-                                length = int(var.find('len').text)
-                                equation = Conveyor(length, equation)
-                            elif var.find('gf'):
-                                equation = read_graph_func(var)
-                                equation.eqn = var.find('eqn').text
-                            elif var.find('eqn'):
-                                var_equation = var.find('eqn').text
-                                equation = var_equation
-                            else:
-                                raise Exception('No meaningful definition found for variable {}'.format(self.name_handler(var.get('name'))))
-                            
-                            # fetch lists of elements and generate elements trings
-                            element_combinations = product(*list(var_dims.values()))
-
-                            for ect in element_combinations:
-                                var_subscripted_eqn[ect] =equation
-                        return(var_subscripted_eqn)
-                    else:
-                        self.var_dimensions[self.name_handler(var.get('name'))] = None
-                        var_subscripted_eqn = dict()
-                        if var.find('conveyor'):
-                            equation = var.find('eqn').text
-                            length = var.find('len').text
-                            equation = Conveyor(length, equation)
-                        elif var.find('gf'):
-                            equation = read_graph_func(var)
-                            equation.eqn = var.find('eqn').text
-                        elif var.find('eqn'):
-                            equation = var.find('eqn').text
-                        return equation
-                        
-
-                # create stocks
-                for stock in stocks:
-                    name = self.name_handler(stock.get('name'))
-                    non_negative = False
-                    if stock.find('non_negative'):
-                        # self.logger.debug('nonnegstock', stock)
-                        non_negative = True
-                    
-                    is_conveyor = False
-                    if stock.find('conveyor'):
-                        is_conveyor = True
-
-                    inflows = stock.find_all('inflow')
-                    outflows = stock.find_all('outflow')
-                    self.add_stock(
-                        name, 
-                        equation=subscripted_equation(stock), 
-                        non_negative=non_negative,
-                        is_conveyor=is_conveyor,
-                        in_flows=[f.text for f in inflows],
-                        out_flows=[f.text for f in outflows],
-                        )
-                    
-                # create auxiliaries
-                for auxiliary in auxiliaries:
-                    # if after <eqn> tag there is <isee:delay_aux/>
-                    delay_aux = auxiliary.find('isee:delay_aux')
-                    if delay_aux is not None:
-                        self.add_delayed_aux(self.name_handler(auxiliary.get('name')), equation=subscripted_equation(auxiliary))
-                    else:
-                        self.add_aux(self.name_handler(auxiliary.get('name')), equation=subscripted_equation(auxiliary))
-
-                # create flows
-                for flow in flows:
-                    
-                    # check if flow is a leakage flow
-                    if flow.find('leak'):
-                        leak = True
-                    else:
-                        leak = False
-
-                    # check if can be negative
-                    non_negative = False
-                    if flow.find('non_negative'):
-                        non_negative = True
-                    self.add_flow(self.name_handler(flow.get('name')), equation=subscripted_equation(flow), leak=leak, non_negative=non_negative)
-
-                self.state = 'loaded'
-
-            else:
-                raise Exception("Specified model file does not exist.")
+            self._load_xmile_model(from_xmile)
 
         self.name_space.update(self.env_variables)
 
@@ -1858,7 +1743,7 @@ class sdmodel(object):
         elif parser_debug_level == 'error':
             self.parser.logger.setLevel(logging.ERROR)
         else:
-            raise Exception('Unknown debug level {}'.format(parser_debug_level))
+            raise Exception(f'Unknown debug level {parser_debug_level}')
         
         # solver
         self.solver = Solver(
@@ -1867,8 +1752,9 @@ class sdmodel(object):
             var_dimensions=self.var_dimensions,
             name_space=self.name_space,
             graph_functions=self.graph_functions,
+            data_feeder_functions=self.data_feeder_functions,
         )
-
+        
         # solver debug level
         if solver_debug_level == 'debug':
             self.solver.logger.setLevel(logging.DEBUG)
@@ -1879,7 +1765,746 @@ class sdmodel(object):
         elif solver_debug_level == 'error':
             self.solver.logger.setLevel(logging.ERROR)
         else:
-            raise Exception('Unknown debug level {}'.format(solver_debug_level))
+            raise Exception(f'Unknown debug level {solver_debug_level}')
+            
+        # Apply variable filter if specified
+        if variable_filter:
+            self.variable_filter = VariableLogFilter(variable_filter)
+            # Apply filter to relevant loggers
+            self.solver.logger.addFilter(self.variable_filter)
+            self.parser.logger.addFilter(self.variable_filter)
+            self.logger_model_creation.addFilter(self.variable_filter)
+            self.logger.info(f"Applied variable filter for: {variable_filter}")
+
+    def _load_xmile_model(self, from_xmile):
+        """Load and parse an XMILE model file."""
+        from pathlib import Path
+        xmile_path = Path(from_xmile)
+        if not xmile_path.exists():
+            raise Exception("Specified model file does not exist.")
+            
+        # Store the XMILE file path for relative path resolution
+        self.xmile_path = xmile_path
+            
+        with open(xmile_path, encoding='utf-8') as f:
+            xmile_content = f.read()
+            
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(xmile_content, 'xml')
+        
+        # Parse different sections of the XMILE file
+        self._parse_sim_specs(soup)
+        self._parse_dimensions(soup)
+        self._parse_variables(soup)
+        self._parse_data(soup)
+        
+        self.state = 'loaded'
+
+    def _parse_sim_specs(self, soup):
+        """Parse simulation specifications from XMILE content."""
+        sim_specs_root = soup.find('sim_specs')
+        if sim_specs_root is None:
+            return
+            
+        time_units = sim_specs_root.get('time_units')
+        sim_start = float(sim_specs_root.find('start').text)
+        sim_stop = float(sim_specs_root.find('stop').text)
+        sim_duration = sim_stop - sim_start
+        
+        sim_dt_root = sim_specs_root.find('dt')
+        sim_dt = float(sim_dt_root.text)
+        if sim_dt_root.get('reciprocal') == 'true':
+            sim_dt = 1/sim_dt
+        
+        self.sim_specs['initial_time'] = sim_start
+        self.sim_specs['current_time'] = sim_start
+        self.env_variables['TIME'] = sim_start
+        self.sim_specs['dt'] = sim_dt
+        self.env_variables['DT'] = sim_dt
+        self.sim_specs['simulation_time'] = sim_duration
+        self.sim_specs['time_units'] = time_units
+
+    def _parse_dimensions(self, soup):
+        """Parse dimensions/subscripts from XMILE content."""
+        try:
+            subscripts_root = soup.find('dimensions')
+            if subscripts_root is None:
+                return
+                
+            dimensions = subscripts_root.find_all('dim')
+            dims = dict()
+            
+            for dimension in dimensions:
+                name = dimension.get('name')
+                try:
+                    size = dimension.get('size')
+                    dims[name] = [str(i) for i in range(1, int(size)+1)]
+                except:
+                    elems = dimension.find_all('elem')
+                    elem_names = list()
+                    for elem in elems:
+                        elem_names.append(elem.get('name'))
+                    dims[name] = elem_names
+                    self.element_names.extend(elem_names)
+            self.dimension_elements.update(dims)
+        except AttributeError:
+            pass
+
+    def _parse_variables(self, soup):
+        """Parse variables (stocks, flows, auxiliaries) from XMILE content."""
+        variables_root = soup.find('variables')
+        if variables_root is None:
+            return
+            
+        stocks = variables_root.find_all('stock')
+        flows = variables_root.find_all('flow')
+        auxiliaries = variables_root.find_all('aux')
+        
+        # Create stocks
+        for stock in stocks:
+            self._create_stock(stock)
+            
+        # Create auxiliaries
+        for auxiliary in auxiliaries:
+            self._create_auxiliary(auxiliary)
+            
+        # Create flows
+        for flow in flows:
+            self._create_flow(flow)
+
+    def _create_stock(self, stock):
+        """Create a stock variable from XMILE stock element."""
+        name = self.name_handler(stock.get('name'))
+        non_negative = stock.find('non_negative') is not None
+        is_conveyor = stock.find('conveyor') is not None
+        
+        inflows = stock.find_all('inflow')
+        outflows = stock.find_all('outflow')
+        
+        self.add_stock(
+            name, 
+            equation=self._create_subscripted_equation(stock), 
+            non_negative=non_negative,
+            is_conveyor=is_conveyor,
+            in_flows=[f.text for f in inflows],
+            out_flows=[f.text for f in outflows],
+        )
+
+    def _create_auxiliary(self, auxiliary):
+        """Create an auxiliary variable from XMILE aux element."""
+        name = self.name_handler(auxiliary.get('name'))
+        equation = self._create_subscripted_equation(auxiliary)
+        
+        # Check if it's a delayed auxiliary
+        delay_aux = auxiliary.find('isee:delay_aux')
+        if delay_aux is not None:
+            self.add_delayed_aux(name, equation=equation)
+        else:
+            self.add_aux(name, equation=equation)
+
+    def _create_flow(self, flow):
+        """Create a flow variable from XMILE flow element."""
+        name = self.name_handler(flow.get('name'))
+        leak = flow.find('leak') is not None
+        non_negative = flow.find('non_negative') is not None
+        
+        self.add_flow(
+            name, 
+            equation=self._create_subscripted_equation(flow), 
+            leak=leak, 
+            non_negative=non_negative
+        )
+
+    def _create_subscripted_equation(self, var):
+        """Create subscripted equations for variables from XMILE variable element."""
+        if var.find('dimensions'):
+            return self._create_subscripted_equation_with_dimensions(var)
+        else:
+            return self._create_simple_equation(var)
+
+    def _create_subscripted_equation_with_dimensions(self, var):
+        """Create subscripted equation for variables with dimensions."""
+        var_name = self.name_handler(var.get('name'))
+        self.var_dimensions[var_name] = list()
+        var_dimensions = var.find('dimensions').find_all('dim')
+        
+        var_dims = dict()
+        for dimension in var_dimensions:
+            dim_name = dimension.get('name')
+            self.var_dimensions[var_name].append(dim_name)
+            var_dims[dim_name] = self.dimension_elements[dim_name]
+        
+        var_subscripted_eqn = dict()
+        var_elements = var.find_all('element')
+        
+        if len(var_elements) != 0:
+            # Different equation for each element
+            for var_element in var_elements:
+                element_combination_text = var_element.get('subscript')
+                elements = self.process_subscript(element_combination_text)
+                equation = self._parse_variable_equation(var, var_element)
+                var_subscripted_eqn[elements] = equation
+        else:
+            # All elements share the same equation
+            equation = self._parse_variable_equation(var, None)
+            element_combinations = product(*list(var_dims.values()))
+            for ect in element_combinations:
+                var_subscripted_eqn[ect] = equation
+                
+        return var_subscripted_eqn
+
+    def _create_simple_equation(self, var):
+        """Create equation for variables without dimensions."""
+        var_name = self.name_handler(var.get('name'))
+        self.var_dimensions[var_name] = None
+        return self._parse_variable_equation(var, None)
+
+    def _parse_variable_equation(self, var, var_element=None):
+        """Parse the equation for a variable, handling different types (conveyor, graph function, etc.)."""
+        # Determine which element to check for equation types
+        element_to_check = var_element if var_element is not None else var
+        
+        if var.find('conveyor'):
+            equation_text = element_to_check.find('eqn').text if element_to_check.find('eqn') else var.find('eqn').text
+            length = var.find('len').text
+            equation = Conveyor(length, equation_text)
+        elif element_to_check.find('gf'):
+            equation = self._read_graph_function(element_to_check)
+            equation.eqn = var.find('eqn').text
+        elif element_to_check.find('eqn'):
+            equation = element_to_check.find('eqn').text
+        else:
+            var_name = self.name_handler(var.get('name'))
+            raise Exception(f'No meaningful definition found for variable {var_name}')
+            
+        return equation
+
+    def _read_graph_function(self, var):
+        """Read and create a GraphFunc object from XMILE graph function element."""
+        gf = var.find('gf')
+        out_of_bound_type = gf.get('type')
+        
+        if gf.find('xscale'):
+            xscale = [
+                float(gf.find('xscale').get('min')),
+                float(gf.find('xscale').get('max'))
+            ]
+        else:
+            xscale = None
+        
+        if gf.find('xpts'):
+            xpts = [float(t) for t in gf.find('xpts').text.split(',')]
+        else:
+            xpts = None
+        
+        if xscale is None and xpts is None:
+            raise Exception("GraphFunc: xscale and xpts cannot both be None.")
+
+        yscale = [
+            float(gf.find('yscale').get('min')),
+            float(gf.find('yscale').get('max'))
+        ]
+        ypts = [float(t) for t in gf.find('ypts').text.split(',')]
+
+        equation = GraphFunc(
+            out_of_bound_type=out_of_bound_type, 
+            yscale=yscale, 
+            ypts=ypts, 
+            xscale=xscale, 
+            xpts=xpts
+        )
+        return equation
+
+    def _parse_data(self, soup):
+        """Parse data import/export specifications from XMILE content."""
+        data_root = soup.find('data')
+        if data_root is None:
+            return
+            
+        # Initialize data storage if not already present
+        if not hasattr(self, 'export_specs'):
+            self.export_specs = []
+        if not hasattr(self, 'import_specs'):
+            self.import_specs = []
+            
+        logger_model_creation.debug("Parsing data import/export specifications")
+            
+        # Parse export specifications
+        exports = data_root.find_all('export')
+        for export in exports:
+            export_spec = {
+                'resource': export.get('resource'),
+                'interval': export.get('interval'),
+                'precomputed': export.get('precomputed') == 'true',
+                'format': export.get('isee:format', 'numbers')
+            }
+            self.export_specs.append(export_spec)
+            logger_model_creation.debug(f"Found export specification: {export_spec['resource']}")
+            
+        # Parse import specifications
+        imports = data_root.find_all('import')
+        for import_elem in imports:
+            # Skip disabled imports
+            if import_elem.get('enabled') == 'false':
+                logger_model_creation.debug(f"Skipping disabled import: {import_elem.get('resource')}")
+                continue
+                
+            import_spec = {
+                'resource': import_elem.get('resource'),
+                'overwrite': import_elem.get('isee:overwrite') == 'true',
+                'timevarying': import_elem.get('isee:timevarying') == 'true',
+                'orientation': import_elem.get('orientation', 'vertical')
+            }
+            
+            self.import_specs.append(import_spec)
+            logger_model_creation.debug(f"Processing import: {import_spec['resource']} (overwrite={import_spec['overwrite']}, timevarying={import_spec['timevarying']})")
+            
+            # Process the import based on its type
+            self._process_import(import_spec)
+
+    def _process_import(self, import_spec):
+        """Process a single import specification."""
+        try:
+            # Resolve resource path - handle relative paths starting with 'r../'
+            resource_path = import_spec['resource']
+            if resource_path.startswith('r../'):
+                # Convert relative path to actual path relative to XMILE file
+                xmile_dir = Path(self.xmile_path).parent if hasattr(self, 'xmile_path') else Path('.')
+                resource_path = xmile_dir / resource_path[4:]
+                resource_path = str(resource_path)
+            
+            if not Path(resource_path).exists():
+                logger_model_creation.error(f"Import file not found: {resource_path}")
+                return
+                
+            logger_model_creation.debug(f"Reading CSV file: {resource_path}")
+                
+            # Read CSV data and normalize to unified format: columns = variables
+            try:
+                df = self._read_and_normalize_csv(resource_path, import_spec)
+            except Exception as e:
+                logger_model_creation.error(f"Error reading CSV file {resource_path}: {e}")
+                return
+                
+            if import_spec['overwrite'] and not import_spec['timevarying']:
+                # Case 1: Set parameters (overwrite=true, timevarying=false)
+                self._process_parameter_import(df, resource_path)
+            elif not import_spec['overwrite'] and import_spec['timevarying']:
+                # Case 2: Load time varying values (overwrite=false, timevarying=true)
+                self._process_timevarying_import(df, resource_path)
+            elif not import_spec['overwrite'] and not import_spec['timevarying']:
+                # Case 3: Set parameters without overwrite flag (treat as parameter import)
+                logger_model_creation.debug(f"Treating non-overwrite, non-timevarying import as parameter import: {resource_path}")
+                self._process_parameter_import(df, resource_path)
+            else:
+                logger_model_creation.error(f"Unsupported import configuration: overwrite={import_spec['overwrite']}, timevarying={import_spec['timevarying']}")
+                
+        except Exception as e:
+            logger_model_creation.error(f"Error processing import {import_spec['resource']}: {e}")
+
+    def _read_and_normalize_csv(self, resource_path, import_spec):
+        """
+        Read CSV file and normalize to unified format: columns = variables, rows = observations.
+        
+        This unifies all CSV formats to have:
+        - Columns represent variables 
+        - Rows represent observations (time points for time-varying, single values for parameters)
+        - First column contains time values for time-varying data (or index for parameters)
+        """
+        orientation = import_spec.get('orientation', 'vertical')
+        is_timevarying = import_spec['timevarying']
+        
+        if orientation == 'horizontal':
+            if is_timevarying:
+                # Horizontal time-varying: rows=variables, columns=time
+                # After transpose: columns=variables, rows=time (desired format)
+                df = pd.read_csv(resource_path).dropna().transpose()
+
+                # Reset index to avoid assuming any column as index
+                df = df.reset_index(drop=False)
+                
+                # Set first row as column headers to remove the index row and make data start at row 0
+                df.columns = df.iloc[0]  # Use first row as column names
+                df = df.drop(df.index[0])  # Drop the first row
+                df = df.reset_index(drop=True)  # Reset index so data starts at 0
+                df.columns.name = None  # Remove column name
+
+                logger_model_creation.debug(f"Processed resource path: {resource_path}")
+                logger_model_creation.debug(f"Normalized horizontal time-varying CSV: {df.shape} (rows=time, cols=variables)")
+                logger_model_creation.debug(f"Normalized horizontal time-varying CSV: \n{df.head()}")
+            else:
+                # Horizontal parameters: rows=variables with values
+                # Transform to: columns=variables, single row=values
+                temp_df = pd.read_csv(resource_path, header=None, names=['variable', 'value'])
+                # drop empty rows
+                temp_df = temp_df.dropna()
+                # Pivot to get variables as columns
+                df = temp_df.set_index('variable').T
+                logger_model_creation.debug(f"Processed resource path: {resource_path}")
+                logger_model_creation.debug(f"Normalized horizontal parameter CSV: {df.shape} (single row, cols=variables)")
+                logger_model_creation.debug(f"Normalized horizontal parameter CSV: \n{df.head()}")
+        else:
+            # Vertical orientation (default)
+            if is_timevarying:
+                # Already in desired format: columns=variables, rows=time
+                df = pd.read_csv(resource_path)
+                logger_model_creation.debug(f"Processed resource path: {resource_path}")
+                logger_model_creation.debug(f"Normalized vertical time-varying CSV: {df.shape} (rows=time, cols=variables)")
+                logger_model_creation.debug(f"Normalized vertical time-varying CSV: \n{df.head()}")
+            else:
+                # Vertical parameters: assume 2-column format (variable, value)
+                # Transform to: columns=variables, single row=values  
+                temp_df = pd.read_csv(resource_path)
+                if len(temp_df.columns) == 2:
+                    # Standard 2-column format
+                    var_col, val_col = temp_df.columns[0], temp_df.columns[1]
+                    df = temp_df.set_index(var_col)[val_col].to_frame().T
+                    df.index = [0]  # Ensure single row index
+                    logger_model_creation.debug(f"Processed resource path: {resource_path}")
+                    logger_model_creation.debug(f"Normalized vertical parameter CSV: {df.shape} (single row, cols=variables)")
+                    logger_model_creation.debug(f"Normalized vertical parameter CSV: \n{df.head()}")
+                else:
+                    # Assume already in correct format
+                    df = temp_df
+                    logger_model_creation.debug(f"Processed resource path: {resource_path}")
+                    logger_model_creation.debug(f"Normalized vertical parameter CSV: {df.shape} (single row, cols=variables)")
+                    logger_model_creation.debug(f"Normalized vertical parameter CSV: \n{df.head()}")
+        
+        return df
+
+    def _process_parameter_import(self, df, resource_path):
+        """Process parameter imports (set parameters, replace equations once)."""
+        try:
+            logger_model_creation.debug(f"Processing parameter import from {resource_path}")
+            
+            # With unified format: columns = variables, single row = values
+            # Process each column as a variable
+            for var_name in df.columns:
+                # Skip invalid column names
+                if pd.isna(var_name) or str(var_name).strip() == '' or str(var_name).lower() in ['nan', 'unnamed']:
+                    continue
+                
+                # Get the value from the first (and typically only) row
+                if len(df) > 0:
+                    var_value = df[var_name].iloc[0]
+                    # Skip if the value itself is NaN
+                    if pd.isna(var_value):
+                        continue
+                else:
+                    continue
+                    
+                var_name_str = str(var_name).strip()
+                self._apply_parameter_value(var_name_str, var_value, resource_path)
+                    
+        except Exception as e:
+            logger_model_creation.error(f"Error processing parameter import from {resource_path}: {e}")
+
+    def _apply_parameter_value(self, var_name, var_value, resource_path):
+        """Apply a parameter value to a variable with proper arrayed variable handling."""
+        if self._is_time_column(var_name):
+            return
+        try:
+            # Parse the value to handle comma separators and other formatting
+            parsed_value = self._parse_number(var_value)
+            if pd.isna(parsed_value):
+                logger_model_creation.error(f"Could not parse parameter value '{var_value}' for {var_name}")
+                return
+            # Handle subscripted variables (e.g., "variable[subscript]")
+            if '[' in var_name and ']' in var_name:
+                base_name = var_name.split('[')[0].strip()
+                subscript_part = var_name.split('[')[1].split(']')[0].strip()
+                processed_name = self.name_handler(base_name)
+                
+                # Parse subscript (may contain multiple dimensions separated by commas)
+                subscript_elements = [elem.strip() for elem in subscript_part.split(',')]
+                subscript_tuple = tuple(subscript_elements)
+                
+                # Check if the variable exists in the model
+                variable_found = False
+                target_dict = None
+                
+                for var_dict, var_type in [(self.stock_equations, 'stock'), 
+                                         (self.aux_equations, 'auxiliary'), 
+                                         (self.flow_equations, 'flow')]:
+                    if processed_name in var_dict:
+                        target_dict = var_dict
+                        variable_found = True
+                        logger_model_creation.debug(f"Found {var_type} variable {processed_name} for parameter import")
+                        break
+                
+                if not variable_found:
+                    logger_model_creation.error(f"Variable {processed_name} not found in model for parameter import from {resource_path}")
+                    return
+                
+                # Check if this is an arrayed variable
+                if isinstance(target_dict[processed_name], dict):
+                    # Arrayed variable - check if the subscript exists
+                    if subscript_tuple in target_dict[processed_name]:
+                        # Use replace_element_equation for proper processing
+                        new_equation = {subscript_tuple: str(parsed_value)}
+                        self.replace_element_equation(processed_name, new_equation)
+                        logger_model_creation.debug(f"Set parameter {processed_name}[{subscript_part}] = {parsed_value}")
+                    else:
+                        available_keys = list(target_dict[processed_name].keys())
+                        logger_model_creation.error(f"Subscript {subscript_tuple} not found for variable {processed_name}. Available: {available_keys}")
+                else:
+                    logger_model_creation.error(f"Variable {processed_name} is not arrayed but subscript provided: {subscript_part}")
+                    
+            else:
+                # Non-subscripted variable
+                processed_name = self.name_handler(var_name)
+                
+                # Check if the variable exists in the model
+                variable_found = False
+                
+                for var_dict, var_type in [(self.stock_equations, 'stock'), 
+                                         (self.aux_equations, 'auxiliary'), 
+                                         (self.flow_equations, 'flow')]:
+                    if processed_name in var_dict:
+                        # Use replace_element_equation for proper processing
+                        self.replace_element_equation(processed_name, str(parsed_value))
+                        variable_found = True
+                        logger_model_creation.debug(f"Set parameter {processed_name} = {parsed_value}")
+                        break
+                
+                if not variable_found:
+                    logger_model_creation.error(f"Variable {processed_name} not found in model for parameter import from {resource_path}")
+                
+        except Exception as e:
+            logger_model_creation.error(f"Error applying parameter {var_name} = {var_value}: {e}")
+
+    def _process_timevarying_import(self, df, resource_path):
+        """Process time-varying imports (replace equations with DataFeeder objects)."""
+        try:
+            logger_model_creation.debug(f"Processing time-varying import from {resource_path}")
+            
+            # Extract time values from DataFrame
+            time_values = self._extract_time_values(df, resource_path)
+            if time_values is None:
+                return
+                
+            # Get simulation period from sim_specs for missing time handling
+            sim_start = self.sim_specs.get('initial_time')
+            sim_end = sim_start + self.sim_specs.get('simulation_time')
+            sim_dt = self.sim_specs.get('dt')
+            
+            logger_model_creation.debug(f"Simulation period: {sim_start} to {sim_end} with dt={sim_dt}")
+            logger_model_creation.debug(f"Data time range: {min(time_values)} to {max(time_values)}")
+                
+            # With unified format: all columns are variables (except time column for vertical CSVs)
+            # Process each variable column, excluding time columns
+            for col in df.columns:
+                # Skip time columns for vertical CSVs (horizontal CSVs already have time in index)
+                if self._is_time_column(col):
+                    continue
+                    
+                # Skip invalid column names
+                if pd.isna(col) or str(col).lower().strip() in ['nan', 'unnamed', '']:
+                    continue
+                # Extract data for this variable (parse numbers to handle comma separators)
+                raw_data = df[col].dropna().values
+                data_values = [self._parse_number(val) for val in raw_data]
+                # Filter out NaN values that couldn't be parsed
+                data_values = [val for val in data_values if not pd.isna(val)]
+                
+                if len(data_values) == 0:
+                    logger_model_creation.error(f"No data found for variable {col} in {resource_path}")
+                    continue
+                    
+                # Handle missing time by processing data to cover simulation period
+                processed_data, processed_time_values = self._handle_missing_time(
+                    data_values, time_values, sim_start, sim_end, sim_dt, col, resource_path
+                )
+                
+                if len(processed_data) == 0:
+                    logger_model_creation.error(f"No valid data after processing for variable {col}")
+                    continue
+                
+                # Determine time step (dt) and starting time from processed data
+                if len(processed_time_values) > 1:
+                    data_dt = float(processed_time_values[1]) - float(processed_time_values[0])
+                    from_time = float(processed_time_values[0])
+                else:
+                    data_dt = sim_dt
+                    from_time = float(processed_time_values[0]) if len(processed_time_values) > 0 else sim_start
+                
+                # Apply time-varying data to arrayed variables properly
+                self._apply_timevarying_data(col, processed_data, from_time, data_dt, resource_path)
+                    
+        except Exception as e:
+            logger_model_creation.error(f"Error processing time-varying import from {resource_path}: {e}")
+
+    def _extract_time_values(self, df, resource_path):
+        """Extract time values from DataFrame with unified format."""
+        # for every column name, check if it is a time column
+        for col in df.columns:
+            if self._is_time_column(col):
+                time_values = [self._parse_number(val) for val in df[col].values]
+                logger_model_creation.debug(f"Using column {col} as time values: {time_values}")
+                return time_values
+        
+        logger_model_creation.error(f"No time values found in {resource_path}")
+
+    def _is_time_column(self, col_name):
+        """Check if a column name represents time based on sim_specs time_units."""
+        sim_time_units = self.sim_specs.get('time_units', 'time')
+        
+        # Create list of valid time column names (singular and plural)
+        time_col_candidates = []
+        if sim_time_units:
+            # Add the exact time units
+            time_col_candidates.append(sim_time_units.lower())
+            # Add singular form (remove 's' if it ends with 's')
+            if sim_time_units.lower().endswith('s'):
+                time_col_candidates.append(sim_time_units.lower()[:-1])
+            # Add plural form (add 's' if it doesn't end with 's')
+            else:
+                time_col_candidates.append(sim_time_units.lower() + 's')
+        
+        return col_name.lower() in time_col_candidates
+
+    def _parse_number(self, value):
+        """Parse a number that might have comma separators (e.g., '1,234' or '1,234.56')."""
+        if pd.isna(value):
+            return float('nan')
+        
+        # Convert to string and handle common formatting
+        str_val = str(value).strip()
+        
+        # Remove quotes if present
+        if str_val.startswith('"') and str_val.endswith('"'):
+            str_val = str_val[1:-1]
+        
+        # Remove thousands separators (commas)
+        str_val = str_val.replace(',', '')
+        
+        try:
+            return float(str_val)
+        except (ValueError, TypeError) as e:
+            logger_model_creation.error(f"Could not parse number '{value}': {e}")
+            return float('nan')
+
+    def _handle_missing_time(self, data_values, time_values, sim_start, sim_end, sim_dt, variable_name, resource_path):
+        """Handle missing time data by interpolation/extrapolation according to simulation period."""
+        logger_model_creation.debug(f"Handling missing time for {variable_name}")
+        
+        # Create time-data pairs and sort by time
+        time_data_pairs = list(zip(time_values, data_values))
+        time_data_pairs.sort(key=lambda x: x[0])
+
+        sorted_times = [pair[0] for pair in time_data_pairs]
+        sorted_data = [pair[1] for pair in time_data_pairs]
+        
+        # Generate simulation time steps
+        sim_times = []
+        current_time = sim_start
+        while current_time <= sim_end:
+            sim_times.append(current_time)
+            current_time += sim_dt
+            
+        # Interpolate/extrapolate data for simulation times
+        from scipy.interpolate import interp1d
+        
+        if len(sorted_times) == 1:
+            # Only one data point - use constant extrapolation
+            processed_data = [sorted_data[0]] * len(sim_times)
+            logger_model_creation.debug(f"Single data point for {variable_name}, using constant value: {sorted_data[0]}")
+        else:
+            # Multiple data points - use interpolation with constant extrapolation (like Stella)
+            # Create interpolation function once for efficiency
+            interp_func = interp1d(sorted_times, sorted_data, kind='linear')
+            
+            processed_data = []
+            for t in sim_times:
+                if t < sorted_times[0]:
+                    # Before first data point - use first value (constant extrapolation)
+                    value = sorted_data[0]
+                elif t > sorted_times[-1]:
+                    # After last data point - use last value (constant extrapolation)
+                    value = sorted_data[-1]
+                else:
+                    # Within data range - use linear interpolation
+                    value = float(interp_func(t))
+                processed_data.append(value)
+            logger_model_creation.debug(f"Interpolated/extrapolated {len(processed_data)} data points for {variable_name} (constant extrapolation beyond bounds)")
+        
+        return processed_data, sim_times
+
+    def _apply_timevarying_data(self, col_name, data_values, from_time, data_dt, resource_path):
+        """Apply time-varying data to arrayed variables with proper key matching."""
+        # Handle subscripted variables
+        if '[' in col_name and ']' in col_name:
+            base_name = col_name.split('[')[0].strip()
+            subscript_part = col_name.split('[')[1].split(']')[0].strip()
+            processed_name = self.name_handler(base_name)
+            
+            # Parse subscript (may contain multiple dimensions separated by commas)
+            subscript_elements = [elem.strip() for elem in subscript_part.split(',')]
+            subscript_tuple = tuple(subscript_elements)
+            
+            # Check if the variable exists in the model
+            variable_found = False
+            target_dict = None
+            
+            for var_dict, var_type in [(self.stock_equations, 'stock'), 
+                                     (self.aux_equations, 'auxiliary'), 
+                                     (self.flow_equations, 'flow')]:
+                if processed_name in var_dict:
+                    target_dict = var_dict
+                    variable_found = True
+                    logger_model_creation.debug(f"Found {var_type} variable {processed_name} for time-varying import")
+                    break
+            
+            if not variable_found:
+                logger_model_creation.error(f"Variable {processed_name} not found in model for time-varying import from {resource_path}")
+                return
+            
+            # Check if this is an arrayed variable and if the subscript exists
+            if isinstance(target_dict[processed_name], dict):
+                if subscript_tuple in target_dict[processed_name]:
+                    # Create DataFeeder for this specific subscript
+                    data_feeder = DataFeeder(
+                        data=data_values,
+                        from_time=from_time,
+                        data_dt=data_dt,
+                        interpolate=True
+                    )
+                    # Use replace_element_equation for proper processing
+                    new_equation = {subscript_tuple: data_feeder}
+                    self.replace_element_equation(processed_name, new_equation)
+                    logger_model_creation.debug(f"Set time-varying data for {processed_name}[{subscript_part}] with {len(data_values)} data points")
+                else:
+                    available_keys = list(target_dict[processed_name].keys())
+                    logger_model_creation.error(f"Subscript {subscript_tuple} not found for variable {processed_name}. Available: {available_keys}")
+            else:
+                logger_model_creation.error(f"Variable {processed_name} is not arrayed but subscript provided: {subscript_part}")
+                
+        else:
+            # Non-subscripted variable
+            processed_name = self.name_handler(col_name)
+            
+            # Check if the variable exists in the model
+            variable_found = False
+            
+            for var_dict, var_type in [(self.stock_equations, 'stock'), 
+                                     (self.aux_equations, 'auxiliary'), 
+                                     (self.flow_equations, 'flow')]:
+                if processed_name in var_dict:
+                    # Create DataFeeder for the entire variable
+                    data_feeder = DataFeeder(
+                        data=data_values,
+                        from_time=from_time,
+                        data_dt=data_dt,
+                        interpolate=True
+                    )
+                    # Use replace_element_equation for proper processing
+                    self.replace_element_equation(processed_name, data_feeder)
+                    variable_found = True
+                    logger_model_creation.debug(f"Set time-varying data for {processed_name} with {len(data_values)} data points")
+                    break
+            
+            if not variable_found:
+                logger_model_creation.error(f"Variable {processed_name} not found in model for time-varying import from {resource_path}")
 
     # utilities
     def name_handler(self, name):
@@ -1949,7 +2574,7 @@ class sdmodel(object):
         elif type(new_equation) is dict:
             pass
         else:
-            raise Exception('Unsupported new equation {} type {}'.format(new_equation, type(new_equation)))
+            raise Exception(f'Unsupported new equation {new_equation} type {type(new_equation)}')
         return new_equation
 
     def replace_element_equation(self, name, new_equation):
@@ -1992,7 +2617,7 @@ class sdmodel(object):
             else:
                 self.aux_equations[name] = new_equation
         else:
-            raise Exception('Unable to find {} in the current model'.format(name))
+            raise Exception(f'Unable to find {name} in the current model')
 
         if self.state == 'loaded':
             pass
@@ -2001,7 +2626,7 @@ class sdmodel(object):
 
     def overwrite_graph_function_points(self, name, new_xpts=None, new_xscale=None, new_ypts=None):
         if new_xpts is None and new_xscale is None and new_ypts is None:
-            raise Exception("Inputs cannot all be None.")
+            raise Exception("Inputs cannot all be None")
 
         if name in self.stock_equations:
             graph_func_equation = self.stock_equations[name]
@@ -2010,7 +2635,7 @@ class sdmodel(object):
         elif name in self.aux_equations:
             graph_func_equation = self.aux_equations[name]
         else:
-            raise Exception('Unable to find {} in the current model'.format(name))
+            raise Exception(f'Unable to find {name} in the current model')
         
         if new_xpts is not None:
             # self.logger.debug('Old xpts:', graph_func_equation.xpts)
@@ -2031,14 +2656,27 @@ class sdmodel(object):
 
     def parse_equation(self, var, equation):
         if type(equation) is GraphFunc:
-            gfunc_name = 'GFUNC{}'.format(len(self.graph_functions_renamed))
+            gfunc_name = f'GFUNC{len(self.graph_functions_renamed)}'
             self.graph_functions_renamed[gfunc_name] = equation # just for length ... for now
             self.graph_functions[var] = equation
             self.parser.functions.update({gfunc_name:gfunc_name+r"(?=\()"}) # make name var also a function name and add it to the parser
             self.solver.custom_functions.update({gfunc_name:equation})
-            equation = gfunc_name+'('+ equation.eqn + ')'  # make equation into form like var(eqn), 
+            equation = f'{gfunc_name}({equation.eqn})'  # make equation into form like var(eqn), 
                                             # where eqn is the euqaiton whose outcome is the input to GraphFunc var()
                                             # this is also how Vensim handles GraphFunc
+            parsed_equation = self.parser.parse(equation)
+            return parsed_equation
+
+        elif type(equation) is DataFeeder:
+            # Handle DataFeeder similar to GraphFunc but in separate function dictionary
+            data_name = f'DATA{len(self.data_feeders_renamed)}'
+            self.data_feeders_renamed[data_name] = equation
+            # Register in parser as a function
+            self.parser.functions.update({data_name: data_name + r"(?=\()"})
+            # Register in solver as a data feeder function
+            self.data_feeder_functions.update({data_name: equation})
+            # Create equation that calls the DataFeeder function with TIME as argument
+            equation = f'{data_name}(TIME)'
             parsed_equation = self.parser.parse(equation)
             return parsed_equation
         
@@ -2068,15 +2706,12 @@ class sdmodel(object):
                 parsed_equation_val
                 ]
 
-        elif type(equation) is DataFeeder:
-            return equation
-
         elif type(equation) in [str, int, float, np.int_, np.float64]:
             parsed_equation = self.parser.parse(equation)
             return parsed_equation
 
         else:
-            raise Exception('Unsupported equation {} type {}'.format(equation, type(equation)))
+            raise Exception(f'Unsupported equation {equation} type {type(equation)}')
     
     def batch_parse(self, equations, parsed_equations):
         # Debug logic: collect all equations that cannot be parsed and log them, then end the parsing process.
@@ -2097,7 +2732,7 @@ class sdmodel(object):
                         parsed_equations[var][k] = self.parse_equation(var=var, equation=ks)
                         counter_all_equations += 1
                     except Exception as e:
-                        self.logger.error("Error parsing equation for variable {}: {}".format(var, e))
+                        self.logger.error(f"Error parsing equation for variable {var}: {e}")
                         unparsed_equations.append(((var, k), ks, e))
                         counter_all_equations += 1
                         un_parsed = True
@@ -2109,7 +2744,7 @@ class sdmodel(object):
                     parsed_equations[var] = self.parse_equation(var=var, equation=equation)
                     counter_all_equations += 1
                 except Exception as e:
-                    self.logger.error("Error parsing equation for variable {}: {}".format(var, e))
+                    self.logger.error(f"Error parsing equation for variable {var}: {e}")
                     unparsed_equations.append((var, equation, e))
                     counter_all_equations += 1
                     counter_unparsed_variables += 1
@@ -2121,9 +2756,9 @@ class sdmodel(object):
             self.logger.error("")
             for i in range(len(unparsed_equations)):
                 var, eqn, error = unparsed_equations[i]
-                self.logger.error("{} Variable: {}".format(i+1, var))
-                self.logger.error("{} Equation: {}".format(i+1, eqn))
-                self.logger.error("{} Error: {}".format(i+1, error))
+                self.logger.error(f"{i+1} Variable: {var}")
+                self.logger.error(f"{i+1} Equation: {eqn}")
+                self.logger.error(f"{i+1} Error: {error}")
                 self.logger.error("")
             raise Exception(f"Parsing failed for {len(unparsed_equations)} equations out of {counter_all_equations} ({counter_unparsed_variables} variables out of {counter_all_variables}). See logs for details.")
 
@@ -2328,24 +2963,25 @@ class sdmodel(object):
                             for sub, sub_value in self.name_space[var].items():
                                 if sub_value < 0:
                                     self.name_space[var][sub] = np.float64(0)
-                                    self.logger.debug(f"    Flow {var}[{sub}] is negative, set to 0")
+                                    self.logger.debug(f"    Non-negative flow {var}[{sub}] cannot be negative, set to 0")
                         else:
                             if self.name_space[var] < 0:
                                 self.name_space[var] = np.float64(0)
-                                self.logger.debug('    '+"Flow {} is negative, set to 0".format(var))
+                                self.logger.debug(f'    '+"Non-negative flow {var} cannot be negative, set to 0")
 
                     # do not use 'value' from here on, use 'self.name_space[var]' instead
                     # check flow attributes for its constraints from non-negative stocks
                     flow_attributes = dg.nodes[var]
-                    self.logger.debug('    '+'Checking attributes: {}'.format(flow_attributes))
+                    self.logger.debug(f'    '+'Checking attributes: {flow_attributes}')
                     
                     if 'considered_for_non_negative_stock' in flow_attributes:
                         if flow_attributes['considered_for_non_negative_stock'] is True:
                             flow_to_stock = self.flow_stocks[var]['to']
-                            self.logger.debug('    '+f'----considering inflow {var} into non-negative stocks {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
-                            # this is an in_flow and this in_flow should be considered before constraining out_flows
+                            self.logger.debug(f'    ----considering inflow {var} into non-negative stocks {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
+                            # this is an in_flow to a non-negative stock and this in_flow should be considered before constraining out_flows using that stock
 
-                            # To prevent a negative inflow from making the stock negative, we need to constrain the inflow
+                            # situation 1:
+                            # To prevent a negative inflow from making its "flow-to" stock negative, we need to constrain the inflow
                             # This only happens if the inflow is a biflow
                             if self.flow_positivity[var] is False:
                                 if type(self.name_space[var]) is dict:
@@ -2368,6 +3004,19 @@ class sdmodel(object):
                                         self.stock_non_negative_temp_value[flow_to_stock] = np.float64(0)
                                     else:
                                         self.stock_non_negative_temp_value[flow_to_stock] += self.name_space[var] * self.sim_specs['dt']
+                            # situation 2:
+                            # Even if the flow is a unidirectional (positive) flow, it still can add to the "flow-to" stock's temp value, and this will affect how that stock constrains its out_flows
+                            else:
+                                self.logger.debug(f'    ----Flow {var} is a unidirectional (positive flow), adding its value {self.name_space[var]} to the "flow-to" stock {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
+                                if type(self.name_space[var]) is dict:
+                                    for sub, sub_value in self.name_space[var].items():
+                                        self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
+                                elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
+                                    for sub in self.stock_non_negative_temp_value[flow_to_stock]:
+                                        self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
+                                else:
+                                    self.stock_non_negative_temp_value[flow_to_stock] += self.name_space[var] * self.sim_specs['dt']
+                            
 
                     if 'out_from_non_negative_stock' in flow_attributes:
                         out_from_non_negative_stock = flow_attributes['out_from_non_negative_stock']
@@ -2379,7 +3028,7 @@ class sdmodel(object):
                             for sub, sub_value in self.name_space[var].items():
                                 if self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] - sub_value * self.sim_specs['dt'] < 0:
                                     self.name_space[var][sub] = self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] / self.sim_specs['dt']
-                                    self.logger.debug('    '+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
+                                    self.logger.debug(f'    ----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] = np.float64(0)
                                 else:
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] -= sub_value * self.sim_specs['dt']
@@ -2387,21 +3036,21 @@ class sdmodel(object):
                             for sub in self.stock_non_negative_temp_value[out_from_non_negative_stock]:
                                 if self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] - self.name_space[var] * self.sim_specs['dt'] < 0:
                                     self.name_space[var] = self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] / self.sim_specs['dt']
-                                    self.logger.debug('    '+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
+                                    self.logger.debug(f'    ----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] = np.float64(0)
                                 else:
                                     self.stock_non_negative_temp_value[out_from_non_negative_stock][sub] -= self.name_space[var] * self.sim_specs['dt']
                         else:                        
                             if self.stock_non_negative_temp_value[out_from_non_negative_stock] - self.name_space[var] * self.sim_specs['dt'] < 0:
                                 self.name_space[var] = self.stock_non_negative_temp_value[out_from_non_negative_stock] / self.sim_specs['dt']
-                                self.logger.debug('    '+f'----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
+                                self.logger.debug(f'    ----constraining flow {var} for non-negative stocks {out_from_non_negative_stock} to {self.name_space[var]}')
                                 self.stock_non_negative_temp_value[out_from_non_negative_stock] = np.float64(0)
                             else:
                                 self.stock_non_negative_temp_value[out_from_non_negative_stock] -= self.name_space[var] * self.sim_specs['dt']
 
-                    self.logger.debug('    '+'Flow {} = {}'.format(var, self.name_space[var]))
+                    self.logger.debug(f'    ----Flow {var} = {self.name_space[var]}')
                 else:
-                    self.logger.debug('    '+'Flow {} is already in name space.'.format(var))
+                    self.logger.debug(f'    ----Flow {var} is already in name space.')
                     # raise Warning('Flow {} is already in name space.'.format(var)) # this should not happen, just in case of any bugs as we switched from dynamic calculation to static calculation
         
         # D: var is an auxiliary
@@ -2422,27 +3071,27 @@ class sdmodel(object):
                 else:
                     value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode, subscript=subscript)
                     self.name_space[var] = value
-                self.logger.debug('    '+'Aux {} = {}'.format(var, value))
+                self.logger.debug(f'    '+'Aux {var} = {value}')
                         
             else:
                 pass
         
         else:
-            raise Exception("Undefined var: {}".format(var))
+            raise Exception(f"Undefined var: {var}")
 
     def update_stocks(self):
         for stock, in_out_flows in self.stock_flows.items():
             if stock not in self.conveyors: # coneyors are updated separately
                 if stock in self.stock_shadow_values:
-                    self.logger.debug('updating stock {} shadow_value is {}'.format(stock, self.stock_shadow_values[stock]))
+                    self.logger.debug(f'updating stock {stock} shadow_value is {self.stock_shadow_values[stock]}')
                 else:
-                    self.logger.debug('updating stock {} shadow_value not exist, name_space value is {}'.format(stock, self.name_space[stock]))
+                    self.logger.debug(f'updating stock {stock} shadow_value not exist, name_space value is {self.name_space[stock]}')
                 
                 if len(in_out_flows) != 0:
                     for direction, flows in in_out_flows.items():
                         if direction == 'in':
                             for flow in flows:
-                                self.logger.debug('--inflow {} = {}'.format(flow, self.name_space[flow]))
+                                self.logger.debug(f'--inflow {flow} = {self.name_space[flow]}')
                                 if stock not in self.stock_shadow_values:
                                     self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
                                 if type(self.stock_shadow_values[stock]) is dict:
@@ -2454,10 +3103,10 @@ class sdmodel(object):
                                             self.stock_shadow_values[stock][sub] += self.name_space[flow] * self.sim_specs['dt']
                                 else:
                                     self.stock_shadow_values[stock] += self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug('----stock_shadow_value {} bcomes {}'.format(stock, self.stock_shadow_values[stock]))
+                                self.logger.debug(f'----stock_shadow_value {stock} bcomes {self.stock_shadow_values[stock]}')
                         elif direction == 'out':
                             for flow in flows:
-                                self.logger.debug('--outflow {} = {}'.format(flow, self.name_space[flow]))
+                                self.logger.debug(f'--outflow {flow} = {self.name_space[flow]}')
                                 if stock not in self.stock_shadow_values:
                                     self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
                                 if type(self.stock_shadow_values[stock]) is dict:
@@ -2469,17 +3118,17 @@ class sdmodel(object):
                                             self.stock_shadow_values[stock][sub] -= self.name_space[flow] * self.sim_specs['dt']
                                 else:
                                     self.stock_shadow_values[stock] -= self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug('----stock_shadow_value {} becomes {}'.format(stock, self.stock_shadow_values[stock]))
+                                self.logger.debug(f'    ----stock_shadow_value {stock} becomes {self.stock_shadow_values[stock]}')
                 else: # there are obsolete stocks that are not connected to any flows
-                    self.logger.debug('stock {} is not connected to any flows'.format(stock))
+                    self.logger.debug(f'stock {stock} is not connected to any flows')
                     self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
-                    self.logger.debug('stock_shadow_value {} remains {}'.format(stock, self.stock_shadow_values[stock]))
+                    self.logger.debug(f'stock_shadow_value {stock} remains {self.stock_shadow_values[stock]}')
             else:
                 pass # conveyors are updated separately
     
     def update_conveyors(self):
         for conveyor_name, conveyor in self.conveyors.items(): # Stock is a Conveyor
-            self.logger.debug('updating conveyor {}'.format(conveyor_name))
+            self.logger.debug(f'updating conveyor {conveyor_name}')
             total_flow_effect = 0
             connected_flows = self.stock_flows[conveyor_name]
             for direction, flows in connected_flows.items():
@@ -2492,8 +3141,8 @@ class sdmodel(object):
             self.stock_shadow_values[conveyor_name] = conveyor['conveyor'].level()
 
     def simulate(self, time=None, dt=None):
-        self.logger.debug('Simulation started with specs: {}'.format(self.sim_specs))
-        self.logger.debug('Equations: {}'.format(self.stock_equations | self.flow_equations | self.aux_equations))
+        self.logger.debug(f'Simulation started with specs: {self.sim_specs}')
+        self.logger.debug(f'Equations: {self.stock_equations | self.flow_equations | self.aux_equations}')
         
         if time is None:
             time = self.sim_specs['simulation_time']
@@ -2520,7 +3169,7 @@ class sdmodel(object):
             # self.name_space['TIME'] = self.sim_specs['current_time']
             # self.name_space['DT'] = self.sim_specs['dt']
 
-            self.logger.debug('Continuing simulation from time {} for {} iteration'.format(self.sim_specs['current_time'], iterations))
+            self.logger.debug(f'Continuing simulation from time {self.sim_specs["current_time"]} for {iterations} iteration')
         
         elif self.state == 'loaded':
             # parse equations and order execution (compile)
@@ -2530,7 +3179,7 @@ class sdmodel(object):
             self.logger.debug("")
             self.logger.debug("*** Initialization ***")
             self.logger.debug("")
-            self.logger.debug("self.ordered_vars_init {}".format(self.ordered_vars_init))
+            self.logger.debug(f"self.ordered_vars_init {self.ordered_vars_init}")
 
             # Initialize self.stock_non_negative_temp_value
             for stock, is_non_negative in self.stock_non_negative.items():
@@ -2550,42 +3199,44 @@ class sdmodel(object):
         self.logger.debug("")
         self.logger.debug("*** Iteration ***")
         self.logger.debug("")
-        self.logger.debug("self.ordered_vars_iter {}".format(self.ordered_vars_iter))
-        self.logger.debug("Current name_space: {}".format(self.name_space))
+        self.logger.debug(f"self.ordered_vars_iter {self.ordered_vars_iter}")
+        self.logger.debug(f"Current name_space: {self.name_space}")
 
         # self.current_iteration = 0
 
         for s in range(iterations):
-            self.logger.debug('--iteration {} start, current time {}--'.format(s, self.sim_specs['current_time']))
-            # self.logger.debug('--time {} --'.format(self.sim_specs['current_time']))
-            # self.logger.debug('\n--step {} start--\n'.format(s), self.name_space)
+            self.logger.debug(f'--iteration {s} start, current time {self.sim_specs["current_time"]}--')
             
             # Iter step 1: calculate flows and auxiliaries they depend on
+            self.logger.debug('calculating flows and auxiliaries they depend on')
             for var in self.ordered_vars_iter:
                 self.calculate_variable(var=var, dg=self.dg_iter, mode='iter')
 
             # Iter step 2: update stocks using flows and conveyors
+            self.logger.debug('updating stocks using flows and conveyors')
             self.update_stocks() # update stock shadow values using flows
             self.update_conveyors() # update stock shadow values as well as conveyors 
 
             # Snapshot current name space
+            self.logger.debug('snapshotting current name space as a new time slice')
             current_snapshot = deepcopy(self.name_space)
             current_snapshot[self.sim_specs['time_units']] = current_snapshot['TIME']
             current_snapshot.pop('TIME')
             
             self.time_slice[self.sim_specs['current_time']] = current_snapshot
 
-            self.logger.debug('--step {} finished--'.format(s)) 
-            self.logger.debug('name_space {}'.format(self.name_space))
-            self.logger.debug('shadow_val {}'.format(self.stock_shadow_values))
+            self.logger.debug(f'--step {s} finished--') 
+            self.logger.debug(f'name_space {self.name_space}')
+            self.logger.debug(f'shadow_val {self.stock_shadow_values}')
 
             
             # Iter step 3: update simulation time
+            self.logger.debug('updating simulation time (current_time)')
             self.sim_specs['current_time'] += dt
             # self.current_iteration += 1
 
             # prepare name_space for next step
-            self.logger.debug('--- prepared name_space for next step ---')
+            self.logger.debug('--- preparing name_space for next step ---')
             self.logger.debug('clear name space')
             self.name_space.clear()
             self.logger.debug(f'name space: {self.name_space}')
@@ -2606,10 +3257,10 @@ class sdmodel(object):
             self.stock_shadow_values.clear()
             self.logger.debug(f'shadow value: {self.stock_shadow_values}')
 
-            self.logger.debug('populate non-negative temp value')
+            self.logger.debug('populate non-negative temp value with their name_space values')
             for k, v in self.stock_non_negative_temp_value.items():
                 self.stock_non_negative_temp_value[k] = deepcopy(self.name_space[k])
-            self.logger.debug('non-negative temp value: {}'.format(self.stock_non_negative_temp_value))
+            self.logger.debug(f'non-negative temp value: {self.stock_non_negative_temp_value}')
             
             self.name_space['TIME'] = self.sim_specs['current_time']
             self.name_space['DT'] = self.sim_specs['dt']
@@ -2618,56 +3269,11 @@ class sdmodel(object):
 
         self.state = 'simulated'
 
-    # def trace_error(self, var_with_error, sub=None):
-    #     self.debug_level_trace_error += 1
-
-    #     self.logger.debug(self.debug_level_trace_error*'    '+'Tracing error on {} ...'.format(var_with_error))
-    #     self.logger.debug(self.debug_level_trace_error*'    '+'asdm value    :', self.name_space[var_with_error])
-    #     self.logger.debug(self.debug_level_trace_error*'    '+'Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_with_error)])
-        
-    #     if sub is not None:
-    #         parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var_with_error][sub]
-    #     else:
-    #         parsed_equation = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed)[var_with_error]
-        
-    #     leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
-    #     self.logger.debug(self.debug_level_trace_error*'    '+'Dependencies of {}:'.format(var_with_error))
-        
-    #     for leaf in leafs:
-    #         # self.logger.debug(self.debug_level_trace_error*'    '+parsed_equation.nodes[leaf])
-    #         if parsed_equation.nodes[leaf]['operator'][0] in ['EQUALS', 'SPAREN']:
-    #             operands = parsed_equation.nodes[leaf]['operands']
-    #             if operands[0][0] == 'NUMBER':
-    #                 pass
-    #             elif operands[0][0] == 'NAME': # this refers to a variable like 'a'
-    #                 var_dependent = operands[0][1]
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'-- Dependent:', var_dependent)
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   asdm value    :', self.name_space[var_dependent])
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_dependent)])
-        
-    #             elif operands[0][0] == 'FUNC': # this refers to a subscripted variable like 'a[ele1]'
-    #                 # need to find that 'SPAREN' node
-    #                 var_dependent_node_id = operands[0][2]
-    #                 var_dependent = parsed_equation.nodes[var_dependent_node_id]['operands'][0][1]
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'-- Dependent:', var_dependent)
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   asdm value    :', self.name_space[var_dependent])
-    #                 self.logger.debug(self.debug_level_trace_error*'    '+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(var_dependent)])
-        
-    #     if var_with_error in self.flow_stocks:
-    #         connected_stocks = self.flow_stocks[var_with_error]
-    #         for direction, connected_stock in connected_stocks.items():
-    #             self.logger.debug(self.debug_level_trace_error*'    '+'-- Connected stock: {:<4} {}'.format(direction, connected_stock))
-    #             self.logger.debug(self.debug_level_trace_error*'    '+'   asdm value    :', self.name_space[connected_stock])
-    #             self.logger.debug(self.debug_level_trace_error*'    '+'   Expected value:', self.df_debug_against.iloc[self.current_iteration][self.var_name_to_csv_entry(connected_stock)])
-        
-    #     self.logger.debug()
-    #     self.debug_level_trace_error -= 1
-
     def var_name_to_csv_entry(self, var, sub=None):
         if sub is None:
             series_key = var.replace('_', ' ')
         else:
-            series_key = "{}[{}]".format(var, ', '.join(sub)).replace('_', ' ')
+            series_key = f"{var}[{', '.join(sub)}]".replace('_', ' ')
         
         if series_key[0].isdigit() or series_key[-1] == ')': # 1 day -> "1 day", a(b)-> "a(b)"
             series_key = '\"'+ series_key + '\"'
@@ -2740,7 +3346,7 @@ class sdmodel(object):
                 try:
                     result.append(slice[name][subscript])
                 except KeyError as e:
-                    print('Subscript {} not found for variable {}; available subscripts: {}'.format(subscript, name, list(slice[name].keys())))
+                    print(f'Subscript {subscript} not found for variable {name}; available subscripts: {list(slice[name].keys())}')
                     raise e
             return result
             
@@ -2773,7 +3379,7 @@ class sdmodel(object):
         for var, result in self.full_result.items():
             if type(result) is dict:
                 for sub, subresult in result.items():
-                    self.full_result_flattened[var+'[{}]'.format(', '.join(sub))] = subresult
+                    self.full_result_flattened[f'{var}[{", ".join(sub)}]'] = subresult
             else:
                 self.full_result_flattened[var] = result
         if format == 'dict':
@@ -2784,6 +3390,7 @@ class sdmodel(object):
         elif format == 'df':
             import pandas as pd
             self.full_result_df = pd.DataFrame.from_dict(self.full_result_flattened)
+            self.full_result_df.reindex(sorted(self.full_result_df.columns), axis=1)
             if to_csv:
                 if type(to_csv) is not str:
                     self.full_result_df.to_csv('asdm.csv', index=False)
@@ -2803,14 +3410,17 @@ class sdmodel(object):
         for var in variables:
             result = self.full_result[var]
             if type(result) is list:
-                ax.plot(result, label='{}'.format(var))
+                ax.plot(result, label=f'{var}')
             else:
                 for sub, subresult in self.full_result[var].items():
-                    ax.plot(subresult, label='{}[{}]'.format(var, ', '.join(sub)))
+                    ax.plot(subresult, label=f'{var}[{", ".join(sub)}]')
         ax.legend()
         plt.show()
 
     def create_variable_dependency_graph(self, var, mode, graph=None, visited=None):
+        if self.state == 'loaded':
+            self.parse()
+        
         self.logger.debug(f"Creating dependency graph for variable '{var}' in mode '{mode}'")
         if graph is None:
             graph = nx.DiGraph()
@@ -2823,8 +3433,6 @@ class sdmodel(object):
         
         visited.add(var)
 
-        if self.state == 'loaded':
-            self.parse()
 
         all_equations = (self.stock_equations_parsed | self.flow_equations_parsed | self.aux_equations_parsed | self.delayed_auxiliary_equations_parsed)
         if var in self.env_variables: # like 'TIME'
@@ -2891,6 +3499,8 @@ class sdmodel(object):
                 for leaf in leafs:
                     if parsed_equation.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
                         dependent_name = parsed_equation.nodes[leaf]['value']
+                        if dependent_name in self.element_names:
+                            continue
                         # if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out # 20250831: Dimension now is a different kind of token
                         dependent_variables.append(dependent_name)
                         
@@ -2900,6 +3510,8 @@ class sdmodel(object):
                     for leaf in leafs:
                         if sub_eqn.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
                             dependent_name = sub_eqn.nodes[leaf]['value']
+                            if dependent_name in self.element_names:
+                                continue
                             if dependent_name not in dependent_variables: # remove duplicates
                                 # if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out # 20250831: Dimension now is a different kind of token
                                 dependent_variables.append(dependent_name)
@@ -2913,7 +3525,7 @@ class sdmodel(object):
                 dependent_variables = list(set(dep_graph_len + dep_graph_val))
             else:
                 visited.remove(var)
-                raise Exception("Non-conveyor variable with parsed equation as list: {}".format(var))
+                raise Exception(f"Non-conveyor variable with parsed equation as list: {var}")
         else: # this is a normal variable
             # now check is it a delay or smooth
             dependent_variables = get_dependent_variables(parsed_equation)
@@ -2930,9 +3542,9 @@ class sdmodel(object):
                     self.create_variable_dependency_graph(dependent_var, mode=mode, graph=graph, visited=visited)
                 else:
                     # Circular dependency detected
-                    self.logger.warning(f"Warning: Circular dependency detected between {dependent_var} and {var}")
-                    self.logger.warning(f"Warning: Full dependency path - direction A: {nx.shortest_path(graph, dependent_var, var)}")
-                    self.logger.warning(f"Warning: Full dependency path - direction B: {nx.shortest_path(graph, var, dependent_var)}\n")
+                    self.logger.error(f"Warning: Circular dependency detected between {dependent_var} and {var}")
+                    self.logger.error(f"Warning: Full dependency path - direction A: {nx.shortest_path(graph, dependent_var, var)}")
+                    self.logger.error(f"Warning: Full dependency path - direction B: {nx.shortest_path(graph, var, dependent_var)}\n")
 
             visited.remove(var)
             return graph
@@ -3201,7 +3813,7 @@ class sdmodel(object):
             elif show == 'iter':
                 dg = dg_iter
             else:
-                raise Exception('Invalid show parameter {}. Use "init" or "iter"'.format(show))
+                raise Exception(f'Invalid show parameter {show}. Use "init" or "iter"')
 
             import matplotlib.pyplot as plt
             from networkx.drawing.nx_agraph import graphviz_layout
