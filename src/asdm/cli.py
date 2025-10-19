@@ -49,6 +49,13 @@ For more information: https://github.com/wzh1895/ASDM
     )
     
     simulator_parser.add_argument(
+        'model_file',
+        nargs='?',
+        default=None,
+        help='Optional: Path to model file (.stmx or .xmile) to load and run automatically'
+    )
+    
+    simulator_parser.add_argument(
         '--host',
         default='127.0.0.1',
         help='Host/IP address to bind to (default: 127.0.0.1)'
@@ -72,7 +79,7 @@ For more information: https://github.com/wzh1895/ASDM
 def cmd_simulator(args):
     """Handle the 'simulator' subcommand."""
     from asdm.simulator.app import run_simulator
-    run_simulator(args.host, args.port)
+    run_simulator(args.host, args.port, args.model_file)
 
 
 def main():
