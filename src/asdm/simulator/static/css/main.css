@@ -59,6 +59,13 @@ details summary {
   font-size: 1em;
 }
 
+/* Plot container styling - ensure full width */
+#plot {
+  width: 100% !important;
+  min-height: 400px;
+  box-sizing: border-box;
+}
+
 footer {
   text-align: center;
   margin-top: 2rem;

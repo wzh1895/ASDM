@@ -102,9 +102,13 @@ function handleFiles(files) {
 
     // 3) Show the visualization section
     if (globalRecords.length > 0) {
-      setupChartOptions(globalRecords, globalTimeCol);
       chartSection.style.display = 'block';
       chartSection.open = true;
+      
+      // Use setTimeout to ensure the DOM has updated before plotting
+      setTimeout(() => {
+        setupChartOptions(globalRecords, globalTimeCol);
+      }, 100);
     }
 
     // Hide error logs if the previous run had errors
@@ -184,8 +188,6 @@ function setupChartOptions(records) {
 }
 
 function plotVariable(records, varName) {
-  console.log(`Plotting variable: ${varName} against ${globalTimeCol}`);
-
   // Extract time column values
   const xValues = records.map(row => row[globalTimeCol] !== undefined ? row[globalTimeCol] : null);
   const yValues = records.map(row => row[varName]);
@@ -199,10 +201,106 @@ function plotVariable(records, varName) {
   };
 
   let layout = {
-    title: `Plot of ${varName} over ${globalTimeCol}`, // Updated title format
+    title: `Plot of ${varName} over ${globalTimeCol}`,
     xaxis: { title: globalTimeCol },
-    yaxis: { title: varName }
+    yaxis: { title: varName },
+    autosize: true,
+    margin: { l: 50, r: 50, t: 50, b: 50 }
   };
 
-  Plotly.newPlot(plotDiv, [trace], layout);
+  let config = {
+    responsive: true
+  };
+
+  Plotly.newPlot(plotDiv, [trace], layout, config);
+}
+
+// Auto-load preloaded model if present
+function loadPreloadedModel() {
+  // Read preloaded model path from data attribute
+  const preloadedModel = document.body.getAttribute('data-preloaded-model');
+  if (preloadedModel && preloadedModel.trim() !== '') {
+    
+    // Update drop area to show simulation in progress
+    dropArea.innerHTML = '<p>Running pre-loaded model...</p>';
+    dropArea.classList.add('highlight');
+    
+    // Call the preloaded simulation endpoint directly
+    fetch('/simulate_preloaded', {
+      method: 'POST'
+    })
+      .then(res => res.json())
+      .then(data => {
+        console.log("Server response:", data);
+        
+        // Reset drop area
+        dropArea.innerHTML = '<p>Drag & drop your model file here, or click to choose a file</p>';
+        dropArea.classList.remove('highlight');
+        
+        // Handle errors
+        if (data.error) {
+          resultsContent.innerHTML = `<p style="color:red;">Error: ${data.error}</p>`;
+
+          // Show full error logs (call stack)
+          let errorLog = data.error_log ? `<pre>${data.error_log}</pre>` : "No additional error details.";
+          document.getElementById('error-content').innerHTML = errorLog;
+          document.getElementById('error-section').style.display = 'block';
+          document.getElementById('error-section').open = true;
+          return;
+        }
+
+        // Store the results globally
+        globalRecords = data.data || [];
+        globalTimeCol = data.time_col || "Time"; 
+
+        // 1) Show the results section
+        if (globalRecords.length > 0) {
+          document.getElementById('results').style.display = 'block';
+          displayResults(globalRecords);
+        }
+
+        // 2) Show the download section if there's a CSV file
+        if (data?.download_url) {
+          downloadLink.href = data.download_url;
+          downloadSection.style.display = 'block';
+          downloadSection.open = true;
+        }
+
+        // 3) Show the visualization section
+        if (globalRecords.length > 0) {
+          chartSection.style.display = 'block';
+          chartSection.open = true;
+          
+          // Use setTimeout to ensure the DOM has updated before plotting
+          setTimeout(() => {
+            setupChartOptions(globalRecords, globalTimeCol);
+          }, 100);
+        }
+
+        // Hide error logs if the previous run had errors
+        document.getElementById('error-section').style.display = 'none';
+      })
+      .catch(err => {
+        console.error('Error simulating pre-loaded model:', err);
+        
+        // Reset drop area
+        dropArea.innerHTML = '<p>Drag & drop your model file here, or click to choose a file</p>';
+        dropArea.classList.remove('highlight');
+        
+        resultsContent.innerHTML = `<p style="color:red;">Error simulating pre-loaded model: ${err.message}</p>`;
+        
+        let errorLog = err.stack ? `<pre>${err.stack}</pre>` : "Unexpected error occurred.";
+        document.getElementById('error-content').innerHTML = errorLog;
+        document.getElementById('error-section').style.display = 'block';
+        document.getElementById('error-section').open = true;
+      });
+  }
+}
+
+// Run auto-load when the page is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', loadPreloadedModel);
+} else {
+  // DOMContentLoaded already fired
+  loadPreloadedModel();
 }

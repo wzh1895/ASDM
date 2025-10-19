@@ -1,6 +1,7 @@
 # src/asdm/simulator/app.py
 
 import os
+import sys
 import socket
 import tempfile
 import webbrowser
@@ -24,11 +25,12 @@ executor = ProcessPoolExecutor(max_workers=multiprocessing.cpu_count())
 # A simple dictionary mapping a unique ID -> CSV content
 DOWNLOAD_CACHE = {}
 
+# Store pre-loaded model file path (if provided via CLI)
+PRELOADED_MODEL_PATH = None
+
 @app.route('/')
 def index():
-    return render_template("index.html")
-    # or if you’re using templates: render_template("index.html")
-    # Just ensure you have your main HTML either in static or templates.
+    return render_template("index.html", preloaded_model=PRELOADED_MODEL_PATH)
 
 @app.route('/simulate', methods=['POST'])
 def simulate_model():
@@ -116,6 +118,78 @@ def download_csv(download_id):
     response.headers["Content-Type"] = "text/csv"
     return response
 
+@app.route('/simulate_preloaded', methods=['POST'])
+def simulate_preloaded():
+    """
+    Endpoint to simulate a pre-loaded model from CLI.
+    Runs the model from its original location to preserve relative paths (e.g., CSV dependencies).
+    """
+    if not PRELOADED_MODEL_PATH:
+        logging.error("No pre-loaded model available.")
+        return jsonify({'error': 'No pre-loaded model', 'error_log': 'No model was pre-loaded via CLI'}), 404
+    
+    if not os.path.exists(PRELOADED_MODEL_PATH):
+        logging.error(f"Pre-loaded model file not found: {PRELOADED_MODEL_PATH}")
+        return jsonify({'error': 'Pre-loaded model file not found', 'error_log': f'File does not exist: {PRELOADED_MODEL_PATH}'}), 404
+    
+    logging.info(f"Simulating pre-loaded model: {PRELOADED_MODEL_PATH}")
+    
+    # Offload the simulation to the process pool
+    future = executor.submit(run_simulation_from_path, PRELOADED_MODEL_PATH)
+    
+    try:
+        logging.debug("Starting simulation in a separate process...")
+        df_records, csv_data, time_col = future.result()
+        logging.debug("Simulation completed successfully.")
+        error_log = ""  # No errors if successful
+    except Exception as e:
+        logging.exception("Error during simulation:")
+        error_log = traceback.format_exc()  # Capture full traceback
+        return jsonify({'error': str(e), 'error_log': error_log}), 500
+    
+    # Store the CSV data in memory with a unique ID
+    download_id = str(uuid.uuid4())
+    DOWNLOAD_CACHE[download_id] = csv_data
+    
+    return jsonify({
+        "data": df_records,
+        "time_col": time_col,
+        "download_url": f"/download_csv/{download_id}",
+        "error_log": error_log  # Include error logs even if empty
+    })
+
+def run_simulation_from_path(filepath):
+    """
+    Runs simulation from the original file path.
+    Changes working directory to the model's directory to resolve relative paths.
+    """
+    # Get the directory containing the model
+    model_dir = os.path.dirname(os.path.abspath(filepath))
+    original_cwd = os.getcwd()
+    
+    try:
+        # Change to model directory so relative paths work
+        os.chdir(model_dir)
+        logging.info(f"Changed working directory to: {model_dir}")
+        
+        # Run simulation
+        model = sdmodel(from_xmile=filepath)
+        model.simulate()
+        df = model.export_simulation_result(format='df')
+        
+        # Convert DataFrame to JSON-serialisable and CSV forms
+        df_records = df.to_dict(orient='records')
+        csv_data = df.to_csv(index=False)
+        
+        # Grabbing the time column name from sim_specs
+        time_col = model.sim_specs['time_units']
+        
+        return df_records, csv_data, time_col
+    finally:
+        # Always restore original working directory
+        os.chdir(original_cwd)
+        logging.info(f"Restored working directory to: {original_cwd}")
+
 def open_browser(host, port):
     webbrowser.open_new(f"http://{host}:{port}")
 
@@ -124,14 +198,31 @@ def is_port_in_use(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('127.0.0.1', port)) == 0
 
-def run_simulator(host="127.0.0.1", port=8080):
+def run_simulator(host="127.0.0.1", port=8080, model_file=None):
     """
     Core function to run the ASDM simulator web server.
     
     Args:
         host (str): Host/IP address to bind to
         port (int): Port to run the server on
+        model_file (str): Optional path to a model file to load automatically
     """
+    global PRELOADED_MODEL_PATH
+    
+    # Validate and set pre-loaded model path if provided
+    if model_file:
+        abs_model_path = os.path.abspath(model_file)
+        if not os.path.exists(abs_model_path):
+            print(f"Error: Model file not found: {model_file}")
+            sys.exit(1)
+        
+        if not (abs_model_path.endswith('.stmx') or abs_model_path.endswith('.xmile')):
+            print(f"Error: Model file must be .stmx or .xmile format: {model_file}")
+            sys.exit(1)
+        
+        PRELOADED_MODEL_PATH = abs_model_path
+        logging.info(f"Pre-loading model: {abs_model_path}")
+    
     # Check if the server is already running
     if is_port_in_use(port):
         print(f"ASDM simulator is already running on port {port}. Exiting.")
