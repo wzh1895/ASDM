@@ -1,2 +1,2 @@
-__version__ = "0.4.8"
+__version__ = "0.5.0"
 from .asdm import sdmodel, Parser, Solver
