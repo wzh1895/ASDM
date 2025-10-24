@@ -1520,6 +1520,10 @@ class GraphFunc(object):
         self.xpts = xpts
         self.ypts = ypts
         self.eqn = None
+        
+        # Track whether xpts was explicitly provided (for XMILE serialization)
+        self._xpts_explicit = xpts is not None
+        
         self.initialize()
     
     def initialize(self):
@@ -1727,11 +1731,25 @@ class sdmodel(object):
             'time_units' :'Weeks',
         }
 
+        # XMILE preservation (for smart save)
+        self._xmile_soup = None  # Full BeautifulSoup object of original XMILE
+        self._xmile_views = None  # Views/layout section (unparsed)
+        self._xmile_header = None  # Header section (unparsed)
+        self._modified_elements = set()  # Track modified variables
+        self._xmile_name_mapping = {}  # Map friendly_name -> original_xmile_name
+        self._variable_array_format = {}  # Track subscripted variable format: 'parallel' or 'element'
+        self._original_equations = {}  # Store original equations before DataFeeder replacement
+        
+        # Variable documentation and tags
+        self.variable_docs = {}  # Map var_name -> documentation text
+        self.variable_tags = {}  # Map var_name -> list of tags
+        self._modified_docs = set()  # Track variables with modified documentation
+        self._modified_tags = set()  # Track variables with modified tags
 
         # dimensions
         self.var_dimensions = dict() # 'dim1':['ele1', 'ele2']
         self.dimension_elements = dict()
-        self.element_names = list() # dimension names and dimension elements can not be used as variables
+        self.element_names = list() # dimension names can not be used as variable name
         
         # stocks
         self.stocks = dict()
@@ -1855,7 +1873,7 @@ class sdmodel(object):
         if not xmile_path.exists():
             raise Exception("Specified model file does not exist.")
             
-        # Store the XMILE file path for relative path resolution
+        # Store the XMILE file path for relative path resolution and for save
         self.xmile_path = xmile_path
             
         with open(xmile_path, encoding='utf-8') as f:
@@ -1863,6 +1881,21 @@ class sdmodel(object):
             
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(xmile_content, 'xml')
+        
+        # Store full soup for smart preservation
+        self._xmile_soup = soup
+        
+        # Extract and store views/layout (unparsed) for preservation
+        views = soup.find('views')
+        if views:
+            self._xmile_views = views
+            self.logger_model_creation.debug("Stored views/layout section for preservation")
+        
+        # Extract and store header (unparsed) for preservation
+        header = soup.find('header')
+        if header:
+            self._xmile_header = header
+            self.logger_model_creation.debug("Stored header section for preservation")
         
         # Parse different sections of the XMILE file
         self._parse_sim_specs(soup)
@@ -1946,7 +1979,21 @@ class sdmodel(object):
 
     def _create_stock(self, stock):
         """Create a stock variable from XMILE stock element."""
-        name = self.name_handler(stock.get('name'))
+        original_name = stock.get('name')
+        name = self.name_handler(original_name)
+        
+        # Store name mapping for round-trip fidelity
+        self._xmile_name_mapping[name] = original_name
+        
+        # Parse and store documentation
+        doc_elem = stock.find('doc')
+        if doc_elem and doc_elem.string:
+            tags, text = self.parse_doc_content(doc_elem.string)
+            if text:  # Only store if there's actual text
+                self.variable_docs[name] = text
+            if tags:  # Only store if there are tags
+                self.variable_tags[name] = tags
+        
         non_negative = stock.find('non_negative') is not None
         is_conveyor = stock.find('conveyor') is not None
         
@@ -1964,7 +2011,27 @@ class sdmodel(object):
 
     def _create_auxiliary(self, auxiliary):
         """Create an auxiliary variable from XMILE aux element."""
-        name = self.name_handler(auxiliary.get('name'))
+        original_name = auxiliary.get('name')
+        name = self.name_handler(original_name)
+        
+        # Store name mapping for round-trip fidelity
+        self._xmile_name_mapping[name] = original_name
+        
+        # Parse and store documentation
+        doc_elem = auxiliary.find('doc')
+        if doc_elem and doc_elem.string:
+            tags, text = self.parse_doc_content(doc_elem.string)
+            if text:  # Only store if there's actual text
+                self.variable_docs[name] = text
+            if tags:  # Only store if there are tags
+                self.variable_tags[name] = tags
+        
+        # Store original equation text (before potential DataFeeder replacement)
+        if auxiliary.find('eqn'):
+            eqn_text = auxiliary.find('eqn').text
+            if eqn_text:
+                self._original_equations[name] = eqn_text.strip()
+        
         equation = self._create_subscripted_equation(auxiliary)
         
         # Check if it's a delayed auxiliary
@@ -1976,7 +2043,21 @@ class sdmodel(object):
 
     def _create_flow(self, flow):
         """Create a flow variable from XMILE flow element."""
-        name = self.name_handler(flow.get('name'))
+        original_name = flow.get('name')
+        name = self.name_handler(original_name)
+        
+        # Store name mapping for round-trip fidelity
+        self._xmile_name_mapping[name] = original_name
+        
+        # Parse and store documentation
+        doc_elem = flow.find('doc')
+        if doc_elem and doc_elem.string:
+            tags, text = self.parse_doc_content(doc_elem.string)
+            if text:  # Only store if there's actual text
+                self.variable_docs[name] = text
+            if tags:  # Only store if there are tags
+                self.variable_tags[name] = tags
+        
         leak = flow.find('leak') is not None
         non_negative = flow.find('non_negative') is not None
         
@@ -2010,14 +2091,16 @@ class sdmodel(object):
         var_elements = var.find_all('element')
         
         if len(var_elements) != 0:
-            # Different equation for each element
+            # Different equation for each element (element-by-element format)
+            self._variable_array_format[var_name] = 'element'
             for var_element in var_elements:
                 element_combination_text = var_element.get('subscript')
                 elements = self.process_subscript(element_combination_text)
                 equation = self._parse_variable_equation(var, var_element)
                 var_subscripted_eqn[elements] = equation
         else:
-            # All elements share the same equation
+            # All elements share the same equation (parallel format)
+            self._variable_array_format[var_name] = 'parallel'
             equation = self._parse_variable_equation(var, None)
             element_combinations = product(*list(var_dims.values()))
             for ect in element_combinations:
@@ -2038,13 +2121,16 @@ class sdmodel(object):
         
         if var.find('conveyor'):
             equation_text = element_to_check.find('eqn').text if element_to_check.find('eqn') else var.find('eqn').text
-            length = var.find('len').text
+            equation_text = equation_text.strip() if equation_text else equation_text
+            length = var.find('len').text.strip() if var.find('len').text else var.find('len').text
             equation = Conveyor(length, equation_text)
         elif element_to_check.find('gf'):
             equation = self._read_graph_function(element_to_check)
-            equation.eqn = var.find('eqn').text
+            eqn_text = var.find('eqn').text
+            equation.eqn = eqn_text.strip() if eqn_text else eqn_text
         elif element_to_check.find('eqn'):
-            equation = element_to_check.find('eqn').text
+            eqn_text = element_to_check.find('eqn').text
+            equation = eqn_text.strip() if eqn_text else eqn_text
         else:
             var_name = self.name_handler(var.get('name'))
             raise Exception(f'No meaningful definition found for variable {var_name}')
@@ -2541,9 +2627,9 @@ class sdmodel(object):
                         data_dt=data_dt,
                         interpolate=True
                     )
-                    # Use replace_element_equation for proper processing
+                    # Use replace_element_equation for proper processing (don't track as modification)
                     new_equation = {subscript_tuple: data_feeder}
-                    self.replace_element_equation(processed_name, new_equation)
+                    self.replace_element_equation(processed_name, new_equation, track_modification=False)
                     logger_model_creation.debug(f"Set time-varying data for {processed_name}[{subscript_part}] with {len(data_values)} data points")
                 else:
                     available_keys = list(target_dict[processed_name].keys())
@@ -2569,8 +2655,8 @@ class sdmodel(object):
                         data_dt=data_dt,
                         interpolate=True
                     )
-                    # Use replace_element_equation for proper processing
-                    self.replace_element_equation(processed_name, data_feeder)
+                    # Use replace_element_equation for proper processing (don't track as modification)
+                    self.replace_element_equation(processed_name, data_feeder, track_modification=False)
                     variable_found = True
                     logger_model_creation.debug(f"Set time-varying data for {processed_name} with {len(data_values)} data points")
                     break
@@ -2581,6 +2667,57 @@ class sdmodel(object):
     # utilities
     def name_handler(self, name):
         return name.replace(' ', '_').replace('\\n', '_')
+    
+    @staticmethod
+    def parse_doc_content(doc_text):
+        """
+        Parse doc content to extract tags and text.
+        
+        Tags format: ${tag1,tag2,...}\nText content
+        
+        Args:
+            doc_text: Raw doc content from XMILE
+            
+        Returns:
+            tuple: (tags_list, text_content)
+                   tags_list: List of tag strings (empty if no tags)
+                   text_content: Documentation text (empty string if none)
+        """
+        if not doc_text:
+            return ([], '')
+        
+        # Check if starts with ${...}
+        if doc_text.startswith('${') and '}' in doc_text:
+            end_idx = doc_text.index('}')
+            tags_str = doc_text[2:end_idx]  # Extract content between ${ and }
+            tags = [tag.strip() for tag in tags_str.split(',')]
+            
+            # Text is after the } and optional newline
+            remaining = doc_text[end_idx+1:]
+            text = remaining.lstrip('\n')  # Remove leading newline after tags
+            
+            return (tags, text)
+        else:
+            # No tags, entire content is text
+            return ([], doc_text)
+    
+    @staticmethod
+    def format_doc_content(tags, text):
+        """
+        Format doc content from tags and text.
+        
+        Args:
+            tags: List of tag strings (can be empty)
+            text: Documentation text
+            
+        Returns:
+            Formatted doc content string
+        """
+        if not tags:
+            return text
+        
+        tags_str = ','.join(tags)
+        return f"${{{tags_str}}}\n{text}"
     
     @staticmethod
     def process_subscript(subscript):
@@ -2649,8 +2786,19 @@ class sdmodel(object):
             raise Exception(f'Unsupported new equation {new_equation} type {type(new_equation)}')
         return new_equation
 
-    def replace_element_equation(self, name, new_equation):
+    def replace_element_equation(self, name, new_equation, track_modification=True):
         new_equation = self.format_new_equation(new_equation)
+        
+        # Track modification for smart save (unless it's a DataFeeder which will be recreated)
+        if track_modification and not isinstance(new_equation, DataFeeder):
+            # Also check if it's a dict containing DataFeeders
+            if isinstance(new_equation, dict):
+                # Only track if not all values are DataFeeders
+                has_non_datafeeder = any(not isinstance(v, DataFeeder) for v in new_equation.values())
+                if has_non_datafeeder:
+                    self._modified_elements.add(name)
+            else:
+                self._modified_elements.add(name)
         
         if name in self.stock_equations:
             if type(new_equation) is dict:
@@ -2691,6 +2839,76 @@ class sdmodel(object):
         else:
             raise Exception(f'Unable to find {name} in the current model')
 
+        if self.state == 'loaded':
+            pass
+        elif self.state == 'simulated':
+            self.state = 'changed'
+    
+    def get_variable_doc(self, var_name):
+        """
+        Get the documentation text for a variable.
+        
+        Args:
+            var_name: Variable name (Python format with underscores)
+            
+        Returns:
+            Documentation text string, or None if no documentation exists
+        """
+        return self.variable_docs.get(var_name)
+    
+    def set_variable_doc(self, var_name, doc_text):
+        """
+        Set the documentation text for a variable.
+        
+        Args:
+            var_name: Variable name (Python format with underscores)
+            doc_text: Documentation text (plain text or HTML)
+        """
+        # Check if variable exists
+        if (var_name not in self.stock_equations and 
+            var_name not in self.flow_equations and 
+            var_name not in self.aux_equations and
+            var_name not in self.delayed_auxiliary_equations):
+            raise ValueError(f"Variable '{var_name}' not found in model")
+        
+        self.variable_docs[var_name] = doc_text
+        self._modified_docs.add(var_name)
+        
+        if self.state == 'loaded':
+            pass
+        elif self.state == 'simulated':
+            self.state = 'changed'
+    
+    def get_variable_tags(self, var_name):
+        """
+        Get the tags for a variable.
+        
+        Args:
+            var_name: Variable name (Python format with underscores)
+            
+        Returns:
+            List of tag strings, or empty list if no tags exist
+        """
+        return self.variable_tags.get(var_name, [])
+    
+    def set_variable_tags(self, var_name, tags):
+        """
+        Set the tags for a variable.
+        
+        Args:
+            var_name: Variable name (Python format with underscores)
+            tags: List of tag strings (e.g., ['data', 'need references'])
+        """
+        # Check if variable exists
+        if (var_name not in self.stock_equations and 
+            var_name not in self.flow_equations and 
+            var_name not in self.aux_equations and
+            var_name not in self.delayed_auxiliary_equations):
+            raise ValueError(f"Variable '{var_name}' not found in model")
+        
+        self.variable_tags[var_name] = tags if tags else []
+        self._modified_tags.add(var_name)
+        
         if self.state == 'loaded':
             pass
         elif self.state == 'simulated':
@@ -3214,7 +3432,7 @@ class sdmodel(object):
 
     def simulate(self, time=None, dt=None):
         self.logger.debug(f'Simulation started with specs: {self.sim_specs}')
-        self.logger.debug(f'Equations: {self.stock_equations | self.flow_equations | self.aux_equations}')
+        self.logger.debug(f'Equations: {self.stock_equations | self.flow_equations | self.aux_equations | self.delayed_auxiliary_equations}')
         
         if time is None:
             time = self.sim_specs['simulation_time']
@@ -3401,9 +3619,9 @@ class sdmodel(object):
     
     def get_element_simulation_result(self, name, subscript=None):
         if not subscript:
-            if type((self.stock_equations | self.flow_equations | self.aux_equations)[name]) is dict:
+            if type((self.stock_equations | self.flow_equations | self.aux_equations | self.delayed_auxiliary_equations)[name]) is dict:
                 result = dict()
-                for sub in (self.stock_equations | self.flow_equations | self.aux_equations)[name].keys():
+                for sub in (self.stock_equations | self.flow_equations | self.aux_equations | self.delayed_auxiliary_equations)[name].keys():
                     result[sub] = list()
                 for time, slice in self.time_slice.items():
                     for sub, value in slice[name].items():
@@ -3474,7 +3692,7 @@ class sdmodel(object):
     
     def display_results(self, variables=None):
         if type(variables) is list and len(variables) == 0:
-            variables = list((self.stock_equations | self.flow_equations | self.aux_equations).keys())
+            variables = list((self.stock_equations | self.flow_equations | self.aux_equations | self.delayed_auxiliary_equations).keys())
         if type(variables) is str:
             variables = [variables]
         import matplotlib.pyplot as plt
@@ -3970,3 +4188,535 @@ class sdmodel(object):
                 )
             plt.show()
     
+    def save_xmile(self, filepath=None, _force_update_all=False):
+        """
+        Save the model to XMILE format.
+        
+        This method updates an existing XMILE file with modifications made to the model.
+        It preserves the original structure, including views/layout, and only updates
+        modified variables. The model must have been loaded from an XMILE file.
+        
+        Args:
+            filepath: Path to save the file. If None, saves to original file with '_asdm' suffix.
+            _force_update_all: Internal testing parameter. If True, forces all variables to be
+                              updated (not just modified ones). This tests all equation serialization
+                              logic. Not intended for production use.
+        
+        Returns:
+            Path to the saved file
+            
+        Raises:
+            RuntimeError: If model was not loaded from an XMILE file
+        """
+        from pathlib import Path
+        
+        # Check if model was loaded from XMILE
+        if self._xmile_soup is None:
+            raise RuntimeError(
+                "Cannot save to XMILE: model was not loaded from an XMILE file. "
+                "save_xmile() can only be used to update existing XMILE files, "
+                "preserving their views and layout information."
+            )
+        
+        # Testing mode: mark all variables as modified to test serialization
+        if _force_update_all:
+            self.logger_model_creation.debug("Testing mode: forcing update of all variables")
+            self._modified_elements = set(
+                list(self.stock_equations.keys()) +
+                list(self.flow_equations.keys()) +
+                list(self.aux_equations.keys()) +
+                list(self.delayed_auxiliary_equations.keys())
+            )
+        
+        # Determine output filepath
+        if filepath is None:
+            if not hasattr(self, 'xmile_path') or self.xmile_path is None:
+                # This shouldn't happen if _xmile_soup exists - indicates inconsistent state
+                raise RuntimeError(
+                    "Inconsistent model state: _xmile_soup exists but xmile_path is not set. "
+                    "Please provide an explicit filepath for save_xmile()."
+                )
+            # Original file exists, add _asdm suffix before extension
+            original_path = Path(self.xmile_path)
+            filepath = original_path.parent / f"{original_path.stem}_asdm{original_path.suffix}"
+        else:
+            filepath = Path(filepath)
+        
+        self.logger_model_creation.info(f"Saving model to {filepath}")
+        
+        # Update existing XMILE structure
+        self.logger_model_creation.debug("Updating existing XMILE structure")
+        output_soup = self._update_xmile_structure()
+        
+        # Write to file
+        xml_string = str(output_soup)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(xml_string)
+        
+        self.logger_model_creation.info(f"Model saved successfully to {filepath}")
+        return filepath
+    
+    def _update_xmile_structure(self):
+        """Update existing XMILE structure with current model state."""
+        from copy import deepcopy
+        
+        # Work with a copy to avoid modifying the original
+        output_soup = deepcopy(self._xmile_soup)
+        
+        # Update sim_specs
+        self._update_sim_specs_in_soup(output_soup)
+        
+        # Update variables (only modified ones for efficiency)
+        self._update_variables_in_soup(output_soup)
+        
+        # Views/layout are already preserved in the soup
+        
+        return output_soup
+    
+    def _update_sim_specs_in_soup(self, soup):
+        """Update simulation specifications in soup."""
+        sim_specs = soup.find('sim_specs')
+        if sim_specs is None:
+            # Create sim_specs if it doesn't exist
+            xmile = soup.find('xmile')
+            sim_specs = soup.new_tag('sim_specs')
+            xmile.insert(0, sim_specs)
+        
+        # Update or create time_units attribute
+        sim_specs['time_units'] = self.sim_specs.get('time_units', 'Time')
+        
+        # Update start time
+        start = sim_specs.find('start')
+        if start is None:
+            start = soup.new_tag('start')
+            sim_specs.append(start)
+        start.string = str(self.sim_specs['initial_time'])
+        
+        # Update stop time
+        stop = sim_specs.find('stop')
+        if stop is None:
+            stop = soup.new_tag('stop')
+            sim_specs.append(stop)
+        stop_time = self.sim_specs['initial_time'] + self.sim_specs['simulation_time']
+        stop.string = str(stop_time)
+        
+        # Update dt (preserve reciprocal format if it was in original)
+        dt_elem = sim_specs.find('dt')
+        if dt_elem is None:
+            dt_elem = soup.new_tag('dt')
+            sim_specs.append(dt_elem)
+        
+        # Check if original had reciprocal format
+        if dt_elem.get('reciprocal') == 'true':
+            # Preserve reciprocal format
+            dt_elem.string = str(int(1.0 / self.sim_specs['dt']) if self.sim_specs['dt'] != 0 else 1)
+        else:
+            dt_elem.string = str(self.sim_specs['dt'])
+        
+        self.logger_model_creation.debug("Updated sim_specs in XMILE")
+    
+    def _update_variables_in_soup(self, soup):
+        """Update variables in soup (for updating existing XMILE)."""
+        variables_section = soup.find('variables')
+        if variables_section is None:
+            self.logger_model_creation.warning("No variables section found in original XMILE")
+            return
+        
+        # Update only modified variables
+        for var_name in self._modified_elements:
+            self.logger_model_creation.debug(f"Updating modified variable: {var_name}")
+            
+            # Get the original XMILE name from mapping
+            original_name = self._xmile_name_mapping.get(var_name, var_name.replace('_', ' '))
+            
+            # Find the variable in soup
+            var_elem = None
+            for tag_name in ['stock', 'flow', 'aux']:
+                var_elem = variables_section.find(tag_name, attrs={'name': original_name})
+                if var_elem:
+                    break
+            
+            if var_elem is None:
+                self.logger_model_creation.warning(f"Modified variable {var_name} (original: '{original_name}') not found in original XMILE, skipping")
+                continue
+            
+            # Update the equation
+            self._update_variable_equation_in_elem(soup, var_elem, var_name)
+        
+        # Update modified docs
+        for var_name in self._modified_docs:
+            self.logger_model_creation.debug(f"Updating documentation for: {var_name}")
+            
+            # Get the original XMILE name from mapping
+            original_name = self._xmile_name_mapping.get(var_name, var_name.replace('_', ' '))
+            
+            # Find the variable in soup
+            var_elem = None
+            for tag_name in ['stock', 'flow', 'aux']:
+                var_elem = variables_section.find(tag_name, attrs={'name': original_name})
+                if var_elem:
+                    break
+            
+            if var_elem is None:
+                self.logger_model_creation.warning(f"Variable {var_name} not found for doc update, skipping")
+                continue
+            
+            # Update the doc
+            self._update_variable_doc_in_elem(soup, var_elem, var_name)
+        
+        # Update modified tags (tags need to be combined with docs)
+        for var_name in self._modified_tags:
+            if var_name not in self._modified_docs:  # Only if not already updated via docs
+                self.logger_model_creation.debug(f"Updating tags for: {var_name}")
+                
+                # Get the original XMILE name from mapping
+                original_name = self._xmile_name_mapping.get(var_name, var_name.replace('_', ' '))
+                
+                # Find the variable in soup
+                var_elem = None
+                for tag_name in ['stock', 'flow', 'aux']:
+                    var_elem = variables_section.find(tag_name, attrs={'name': original_name})
+                    if var_elem:
+                        break
+                
+                if var_elem is None:
+                    self.logger_model_creation.warning(f"Variable {var_name} not found for tag update, skipping")
+                    continue
+                
+                # Update the doc with tags
+                self._update_variable_doc_in_elem(soup, var_elem, var_name)
+        
+        self.logger_model_creation.debug(f"Updated {len(self._modified_elements)} equations, {len(self._modified_docs)} docs, {len(self._modified_tags)} tags")
+    
+    def _add_equation_to_elem(self, soup, var_elem, var_name, equation):
+        """Add equation to a variable element.
+        
+        Note: This function does NOT add <dimensions> tags - those should already
+        exist in the original XMILE structure and are preserved during updates.
+        
+        Equation elements are inserted before structural tags (inflow, outflow,
+        non_negative, units) to preserve XMILE element ordering.
+        """
+        # Find insertion point - before structural/UI tags
+        # Note: UI tags (format, scale, summing) should be checked first so equations go before them
+        # summing is 'isee:summing' in Stella-specific namespace
+        insert_before = None
+        for tag_name in ['format', 'scale', 'summing', 'inflow', 'outflow', 'non_negative', 'units']:
+            elem = var_elem.find(tag_name)
+            if elem:
+                insert_before = elem
+                break
+        
+        def insert_element(new_elem):
+            """Helper to insert element at correct position."""
+            if insert_before:
+                insert_before.insert_before(new_elem)
+            else:
+                var_elem.append(new_elem)
+        
+        if isinstance(equation, dict):
+            # Subscripted variable - check format (parallel vs element-by-element)
+            # (dimensions should already exist in var_elem from original XMILE)
+            array_format = self._variable_array_format.get(var_name, 'element')
+            
+            if array_format == 'parallel':
+                # Parallel format: single <eqn> applies to all elements
+                # All values in the dict should be the same, so just take the first
+                first_eqn = next(iter(equation.values()))
+                
+                # If it's a DataFeeder, use the original equation (before DataFeeder replaced it)
+                if isinstance(first_eqn, DataFeeder):
+                    if var_name in self._original_equations:
+                        self.logger_model_creation.debug(f"Using original equation for {var_name} (currently DataFeeder)")
+                        eqn_elem = soup.new_tag('eqn')
+                        eqn_elem.string = self._original_equations[var_name]
+                        insert_element(eqn_elem)
+                    else:
+                        self.logger_model_creation.debug(f"Skipping DataFeeder for {var_name} - no original equation stored")
+                else:
+                    eqn_elem = soup.new_tag('eqn')
+                    eqn_elem.string = str(first_eqn)
+                    insert_element(eqn_elem)
+            else:
+                # Element-by-element format: separate <element> for each subscript
+                shared_graph_func_eqn = None  # For subscripted graph functions
+                
+                for subscript, sub_eqn in equation.items():
+                    # Skip DataFeeder objects in subscripted variables
+                    if isinstance(sub_eqn, DataFeeder):
+                        self.logger_model_creation.debug(f"Skipping DataFeeder for {var_name}[{subscript}] - will be recreated from data import")
+                        continue
+                        
+                    element_elem = soup.new_tag('element')
+                    if isinstance(subscript, tuple):
+                        element_elem['subscript'] = ', '.join(subscript)
+                    else:
+                        element_elem['subscript'] = str(subscript)
+                    
+                    # Check if this is a graph function
+                    if isinstance(sub_eqn, GraphFunc):
+                        # For subscripted graph functions, add <gf> inside <element>
+                        self._add_graph_function_content_to_elem(soup, element_elem, sub_eqn)
+                        
+                        # Store the shared eqn (all graph functions share the same .eqn attribute)
+                        if shared_graph_func_eqn is None and sub_eqn.eqn is not None:
+                            shared_graph_func_eqn = str(sub_eqn.eqn)
+                    else:
+                        # Regular equation
+                        eqn_elem = soup.new_tag('eqn')
+                        eqn_elem.string = str(sub_eqn)
+                        element_elem.append(eqn_elem)
+                    
+                    insert_element(element_elem)
+                
+                # Add shared eqn at parent level for subscripted graph functions
+                # This handles both GraphFuncs and variables where GraphFuncs were replaced by DataFeeders
+                if shared_graph_func_eqn is not None:
+                    eqn_elem = soup.new_tag('eqn')
+                    eqn_elem.string = shared_graph_func_eqn
+                    insert_element(eqn_elem)
+                elif var_name in self._original_equations and all(isinstance(v, DataFeeder) for v in equation.values()):
+                    # All elements are DataFeeders, but there was an original parent-level eqn
+                    # This can happen when graph functions are overridden by data imports
+                    eqn_elem = soup.new_tag('eqn')
+                    eqn_elem.string = self._original_equations[var_name]
+                    insert_element(eqn_elem)
+        elif isinstance(equation, DataFeeder):
+            # DataFeeder objects should not be saved as equations
+            # They will be recreated from data import specifications
+            self.logger_model_creation.debug(f"Skipping DataFeeder equation for {var_name} - will be recreated from data import")
+            # Don't add any equation element
+            pass
+        elif isinstance(equation, GraphFunc):
+            # Graph function
+            self._add_graph_function_to_elem(soup, var_elem, equation, insert_element)
+        elif isinstance(equation, Conveyor):
+            # Conveyor - XMILE format:
+            # 1. <eqn> - initial value
+            # 2. <inflow> and <outflow> (structural elements, already in var_elem)
+            # 3. <conveyor> containing <len>
+            # 4. <units> (if present)
+            
+            # Add initial value equation first
+            eqn_elem = soup.new_tag('eqn')
+            eqn_elem.string = str(equation.equation)
+            insert_element(eqn_elem)
+            
+            # Add conveyor element with len inside it, AFTER inflows/outflows
+            # Insert before units (if present), otherwise append at end
+            conveyor_elem = soup.new_tag('conveyor')
+            len_elem = soup.new_tag('len')
+            len_elem.string = str(equation.length_time_units)
+            conveyor_elem.append(len_elem)
+            
+            # Find units tag to insert before it, or append at end
+            units_elem = var_elem.find('units')
+            if units_elem:
+                units_elem.insert_before(conveyor_elem)
+            else:
+                var_elem.append(conveyor_elem)
+        else:
+            # Simple equation (string or number)
+            eqn_elem = soup.new_tag('eqn')
+            eqn_elem.string = str(equation)
+            insert_element(eqn_elem)
+    
+    def _add_graph_function_content_to_elem(self, soup, parent_elem, graph_func):
+        """Add graph function <gf> element to a parent element (for subscripted graph functions).
+        
+        This method adds ONLY the <gf> element without an <eqn>, used for subscripted
+        graph functions where each element has its own <gf>.
+        """
+        gf_elem = soup.new_tag('gf')
+        
+        # Add type attribute if present
+        if graph_func.out_of_bound_type is not None:
+            gf_elem['type'] = graph_func.out_of_bound_type
+        
+        # XMILE element order for graph functions:
+        # 1. xscale (if continuous) or nothing
+        # 2. yscale
+        # 3. xpts (if discrete)
+        # 4. ypts
+        
+        # Add xscale (for continuous functions)
+        if graph_func.xscale is not None:
+            xscale_elem = soup.new_tag('xscale', attrs={
+                'min': str(graph_func.xscale[0]),
+                'max': str(graph_func.xscale[1])
+            })
+            gf_elem.append(xscale_elem)
+        
+        # Add yscale
+        yscale_elem = soup.new_tag('yscale', attrs={
+            'min': str(graph_func.yscale[0]),
+            'max': str(graph_func.yscale[1])
+        })
+        gf_elem.append(yscale_elem)
+        
+        # Add xpts (only if explicitly provided, not generated from xscale)
+        if hasattr(graph_func, '_xpts_explicit') and graph_func._xpts_explicit:
+            xpts_elem = soup.new_tag('xpts')
+            xpts_elem.string = ','.join(str(x) for x in graph_func.xpts)
+            gf_elem.append(xpts_elem)
+        
+        # Add ypts
+        ypts_elem = soup.new_tag('ypts')
+        ypts_elem.string = ','.join(str(y) for y in graph_func.ypts)
+        gf_elem.append(ypts_elem)
+        
+        parent_elem.append(gf_elem)
+    
+    def _add_graph_function_to_elem(self, soup, var_elem, graph_func, insert_element):
+        """Add graph function to a variable element.
+        
+        XMILE format for graph functions:
+        1. <eqn> - the expression that uses the graph function
+        2. <gf> - the graph function definition
+        """
+        # Add the eqn that uses the graph function FIRST
+        if graph_func.eqn is not None:
+            eqn_elem = soup.new_tag('eqn')
+            eqn_elem.string = str(graph_func.eqn)
+            insert_element(eqn_elem)
+        
+        # Then add the gf element
+        gf_elem = soup.new_tag('gf')
+        
+        # Add type
+        if graph_func.out_of_bound_type is not None:
+            gf_elem['type'] = graph_func.out_of_bound_type
+        
+        # XMILE element order for graph functions:
+        # 1. xscale (if continuous) or nothing
+        # 2. yscale
+        # 3. xpts (if discrete)
+        # 4. ypts
+        
+        # Add xscale (for continuous functions)
+        if graph_func.xscale is not None:
+            xscale_elem = soup.new_tag('xscale', attrs={
+                'min': str(graph_func.xscale[0]),
+                'max': str(graph_func.xscale[1])
+            })
+            gf_elem.append(xscale_elem)
+        
+        # Add yscale
+        yscale_elem = soup.new_tag('yscale', attrs={
+            'min': str(graph_func.yscale[0]),
+            'max': str(graph_func.yscale[1])
+        })
+        gf_elem.append(yscale_elem)
+        
+        # Add xpts (only if explicitly provided, not generated from xscale)
+        if hasattr(graph_func, '_xpts_explicit') and graph_func._xpts_explicit:
+            xpts_elem = soup.new_tag('xpts')
+            xpts_elem.string = ','.join(str(x) for x in graph_func.xpts)
+            gf_elem.append(xpts_elem)
+        
+        # Add ypts
+        ypts_elem = soup.new_tag('ypts')
+        ypts_elem.string = ','.join(str(y) for y in graph_func.ypts)
+        gf_elem.append(ypts_elem)
+        
+        # Insert gf element at correct position:
+        # <gf> should come after <scale> (if present) but before other structural tags
+        gf_insert_before = None
+        for tag_name in ['inflow', 'outflow', 'non_negative', 'units']:
+            elem = var_elem.find(tag_name)
+            if elem:
+                gf_insert_before = elem
+                break
+        
+        if gf_insert_before:
+            gf_insert_before.insert_before(gf_elem)
+        else:
+            var_elem.append(gf_elem)
+    
+    def _update_variable_equation_in_elem(self, soup, var_elem, var_name):
+        """Update equation in an existing variable element."""
+        # Get current equation from model
+        equation = None
+        if var_name in self.stock_equations:
+            equation = self.stock_equations[var_name]
+        elif var_name in self.flow_equations:
+            equation = self.flow_equations[var_name]
+        elif var_name in self.aux_equations:
+            equation = self.aux_equations[var_name]
+        
+        if equation is None:
+            return
+        
+        # Don't update if it's a DataFeeder (will be recreated from data import)
+        if isinstance(equation, DataFeeder):
+            self.logger_model_creation.debug(f"Skipping update for {var_name} (DataFeeder)")
+            return
+        
+        # Special handling for subscripted variables with ALL DataFeeders
+        # These were likely graph functions overridden by data imports - restore original structure
+        if isinstance(equation, dict) and all(isinstance(v, DataFeeder) for v in equation.values()):
+            self.logger_model_creation.debug(f"Restoring original element structure for DataFeeder-only variable: {var_name}")
+            
+            # Remove current equation elements
+            for tag_name in ['eqn', 'element', 'gf', 'conveyor', 'len']:
+                for elem in var_elem.find_all(tag_name):
+                    elem.decompose()
+            
+            # Find original variable in _xmile_soup to restore element structure
+            original_name = self._xmile_name_mapping.get(var_name, var_name)
+            orig_var = None
+            for var_type in ['stock', 'flow', 'aux']:
+                orig_var = self._xmile_soup.find(var_type, attrs={'name': original_name})
+                if orig_var:
+                    break
+            
+            if orig_var:
+                # Copy original equation elements from source XMILE
+                for elem in orig_var.find_all(['element', 'eqn', 'gf'], recursive=False):
+                    # Clone the element and add to current var_elem
+                    from copy import deepcopy
+                    cloned = deepcopy(elem)
+                    
+                    # Insert at correct position
+                    insert_before = None
+                    for tag_name in ['format', 'scale', 'inflow', 'outflow', 'non_negative', 'units']:
+                        before_elem = var_elem.find(tag_name)
+                        if before_elem:
+                            insert_before = before_elem
+                            break
+                    
+                    if insert_before:
+                        insert_before.insert_before(cloned)
+                    else:
+                        var_elem.append(cloned)
+            return
+        
+        # Remove all equation-related elements (but preserve dimensions, doc, units, format, summing, etc.)
+        # This ensures a clean slate for the new equation
+        # Note: We preserve 'summing' (isee:summing) which is a Stella UI flag
+        for tag_name in ['eqn', 'element', 'gf', 'conveyor', 'len']:
+            for elem in var_elem.find_all(tag_name):
+                elem.decompose()
+        
+        # Add new equation
+        self._add_equation_to_elem(soup, var_elem, var_name, equation)
+    
+    def _update_variable_doc_in_elem(self, soup, var_elem, var_name):
+        """Update documentation in an existing variable element."""
+        # Get current doc and tags from model
+        doc_text = self.variable_docs.get(var_name, '')
+        tags = self.variable_tags.get(var_name, [])
+        
+        # Remove old doc element if exists
+        old_doc = var_elem.find('doc')
+        if old_doc:
+            old_doc.decompose()
+        
+        # Create new doc element if there's content
+        if doc_text or tags:
+            doc_elem = soup.new_tag('doc')
+            # Format with tags if they exist
+            full_doc_content = self.format_doc_content(tags, doc_text)
+            doc_elem.string = full_doc_content
+            var_elem.append(doc_elem)
