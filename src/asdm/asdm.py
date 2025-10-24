@@ -3923,9 +3923,50 @@ class sdmodel(object):
                 linewidths=5
                 )
             plt.show()
-            return (dg_init, dg_iter)
+            return (dg_init, ordered_vars_init, dg_iter, ordered_vars_iter)
     
     def generate_ordered_vars(self):
         self.dg_init, self.ordered_vars_init, self.dg_iter, self.ordered_vars_iter = self.generate_full_dependent_graph()
-        self.ordered_vars_init = list(nx.topological_sort(self.dg_init))
-        self.ordered_vars_iter = list(nx.topological_sort(self.dg_iter))
+    
+    def generate_cld(self, vars=None, show=False, loop=True):
+        # Make sure the model equations are parsed
+        if self.state == 'loaded':
+            self.parse()
+
+        if vars is None:
+            vars = list(self.flow_equations.keys())
+        elif type(vars) is str:
+            vars = [vars]
+        
+        dg = nx.DiGraph()
+
+        for var in vars:
+            dg_var = self.create_variable_dependency_graph(var, mode='iter')
+            dg = nx.compose(dg, dg_var)
+
+        # create flow-to-stock edges if loop=True
+        if loop:
+            for flow in self.flow_stocks.keys():
+                if flow in vars:
+                    for stock in self.flow_stocks[flow].values():
+                        dg.add_edge(flow, stock)
+        
+        if not show:
+            return dg
+        else:
+            import matplotlib.pyplot as plt
+            from networkx.drawing.nx_agraph import graphviz_layout
+            pos = graphviz_layout(dg, prog='dot')
+            # pos = nx.spring_layout(dg)
+            nx.draw(
+                dg, 
+                pos, 
+                with_labels=True, 
+                node_size=300, 
+                node_color="skyblue", 
+                node_shape="s", 
+                alpha=1, 
+                linewidths=5
+                )
+            plt.show()
+    
