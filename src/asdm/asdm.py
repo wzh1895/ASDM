@@ -1145,89 +1145,161 @@ class Solver(object):
                 if tuple([var_name, parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
                     value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])]
                 else:
-                    value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = value
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                    value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])]
             elif func_name == 'DELAY':
-                # expr value
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(expr_value)
-                else:
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = [expr_value]
-
-                # init value
-                if len(node_operands) == 2: # there's no initial value specified -> use the delayed expr's initial value
-                    init_value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0]
-                elif len(node_operands) == 3: # there's an initial value specified
+                if mode == 'init' and len(node_operands) == 3:
+                    # this is 'init' mode with 3 operands, meaning an initial value is specified; in this case, just calculate the initial value, not the other 2 operands.
                     init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                else:
-                    raise Exception(f"Invalid initial value for DELAY in operands {node_operands}")
-
-                # delay time
-                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
-                if delay_time > (self.sim_specs['current_time'] - self.sim_specs['initial_time']): # (- initial_time) because simulation might not start from time 0
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
                     value = init_value
-                else:
-                    delay_steps = delay_time / self.sim_specs['dt']
-                    value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][-int(delay_steps+1)]
-            elif func_name == 'DELAY1':
-                # args values
-                order = 1
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])] = [value]
+                else: # 'iter' mode or 'init' mode with 2 oprands
+                    # delay time is (1) the constant or (2) initial value of the target variable whose value is used for delay time
+                    if tuple([var_name, subscript, node_id, func_name, 'delay_time']) not in self.time_expr_register.keys():
+                        delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
+                    else:
+                        delay_time = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])]
 
-                if len(node_operands) == 3:
-                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                elif len(node_operands) == 2:
-                    init_value = expr_value
-                else:
-                    raise Exception('Invalid number of args for DELAY1.')
+                    # initial value
+                    if tuple([var_name, subscript, node_id, func_name, 'init_value']) not in self.time_expr_register.keys():
+                        if len(node_operands) == 3:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
+                        elif len(node_operands) == 2:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                        else:
+                            raise Exception('Invalid number of args for DELAY.')
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                    else:
+                        init_value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])]
+                    
+                    # calculate the current value of operand[0] and push it to the register
+                    expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                    if tuple([var_name, subscript, node_id, func_name, 'value']) in self.time_expr_register.keys():
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])].append(expr_value)
+                    else:
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])] = [expr_value]
+                    
+                    # determin which value to return
+                    if (self.sim_specs['current_time'] - self.sim_specs['initial_time']) < delay_time: # (use current - initial_time) because simulation might not start from time 0 (e.g., year 2011)
+                        value = init_value
+                    else:
+                        # take the past value from the stack
+                        delay_steps = delay_time / self.sim_specs['dt']
+                        value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])][-int(delay_steps+1)]
                 
-                # register
-                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = list()
+            elif func_name == 'DELAY1':
+                order = 1
+                if mode == 'init' and len(node_operands) == 3:
+                    # this is 'init' mode with 3 operands, meaning an initial value is specified; in this case, just calculate the initial value
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                    # initialize the stocks with init_value
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
+                    # delay_time needed for initialization
+                    delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
                     for i in range(order):
-                        self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(delay_time/order*init_value)
-                # outflows
-                outflows = list()
-                for i in range(order):
-                    outflows.append(self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i]/(delay_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
-                # inflows
-                self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
-                for i in range(1, order):
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
-
-                value = outflows[-1] / self.sim_specs['dt']
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
+                    value = init_value
+                else: # 'iter' mode or 'init' mode with 2 operands
+                    # delay_time is (1) the constant or (2) initial value of the target variable whose value is used for delay time
+                    if tuple([var_name, subscript, node_id, func_name, 'delay_time']) not in self.time_expr_register.keys():
+                        delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
+                    else:
+                        delay_time = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])]
+                    
+                    # initial value
+                    if tuple([var_name, subscript, node_id, func_name, 'init_value']) not in self.time_expr_register.keys():
+                        if len(node_operands) == 3:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
+                        elif len(node_operands) == 2:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                        else:
+                            raise Exception('Invalid number of args for DELAY1.')
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                    else:
+                        init_value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])]
+                    
+                    # initialize stocks if not already done
+                    if tuple([var_name, subscript, node_id, func_name, 'stocks']) not in self.time_expr_register.keys():
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
+                        for i in range(order):
+                            self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
+                    
+                    # calculate the current value of operand[0]
+                    expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                    
+                    # compute outflows from each stock
+                    outflows = list()
+                    for i in range(order):
+                        outflows.append(self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i]/(delay_time/order) * self.sim_specs['dt'])
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] -= outflows[i]
+                    
+                    # compute inflows to each stock
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][0] += expr_value * self.sim_specs['dt']
+                    for i in range(1, order):
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] += outflows[i-1]
+                    
+                    value = outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'DELAY3':
-                # arg values
                 order = 3
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
-                if len(node_operands) == 3:
+                if mode == 'init' and len(node_operands) == 3:
+                    # this is 'init' mode with 3 operands, meaning an initial value is specified; in this case, just calculate the initial value
                     init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                elif len(node_operands) == 2:
-                    init_value = expr_value
-                else:
-                    raise Exception('Invalid number of args for SMTH3.')
-                
-                # register
-                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = list()
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                    # initialize the stocks with init_value
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
+                    # delay_time needed for initialization
+                    delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
                     for i in range(order):
-                        self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(delay_time/order*init_value)
-                # outflows
-                outflows = list()
-                for i in range(order):
-                    outflows.append(self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i]/(delay_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
-                # inflows
-                self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
-                for i in range(1, order):
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
-
-                value = outflows[-1] / self.sim_specs['dt']
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
+                    value = init_value
+                else: # 'iter' mode or 'init' mode with 2 operands
+                    # delay_time is (1) the constant or (2) initial value of the target variable whose value is used for delay time
+                    if tuple([var_name, subscript, node_id, func_name, 'delay_time']) not in self.time_expr_register.keys():
+                        delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
+                    else:
+                        delay_time = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])]
+                    
+                    # initial value
+                    if tuple([var_name, subscript, node_id, func_name, 'init_value']) not in self.time_expr_register.keys():
+                        if len(node_operands) == 3:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
+                        elif len(node_operands) == 2:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                        else:
+                            raise Exception('Invalid number of args for DELAY3.')
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                    else:
+                        init_value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])]
+                    
+                    # initialize stocks if not already done
+                    if tuple([var_name, subscript, node_id, func_name, 'stocks']) not in self.time_expr_register.keys():
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
+                        for i in range(order):
+                            self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
+                    
+                    # calculate the current value of operand[0]
+                    expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                    
+                    # compute outflows from each stock
+                    outflows = list()
+                    for i in range(order):
+                        outflows.append(self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i]/(delay_time/order) * self.sim_specs['dt'])
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] -= outflows[i]
+                    
+                    # compute inflows to each stock
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][0] += expr_value * self.sim_specs['dt']
+                    for i in range(1, order):
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] += outflows[i-1]
+                    
+                    value = outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'HISTORY':
                 # expr value
@@ -1448,6 +1520,10 @@ class GraphFunc(object):
         self.xpts = xpts
         self.ypts = ypts
         self.eqn = None
+        
+        # Track whether xpts was explicitly provided (for XMILE serialization)
+        self._xpts_explicit = xpts is not None
+        
         self.initialize()
     
     def initialize(self):
@@ -1655,11 +1731,25 @@ class sdmodel(object):
             'time_units' :'Weeks',
         }
 
+        # XMILE preservation (for smart save)
+        self._xmile_soup = None  # Full BeautifulSoup object of original XMILE
+        self._xmile_views = None  # Views/layout section (unparsed)
+        self._xmile_header = None  # Header section (unparsed)
+        self._modified_elements = set()  # Track modified variables
+        self._xmile_name_mapping = {}  # Map friendly_name -> original_xmile_name
+        self._variable_array_format = {}  # Track subscripted variable format: 'parallel' or 'element'
+        self._original_equations = {}  # Store original equations before DataFeeder replacement
+        
+        # Variable documentation and tags
+        self.variable_docs = {}  # Map var_name -> documentation text
+        self.variable_tags = {}  # Map var_name -> list of tags
+        self._modified_docs = set()  # Track variables with modified documentation
+        self._modified_tags = set()  # Track variables with modified tags
 
         # dimensions
         self.var_dimensions = dict() # 'dim1':['ele1', 'ele2']
         self.dimension_elements = dict()
-        self.element_names = list() # dimension names and dimension elements can not be used as variables
+        self.element_names = list() # dimension names can not be used as variable name
         
         # stocks
         self.stocks = dict()
@@ -1783,7 +1873,7 @@ class sdmodel(object):
         if not xmile_path.exists():
             raise Exception("Specified model file does not exist.")
             
-        # Store the XMILE file path for relative path resolution
+        # Store the XMILE file path for relative path resolution and for save
         self.xmile_path = xmile_path
             
         with open(xmile_path, encoding='utf-8') as f:
@@ -1791,6 +1881,21 @@ class sdmodel(object):
             
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(xmile_content, 'xml')
+        
+        # Store full soup for smart preservation
+        self._xmile_soup = soup
+        
+        # Extract and store views/layout (unparsed) for preservation
+        views = soup.find('views')
+        if views:
+            self._xmile_views = views
+            self.logger_model_creation.debug("Stored views/layout section for preservation")
+        
+        # Extract and store header (unparsed) for preservation
+        header = soup.find('header')
+        if header:
+            self._xmile_header = header
+            self.logger_model_creation.debug("Stored header section for preservation")
         
         # Parse different sections of the XMILE file
         self._parse_sim_specs(soup)
@@ -1874,7 +1979,21 @@ class sdmodel(object):
 
     def _create_stock(self, stock):
         """Create a stock variable from XMILE stock element."""
-        name = self.name_handler(stock.get('name'))
+        original_name = stock.get('name')
+        name = self.name_handler(original_name)
+        
+        # Store name mapping for round-trip fidelity
+        self._xmile_name_mapping[name] = original_name
+        
+        # Parse and store documentation
+        doc_elem = stock.find('doc')
+        if doc_elem and doc_elem.string:
+            tags, text = self.parse_doc_content(doc_elem.string)
+            if text:  # Only store if there's actual text
+                self.variable_docs[name] = text
+            if tags:  # Only store if there are tags
+                self.variable_tags[name] = tags
+        
         non_negative = stock.find('non_negative') is not None
         is_conveyor = stock.find('conveyor') is not None
         
@@ -1892,7 +2011,27 @@ class sdmodel(object):
 
     def _create_auxiliary(self, auxiliary):
         """Create an auxiliary variable from XMILE aux element."""
-        name = self.name_handler(auxiliary.get('name'))
+        original_name = auxiliary.get('name')
+        name = self.name_handler(original_name)
+        
+        # Store name mapping for round-trip fidelity
+        self._xmile_name_mapping[name] = original_name
+        
+        # Parse and store documentation
+        doc_elem = auxiliary.find('doc')
+        if doc_elem and doc_elem.string:
+            tags, text = self.parse_doc_content(doc_elem.string)
+            if text:  # Only store if there's actual text
+                self.variable_docs[name] = text
+            if tags:  # Only store if there are tags
+                self.variable_tags[name] = tags
+        
+        # Store original equation text (before potential DataFeeder replacement)
+        if auxiliary.find('eqn'):
+            eqn_text = auxiliary.find('eqn').text
+            if eqn_text:
+                self._original_equations[name] = eqn_text.strip()
+        
         equation = self._create_subscripted_equation(auxiliary)
         
         # Check if it's a delayed auxiliary
@@ -1904,7 +2043,21 @@ class sdmodel(object):
 
     def _create_flow(self, flow):
         """Create a flow variable from XMILE flow element."""
-        name = self.name_handler(flow.get('name'))
+        original_name = flow.get('name')
+        name = self.name_handler(original_name)
+        
+        # Store name mapping for round-trip fidelity
+        self._xmile_name_mapping[name] = original_name
+        
+        # Parse and store documentation
+        doc_elem = flow.find('doc')
+        if doc_elem and doc_elem.string:
+            tags, text = self.parse_doc_content(doc_elem.string)
+            if text:  # Only store if there's actual text
+                self.variable_docs[name] = text
+            if tags:  # Only store if there are tags
+                self.variable_tags[name] = tags
+        
         leak = flow.find('leak') is not None
         non_negative = flow.find('non_negative') is not None
         
@@ -1938,14 +2091,16 @@ class sdmodel(object):
         var_elements = var.find_all('element')
         
         if len(var_elements) != 0:
-            # Different equation for each element
+            # Different equation for each element (element-by-element format)
+            self._variable_array_format[var_name] = 'element'
             for var_element in var_elements:
                 element_combination_text = var_element.get('subscript')
                 elements = self.process_subscript(element_combination_text)
                 equation = self._parse_variable_equation(var, var_element)
                 var_subscripted_eqn[elements] = equation
         else:
-            # All elements share the same equation
+            # All elements share the same equation (parallel format)
+            self._variable_array_format[var_name] = 'parallel'
             equation = self._parse_variable_equation(var, None)
             element_combinations = product(*list(var_dims.values()))
             for ect in element_combinations:
@@ -1966,13 +2121,16 @@ class sdmodel(object):
         
         if var.find('conveyor'):
             equation_text = element_to_check.find('eqn').text if element_to_check.find('eqn') else var.find('eqn').text
-            length = var.find('len').text
+            equation_text = equation_text.strip() if equation_text else equation_text
+            length = var.find('len').text.strip() if var.find('len').text else var.find('len').text
             equation = Conveyor(length, equation_text)
         elif element_to_check.find('gf'):
             equation = self._read_graph_function(element_to_check)
-            equation.eqn = var.find('eqn').text
+            eqn_text = var.find('eqn').text
+            equation.eqn = eqn_text.strip() if eqn_text else eqn_text
         elif element_to_check.find('eqn'):
-            equation = element_to_check.find('eqn').text
+            eqn_text = element_to_check.find('eqn').text
+            equation = eqn_text.strip() if eqn_text else eqn_text
         else:
             var_name = self.name_handler(var.get('name'))
             raise Exception(f'No meaningful definition found for variable {var_name}')
@@ -2469,9 +2627,9 @@ class sdmodel(object):
                         data_dt=data_dt,
                         interpolate=True
                     )
-                    # Use replace_element_equation for proper processing
+                    # Use replace_element_equation for proper processing (don't track as modification)
                     new_equation = {subscript_tuple: data_feeder}
-                    self.replace_element_equation(processed_name, new_equation)
+                    self.replace_element_equation(processed_name, new_equation, track_modification=False)
                     logger_model_creation.debug(f"Set time-varying data for {processed_name}[{subscript_part}] with {len(data_values)} data points")
                 else:
                     available_keys = list(target_dict[processed_name].keys())
@@ -2497,8 +2655,8 @@ class sdmodel(object):
                         data_dt=data_dt,
                         interpolate=True
                     )
-                    # Use replace_element_equation for proper processing
-                    self.replace_element_equation(processed_name, data_feeder)
+                    # Use replace_element_equation for proper processing (don't track as modification)
+                    self.replace_element_equation(processed_name, data_feeder, track_modification=False)
                     variable_found = True
                     logger_model_creation.debug(f"Set time-varying data for {processed_name} with {len(data_values)} data points")
                     break
@@ -2509,6 +2667,57 @@ class sdmodel(object):
     # utilities
     def name_handler(self, name):
         return name.replace(' ', '_').replace('\\n', '_')
+    
+    @staticmethod
+    def parse_doc_content(doc_text):
+        """
+        Parse doc content to extract tags and text.
+        
+        Tags format: ${tag1,tag2,...}\nText content
+        
+        Args:
+            doc_text: Raw doc content from XMILE
+            
+        Returns:
+            tuple: (tags_list, text_content)
+                   tags_list: List of tag strings (empty if no tags)
+                   text_content: Documentation text (empty string if none)
+        """
+        if not doc_text:
+            return ([], '')
+        
+        # Check if starts with ${...}
+        if doc_text.startswith('${') and '}' in doc_text:
+            end_idx = doc_text.index('}')
+            tags_str = doc_text[2:end_idx]  # Extract content between ${ and }
+            tags = [tag.strip() for tag in tags_str.split(',')]
+            
+            # Text is after the } and optional newline
+            remaining = doc_text[end_idx+1:]
+            text = remaining.lstrip('\n')  # Remove leading newline after tags
+            
+            return (tags, text)
+        else:
+            # No tags, entire content is text
+            return ([], doc_text)
+    
+    @staticmethod
+    def format_doc_content(tags, text):
+        """
+        Format doc content from tags and text.
+        
+        Args:
+            tags: List of tag strings (can be empty)
+            text: Documentation text
+            
+        Returns:
+            Formatted doc content string
+        """
+        if not tags:
+            return text
+        
+        tags_str = ','.join(tags)
+        return f"${{{tags_str}}}\n{text}"
     
     @staticmethod
     def process_subscript(subscript):
@@ -2577,8 +2786,19 @@ class sdmodel(object):
             raise Exception(f'Unsupported new equation {new_equation} type {type(new_equation)}')
         return new_equation
 
-    def replace_element_equation(self, name, new_equation):
+    def replace_element_equation(self, name, new_equation, track_modification=True):
         new_equation = self.format_new_equation(new_equation)
+        
+        # Track modification for smart save (unless it's a DataFeeder which will be recreated)
+        if track_modification and not isinstance(new_equation, DataFeeder):
+            # Also check if it's a dict containing DataFeeders
+            if isinstance(new_equation, dict):
+                # Only track if not all values are DataFeeders
+                has_non_datafeeder = any(not isinstance(v, DataFeeder) for v in new_equation.values())
+                if has_non_datafeeder:
+                    self._modified_elements.add(name)
+            else:
+                self._modified_elements.add(name)
         
         if name in self.stock_equations:
             if type(new_equation) is dict:
@@ -2619,6 +2839,76 @@ class sdmodel(object):
         else:
             raise Exception(f'Unable to find {name} in the current model')
 
+        if self.state == 'loaded':
+            pass
+        elif self.state == 'simulated':
+            self.state = 'changed'
+    
+    def get_variable_doc(self, var_name):
+        """
+        Get the documentation text for a variable.
+        
+        Args:
+            var_name: Variable name (Python format with underscores)
+            
+        Returns:
+            Documentation text string, or None if no documentation exists
+        """
+        return self.variable_docs.get(var_name)
+    
+    def set_variable_doc(self, var_name, doc_text):
+        """
+        Set the documentation text for a variable.
+        
+        Args:
+            var_name: Variable name (Python format with underscores)
+            doc_text: Documentation text (plain text or HTML)
+        """
+        # Check if variable exists
+        if (var_name not in self.stock_equations and 
+            var_name not in self.flow_equations and 
+            var_name not in self.aux_equations and
+            var_name not in self.delayed_auxiliary_equations):
+            raise ValueError(f"Variable '{var_name}' not found in model")
+        
+        self.variable_docs[var_name] = doc_text
+        self._modified_docs.add(var_name)
+        
+        if self.state == 'loaded':
+            pass
+        elif self.state == 'simulated':
+            self.state = 'changed'
+    
+    def get_variable_tags(self, var_name):
+        """
+        Get the tags for a variable.
+        
+        Args:
+            var_name: Variable name (Python format with underscores)
+            
+        Returns:
+            List of tag strings, or empty list if no tags exist
+        """
+        return self.variable_tags.get(var_name, [])
+    
+    def set_variable_tags(self, var_name, tags):
+        """
+        Set the tags for a variable.
+        
+        Args:
+            var_name: Variable name (Python format with underscores)
+            tags: List of tag strings (e.g., ['data', 'need references'])
+        """
+        # Check if variable exists
+        if (var_name not in self.stock_equations and 
+            var_name not in self.flow_equations and 
+            var_name not in self.aux_equations and
+            var_name not in self.delayed_auxiliary_equations):
+            raise ValueError(f"Variable '{var_name}' not found in model")
+        
+        self.variable_tags[var_name] = tags if tags else []
+        self._modified_tags.add(var_name)
+        
         if self.state == 'loaded':
             pass
         elif self.state == 'simulated':
@@ -2808,9 +3098,9 @@ class sdmodel(object):
 
     def calculate_variable(self, var, dg, mode, subscript=None, leak_frac=False, conveyor_init=False, conveyor_len=False):
         if leak_frac or conveyor_init or conveyor_len:
-            self.logger.debug(f"    Calculating: {var:<15} on subscript {subscript}; flags leak_frac={leak_frac}, conveyor_init={conveyor_init}, conveyor_len={conveyor_len}")
+            self.logger.debug(f"Calculating: {var:<15} on subscript {subscript}; flags leak_frac={leak_frac}, conveyor_init={conveyor_init}, conveyor_len={conveyor_len}")
         else:
-            self.logger.debug(f"    Calculating: {var:<15} on subscript {subscript}")
+            self.logger.debug(f"Calculating: {var:<15} on subscript {subscript}")
         # debug
         if var in self.env_variables.keys():
             return
@@ -3005,9 +3295,9 @@ class sdmodel(object):
                                     else:
                                         self.stock_non_negative_temp_value[flow_to_stock] += self.name_space[var] * self.sim_specs['dt']
                             # situation 2:
-                            # Even if the flow is a unidirectional (positive) flow, it still can add to the "flow-to" stock's temp value, and this will affect how that stock constrains its out_flows
+                            # Even if the flow is a unidirectional (non-negative) flow, it still can add to the "flow-to" stock's temp value, and this will affect how that stock constrains its out_flows
                             else:
-                                self.logger.debug(f'    ----Flow {var} is a unidirectional (positive flow), adding its value {self.name_space[var]} to the "flow-to" stock {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
+                                self.logger.debug(f'    ----Flow {var} is a unidirectional (non-negative flow), adding its value {self.name_space[var]} to the "flow-to" stock {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
                                 if type(self.name_space[var]) is dict:
                                     for sub, sub_value in self.name_space[var].items():
                                         self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
@@ -3071,7 +3361,7 @@ class sdmodel(object):
                 else:
                     value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode, subscript=subscript)
                     self.name_space[var] = value
-                self.logger.debug(f'    '+'Aux {var} = {value}')
+                self.logger.debug(f'Aux {var} = {value}')
                         
             else:
                 pass
@@ -3142,7 +3432,7 @@ class sdmodel(object):
 
     def simulate(self, time=None, dt=None):
         self.logger.debug(f'Simulation started with specs: {self.sim_specs}')
-        self.logger.debug(f'Equations: {self.stock_equations | self.flow_equations | self.aux_equations}')
+        self.logger.debug(f'Equations: {self.stock_equations | self.flow_equations | self.aux_equations | self.delayed_auxiliary_equations}')
         
         if time is None:
             time = self.sim_specs['simulation_time']
@@ -3205,7 +3495,8 @@ class sdmodel(object):
         # self.current_iteration = 0
 
         for s in range(iterations):
-            self.logger.debug(f'--iteration {s} start, current time {self.sim_specs["current_time"]}--')
+            self.logger.debug("")
+            self.logger.debug(f'---- iteration {s} start, current time {self.sim_specs["current_time"]} ----')
             
             # Iter step 1: calculate flows and auxiliaries they depend on
             self.logger.debug('calculating flows and auxiliaries they depend on')
@@ -3225,19 +3516,20 @@ class sdmodel(object):
             
             self.time_slice[self.sim_specs['current_time']] = current_snapshot
 
-            self.logger.debug(f'--step {s} finished--') 
-            self.logger.debug(f'name_space {self.name_space}')
-            self.logger.debug(f'shadow_val {self.stock_shadow_values}')
+            self.logger.debug(f'---- iteration {s} finished ----') 
+            self.logger.debug(f'name_space: {self.name_space}')
+            self.logger.debug(f'shadow_val: {self.stock_shadow_values}')
+            self.logger.debug(f'time_expr_register: {self.solver.time_expr_register}')
 
             
             # Iter step 3: update simulation time
-            self.logger.debug('updating simulation time (current_time)')
+            self.logger.debug(f'updating simulation time (current_time) from {self.sim_specs["current_time"]} to {self.sim_specs["current_time"] + dt}')
             self.sim_specs['current_time'] += dt
             # self.current_iteration += 1
 
             # prepare name_space for next step
-            self.logger.debug('--- preparing name_space for next step ---')
-            self.logger.debug('clear name space')
+            self.logger.debug('---- preparing name_space for next step ----')
+            self.logger.debug('clearing name space')
             self.name_space.clear()
             self.logger.debug(f'name space: {self.name_space}')
 
@@ -3265,7 +3557,7 @@ class sdmodel(object):
             self.name_space['TIME'] = self.sim_specs['current_time']
             self.name_space['DT'] = self.sim_specs['dt']
 
-            self.logger.debug('--- end of preparation ---')
+            self.logger.debug('---- end of preparation ----')
 
         self.state = 'simulated'
 
@@ -3327,9 +3619,9 @@ class sdmodel(object):
     
     def get_element_simulation_result(self, name, subscript=None):
         if not subscript:
-            if type((self.stock_equations | self.flow_equations | self.aux_equations)[name]) is dict:
+            if type((self.stock_equations | self.flow_equations | self.aux_equations | self.delayed_auxiliary_equations)[name]) is dict:
                 result = dict()
-                for sub in (self.stock_equations | self.flow_equations | self.aux_equations)[name].keys():
+                for sub in (self.stock_equations | self.flow_equations | self.aux_equations | self.delayed_auxiliary_equations)[name].keys():
                     result[sub] = list()
                 for time, slice in self.time_slice.items():
                     for sub, value in slice[name].items():
@@ -3400,7 +3692,7 @@ class sdmodel(object):
     
     def display_results(self, variables=None):
         if type(variables) is list and len(variables) == 0:
-            variables = list((self.stock_equations | self.flow_equations | self.aux_equations).keys())
+            variables = list((self.stock_equations | self.flow_equations | self.aux_equations | self.delayed_auxiliary_equations).keys())
         if type(variables) is str:
             variables = [variables]
         import matplotlib.pyplot as plt
@@ -3438,97 +3730,99 @@ class sdmodel(object):
         if var in self.env_variables: # like 'TIME'
             visited.remove(var)
             return graph
-        
-        parsed_equation = all_equations[var]
 
         def get_dependent_variables(parsed_equation):
-            # self.logger.debug(f"Getting dependent variables for parsed equation of variable '{var}'")
-            # self.logger.debug(f"Parsed equation: {parsed_equation.nodes(data=True)}")
-            # dependent_variables = set()
-            # if type(parsed_equation) is not dict:
-            #     def trace_node(node_id, node_dependents=set()):
-            #         self.logger.debug(f"Tracing node {node_id} with current dependents: {node_dependents}, parsed equation: {parsed_equation.nodes(data=True)}")
-            #         node = parsed_equation.nodes[node_id]
-            #         print('aaa', node)
-            #         node_operator = node['operator']
-            #         self.logger.debug(f"Tracing node {node_id}: operator {node_operator}")
-            #         if node_operator not in ['DELAY', 'DELAY1', 'DELAY3', 'SMTH1', 'SMTH3']: # if it is not a delay function, it's likely not having initial value issue
-            #             self.logger.debug(f"Node {node_id} is not a delay/smooth function, skipping special handling")
-            #             node_dependents.update(node['operands'])
-            #         else: # these functions have 2 or 3 operands; if 2 then no initial value, only 1st is used for initialization; if 3 then with initial value, only 3rd is used for initialization; 1st is indirectly (through cumulation) used for iteration; 2nd is directly (delay time) used for iteration
-            #             self.logger.debug(f"Node {node_id} is a delay/smooth function {node_operator}, handling operands based on mode '{mode}'")
-            #             if mode == 'init':
-            #                 self.logger.debug(f"Initialization mode: only considering the operand used for initialization")
-            #                 if len(node['operands']) == 3:
-            #                     self.logger.debug(f"Node {node_id} has 3 operands, adding the 3rd operand for initialization")
-            #                     node_dependents.add(node['operands'][2])
-            #                 elif len(node['operands']) == 2:
-            #                     self.logger.debug(f"Node {node_id} has 2 operands, adding the 1st operand for initialization")
-            #                     node_dependents.add(node['operands'][0])
-            #             elif mode == 'iter':
-            #                 self.logger.debug(f"Iteration mode: only delay time")
-            #                 node_dependents.add(node['operands'][1])
-            #         self.logger.debug(f"    1. Node {node_id} dependents after tracing: {node_dependents}")
-            #         self.logger.debug(f"    2. Retrieving dependent variables for node {node_id}")
-                    
-            #         node_dependent_purged = set()
-            #         for node_dependent in node_dependents:
-            #             if parsed_equation.nodes[node_dependent]['operator'] in ['EQUALS', 'SPAREN']:
-            #                 self.logger.debug(f"    --Node {node_dependent} is a variable, adding to dependent variables")
-            #                 dependent_name = parsed_equation.nodes[node_dependent]['value']
-            #                 dependent_variables.add(dependent_name)
-            #             elif parsed_equation.nodes[node_dependent]['operator'] == 'IS': # it is a number, no dependent, skip
-            #                 self.logger.debug(f"    --Node {node_dependent} is a number, skipping")
-            #                 pass
-            #             else:
-            #                 node_dependent_purged.add(node_dependent)
-            #         self.logger.debug(f"    3. Dependent variables for variable {var}: {dependent_variables}")
-            #         self.logger.debug(f"    4. Remaining node dependents for node {node_id}: {node_dependent_purged}")
+            self.logger.debug("."*80)
+            self.logger.debug(f"Getting dependent variables of variable '{var}'")
+            dependent_variables = set()
+            self.id_level = 0
+            
+            def trace_node(parsed_equation, node_id):
+                self.id_level += 1
+                self.logger.debug(f"{'    '*self.id_level}-->Tracing node {node_id} with current dependent variables: {dependent_variables}, node detail: {parsed_equation.nodes[node_id]}")
+                node = parsed_equation.nodes[node_id]
+                operands_to_trace = set()
+                if len(node) == 0:
+                    successor_nodes = list(parsed_equation.successors(node_id))
+                    successor_id = successor_nodes[0]
+                    self.logger.debug(f"{'    '*self.id_level}This is root node, moving to its successsor node {successor_id}.")
+                    trace_node(parsed_equation, successor_id)
+                else:
+                    node_operator = node['operator']
+                    node_operands = node['operands']
+                    self.logger.debug(f"{'    '*self.id_level}Examining node {node_id} with operator {node_operator}")
+                    if node_operator in ['IS']:
+                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} has operator {node_operator}, a number; no dependent, no further tracing needed.")
+                        return
+                    elif node_operator in ['DELAY', 'DELAY1', 'DELAY3', 'SMTH1', 'SMTH3']:
+                        # these functions have 2 or 3 operands; if 2 then no initial value, only 1st is used for initialization; if 3 then with initial value, only 3rd is used for initialization; 1st is indirectly (through cumulation) used for iteration; 2nd is directly (delay time) used for iteration
+                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} is a delay/smooth function {node_operator}, handling operands based on mode '{mode}'")
+                        if mode == 'init':
+                            self.logger.debug(f"{'    '*self.id_level}Initialization mode: only considering the operand used for initialization")
+                            if len(node['operands']) == 3:
+                                self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 3 operands, adding only the 3rd operand for initialization")
+                                operands_to_trace.add(node['operands'][2])
+                            elif len(node['operands']) == 2:
+                                self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 2 operands, adding the target variable and delay time for initialization")
+                                operands_to_trace.add(node['operands'][0])
+                                operands_to_trace.add(node['operands'][1])
+                        elif mode == 'iter':
+                            self.logger.debug(f"{'    '*self.id_level}Iteration mode: considering target variable and delay time for iteration")
+                            operands_to_trace.add(node['operands'][0])
+                            operands_to_trace.add(node['operands'][1])
+                        else:
+                            raise Exception(f"Invalid mode: {mode}")
+                    elif node_operator in ['EQUALS', 'SPAREN']:
+                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} has operator {node_operator}")
+                        dependent_variable_name = parsed_equation.nodes[node_id]['value']
+                        self.logger.debug(f"{'    '*self.id_level}-- Node {node_id} is a variable {dependent_variable_name}, adding to dependent variables; no further tracing needed.")
+                        dependent_variables.add(dependent_variable_name)
+                    else:
+                        for node_operand in node_operands:
+                            operands_to_trace.add(node_operand)
 
-            #         # the remaining nodes could have dependencies on other variables, trace them recursively
-            #         for node_dependent in node_dependent_purged:
-            #             trace_node(node_id=node_dependent, node_dependents=node_dependent_purged)
+                    # the remaining nodes (post-processing) could have dependencies on other variables, trace them recursively
+                    if len(operands_to_trace) == 0:
+                        pass
+                    else:
+                        for node_operand in operands_to_trace:
+                            trace_node(parsed_equation, node_operand)
+                self.id_level -= 1
 
-            #     trace_node(node_id=list(parsed_equation.successors('root'))[0])
-
-
-            # 20250831 this method is too coarse to detect if a, e.g., SMTH1 function depends on some var as input but has a different initial value
-            dependent_variables = list()
             if type(parsed_equation) is not dict:
-                leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
-                for leaf in leafs:
-                    if parsed_equation.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
-                        dependent_name = parsed_equation.nodes[leaf]['value']
-                        if dependent_name in self.element_names:
-                            continue
-                        # if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out # 20250831: Dimension now is a different kind of token
-                        dependent_variables.append(dependent_name)
-                        
+                trace_node(parsed_equation, node_id='root')
             else:
                 for _, sub_eqn in parsed_equation.items():
-                    leafs = [x for x in sub_eqn.nodes() if sub_eqn.out_degree(x)==0]
-                    for leaf in leafs:
-                        if sub_eqn.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
-                            dependent_name = sub_eqn.nodes[leaf]['value']
-                            if dependent_name in self.element_names:
-                                continue
-                            if dependent_name not in dependent_variables: # remove duplicates
-                                # if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out # 20250831: Dimension now is a different kind of token
-                                dependent_variables.append(dependent_name)
+                    trace_node(sub_eqn, node_id='root')
+            
+            self.logger.debug(f"{'    '*self.id_level}Variable {var} is dependent on {dependent_variables}")
+            self.logger.debug("="*80)
+            
             return dependent_variables
+        
+        parsed_equation = all_equations[var]
         
         if type(parsed_equation) is list: # this variable might be a conveyor
             if var in self.conveyors:
                 dep_graph_len = get_dependent_variables(parsed_equation[0])
                 dep_graph_val = get_dependent_variables(parsed_equation[1])
                 # combine the two lists without duplicates
-                dependent_variables = list(set(dep_graph_len + dep_graph_val))
+                dependent_variables = list(set(dep_graph_len | dep_graph_val))
             else:
                 visited.remove(var)
                 raise Exception(f"Non-conveyor variable with parsed equation as list: {var}")
         else: # this is a normal variable
-            # now check is it a delay or smooth
-            dependent_variables = get_dependent_variables(parsed_equation)
+            if mode == 'init':
+                dependent_variables = get_dependent_variables(parsed_equation)
+            elif mode == 'iter':
+                if var in self.stock_equations:
+                    dependent_variables = list() # stock variables' equations are only for initialization, they are not dependent on any other variables during iteration step 1
+                    self.logger.debug(f'ITER Graph: Stock variable {var} is considered for iteration, but its equation is only used for initialization, thus no dependence on other variables during iteration')
+                else:
+                    dependent_variables = get_dependent_variables(parsed_equation)
+                    self.logger.debug(f'ITER Graph: Variable {var} is considered for iteration, it depends on: {dependent_variables}')
+            else:
+                raise Exception(f"Invalid mode: {mode}")
 
         if len(dependent_variables) == 0:
             graph.add_node(var)
@@ -3549,6 +3843,309 @@ class sdmodel(object):
             visited.remove(var)
             return graph
 
+    def generate_full_dependent_graph(self, show=False):
+        ########################
+        # Initialization graph #
+        ########################
+
+        self.logger.debug(f'{"*"*80}')
+        self.logger.debug(f'Initialization phase')
+        self.logger.debug(f'{"*"*80}')
+
+        dg_init = nx.DiGraph()
+        if len(self.stock_equations_parsed) > 0:
+            for stock in self.stock_equations_parsed:
+                dg_stock = self.create_variable_dependency_graph(stock, mode='init')
+                dg_init = nx.compose(dg_init, dg_stock)
+        else:
+            self.logger.debug(f"INIT Graph: No stocks, skipping")
+
+        if len(self.delayed_auxiliary_equations_parsed) > 0:
+            for delayed_aux in self.delayed_auxiliary_equations_parsed:
+                dg_delayed_aux = self.create_variable_dependency_graph(delayed_aux, mode='init')
+                dg_init = nx.compose(dg_init, dg_delayed_aux)
+        else:
+            self.logger.debug(f"INIT Graph: No delayed auxiliaries, skipping")
+
+        self.logger.debug(f'INIT Graph: Nodes (before sanitization): {dg_init.nodes(data=True)}')
+        self.logger.debug(f'INIT Graph: Edges (before sanitization): {dg_init.edges(data=True)}')
+        
+        # check each non-negative stock for its dependency on inflows and outflows and add to dg_init
+        for stock, in_out_flows in self.stock_flows.items():
+            if self.stock_non_negative[stock] is True:
+                self.logger.debug(f'INIT Graph: Considering non-negative stock {stock}')
+                if 'out' in in_out_flows:
+                    out_flows = in_out_flows['out']
+
+                    for out_flow in out_flows:
+                        if out_flow in dg_init:
+                            self.logger.debug(f'INIT Graph: Outflow {out_flow} is in the graph, considering it')
+                            # if stock explicitly depends on outflow for initiliazation, we cannot let outflow be constrained by stock in the initialization phase
+                            if nx.has_path(dg_init, out_flow, stock):
+                                self.logger.debug(f'INIT Graph: Stock {stock} explicitly depends on outflow {out_flow}, skipping')
+                            else: # out_flow does not depend on stock, add it to the graph
+                                self.logger.debug(f'INIT Graph: Outflow {out_flow} does not depend on stock {stock}, adding to the graph, so that it is constrained by stock in the initialization phase')
+                                nx.set_node_attributes(dg_init, {out_flow: {'out_from_non_negative_stock': stock}}) # this attribute triggers the constrains in runtime
+                        else:
+                            self.logger.debug(f'INIT Graph: Outflow {out_flow} is not in the graph, skipping it')
+
+                    if 'in' in in_out_flows:
+                        in_flows = in_out_flows['in']
+                        # for each inflow, we need to check if it depends on (i.e., is affected by) any outflow; if yes, we exclude it from outflow constraining.
+                        # Exception: when the inflow is a delayed outflow with an independent initial value; in this case, we do not consider its dependency on the outflow but consider it TRUE as a sanity inflow during initialization.
+                        
+                        in_flow_sanities = {} # sanity: True if the inflow is not explicitly dependent on any outflow
+
+                        for in_flow in in_flows:
+                            if in_flow in dg_init:
+                                self.logger.debug(f'INIT Graph: Inflow {in_flow} is in the graph, examining it...')
+                                # we assume all inflows are sanity at the beginning
+                                in_flow_sanities[in_flow] = True
+                                for out_flow in out_flows:
+                                    if out_flow in dg_init:
+                                        self.logger.debug(f'INIT Graph:     for Inflow {in_flow}, Outflow {out_flow} is in the graph, meaning it is needed during initialization')
+                                        if nx.has_path(dg_init, out_flow, in_flow):
+                                            self.logger.debug(f'INIT Graph:     Inflow {in_flow} explicitly depends on outflow {out_flow}, not a sanity inflow')
+                                            in_flow_sanities[in_flow] = False # if inflow depends on any outflow, it is not a sanity inflow
+                                            # dg_init
+                                            if in_flow in dg_init:
+                                                self.logger.debug(f'INIT Graph:     Inflow {in_flow} is excluded from outflow constraining')
+                                                nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': False}}) # this attribute excludes the inflow from 'how much can flow out'
+                                        else:
+                                            self.logger.debug(f'INIT Graph:     Inflow {in_flow} does not depend on outflow {out_flow} during initialization')
+                                    else:
+                                        self.logger.debug(f'INIT Graph:     for Inflow {in_flow}, Outflow {out_flow} is not in the graph, meaning it is not needed during initialization, skipping it')
+
+                                    if not in_flow_sanities[in_flow]:
+                                        break
+                                if in_flow_sanities[in_flow]:
+                                    # dg_init
+                                    if in_flow in dg_init:
+                                        self.logger.debug(f'INIT Graph: Inflow {in_flow} is included in outflow constraining')
+                                        nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
+                            else:
+                                pass
+
+                        # for inflows without sanity, we need to make them dependent on all outflows, so that they are only calculated after constraining the outflows
+                        for in_flow, sanity in in_flow_sanities.items():
+                            if not sanity:
+                                for out_flow in out_flows:
+                                    # dg_init
+                                    if (out_flow, in_flow) not in dg_init.edges: # avoid overwriting
+                                        dg_init.add_edge(out_flow, in_flow)
+                                        self.logger.debug(f'INIT Graph: Inflow {in_flow} implicitly depends on outflow {out_flow}')
+
+                            else: # for inflow with sanity, we need to make all outflows dependent on it, so that they are calculated before constraining the outflows
+                                for out_flow in out_flows:
+                                    # dg_init
+                                    if (in_flow, out_flow) not in dg_init.edges: # avoid overwriting
+                                        dg_init.add_edge(in_flow, out_flow)
+                                        self.logger.debug(f'INIT Graph: Outflow {out_flow} implicitly depends on inflow {in_flow}')
+                    
+                    else: # no inflow, just determine the prioritisation of outflows
+                        pass
+                
+                    # set output priorities
+                    # outflow prioritisation
+                    # rule 1: first added first
+                    # rule 2: dependents ranked higher
+                    if len(out_flows) > 1:
+                        for i in range(len(out_flows)-1, 0, -1):
+                            for j in range(i):
+                                if self.is_dependent(out_flows[j+1], out_flows[j]):
+                                    temp = out_flows[j+1]
+                                    out_flows[j+1] = out_flows[j]
+                                    out_flows[j] = temp
+                    
+                    priority_level = 1
+                    for out_flow in out_flows:
+                        if out_flow in dg_init:
+                            nx.set_node_attributes(dg_init, {out_flow: {'priority': priority_level}})
+
+                    self.stock_non_negative_out_flows[stock] = out_flows
+                
+                else: # no outflows
+                    self.logger.debug(f"INIT Graph: Stock {stock} has no outflows, only considering inflows")
+                    if 'in' in in_out_flows: # no outflows, just inflows
+                        self.logger.debug(f"INIT Graph: Stock {stock} has inflows, considering them")
+                        in_flows = in_out_flows['in']
+                        for in_flow in in_flows:
+                            if in_flow in dg_init:
+                                nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
+                                self.logger.debug(f"INIT Graph: Inflow {in_flow} is considered for non-negative stock {stock}")
+                    else:
+                        self.logger.debug(f"INIT Graph: Stock {stock} has no inflows, skipping")
+                
+                # temporary fix, further validation needed
+                if 'in' in in_out_flows:
+                    in_flows = in_out_flows['in']
+                    # Exception: when the stock depends on the inflow for initialization; in this case, we consider it FALSE as a sanity inflow during initialization.
+                    for in_flow in in_flows:
+                        if in_flow in dg_init:
+                            if nx.has_path(dg_init, in_flow, stock):
+                                nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': False}}) # this attribute excludes the inflow from 'how much can flow out'
+                        else:
+                            pass
+            else:
+                self.logger.debug(f"INIT Graph: Stock {stock} is not a non-negative stock, skipping")
+
+        # Conveyor: add dependency of leakflow on the conveyor
+        for conveyor_name, conveyor in self.conveyors.items():
+            leakflows=conveyor['leakflow']
+            for leakflow in leakflows:
+                # the 'value' (not leak_fraction) of leakflow depends on the conveyor
+                dg_init.add_edge(conveyor_name, leakflow) 
+
+                # the conveyor depends on the leak_fraction 
+                dg_leakflow = self.create_variable_dependency_graph(leakflow, mode='init')
+                dg_leak_fraction = deepcopy(dg_leakflow)
+                # replace leakflow with conveyor in the graph
+                dg_leak_fraction.remove_node(leakflow)
+                dg_leak_fraction.add_node(conveyor_name)
+                for pred in dg_leakflow.predecessors(leakflow):
+                    dg_leak_fraction.add_edge(pred, conveyor_name)
+                
+                dg_init = nx.compose(dg_init, dg_leak_fraction)
+
+        ordered_vars_init = list(nx.topological_sort(dg_init))
+
+        self.logger.debug(f'INIT Graph: Dependent graph for initialization:')
+        self.logger.debug(f'INIT Graph: Nodes (after sanitization): {dg_init.nodes(data=True)}')
+        self.logger.debug(f'INIT Graph: Edges (after sanitization): {dg_init.edges(data=True)}')
+        self.logger.debug(f"INIT Graph: Ordered vars for initialization: {ordered_vars_init}")
+
+        ###################
+        # Iteration graph #
+        ###################
+
+        self.logger.debug(f'{"*"*80}')
+        self.logger.debug(f'Iteration phase')
+        self.logger.debug(f'{"*"*80}')
+
+        dg_iter = nx.DiGraph()
+        for flow in self.flow_equations_parsed:
+            dg_flow = self.create_variable_dependency_graph(flow, mode='iter')
+            dg_iter = nx.compose(dg_iter, dg_flow)
+
+        # add obsolete auxiliaries to the dg_iter
+        for var in self.aux_equations:
+            if var not in dg_iter.nodes:
+                dg_obsolete = self.create_variable_dependency_graph(var, mode='iter')
+                dg_iter = nx.compose(dg_iter, dg_obsolete)
+        
+        self.logger.debug(f'ITER Graph: Nodes (before sanitization): {dg_iter.nodes(data=True)}')
+        self.logger.debug(f'ITER Graph: Edges (before sanitization): {dg_iter.edges(data=True)}')
+
+        # check each non-negative stock for dependencies of inflow and outflow and add to dg_iter
+        for stock, in_out_flows in self.stock_flows.items():
+            if self.stock_non_negative[stock] is True:
+                self.logger.debug(f'ITER Graph: for non negative stock {stock}')
+                if 'out' in in_out_flows:
+                    out_flows = in_out_flows['out']
+
+                    for out_flow in out_flows:
+                        self.logger.debug(f'ITER Graph: for outflow {out_flow}')
+                        nx.set_node_attributes(dg_iter, {out_flow: {'out_from_non_negative_stock': stock}}) # this attribute triggers the constrains in runtime
+
+                    if 'in' in in_out_flows:
+                        in_flows = in_out_flows['in']
+                        # for each inflow, we need to check if it is dependent on (affected by) any outflow; if yes, we exclude it from outflow constraining.
+                        in_flow_sanities = {}
+
+                        for in_flow in in_flows:
+                            self.logger.debug(f'ITER Graph: for inflow {in_flow}')
+                            in_flow_sanities[in_flow] = True
+                            for out_flow in out_flows:
+                                if nx.has_path(dg_iter, out_flow, in_flow):
+                                    in_flow_sanities[in_flow] = False
+                                    nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': False}}) # this attribute excludes the inflow from 'how much can flow out'
+                                if not in_flow_sanities[in_flow]:
+                                    break
+                            if in_flow_sanities[in_flow]:
+                                nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
+                        
+                        # for inflows without sanity, we need to make them dependent on all outflows, so that they are only calculated after constraining the outflows
+                        for in_flow, sanity in in_flow_sanities.items():
+                            if not sanity:
+                                for out_flow in out_flows:
+                                    if (out_flow, in_flow) not in dg_iter.edges: # avoid overwriting
+                                        dg_iter.add_edge(out_flow, in_flow)
+                                        self.logger.debug(f'ITER Graph: inflow {in_flow} implicitly depends on outflow {out_flow}')
+
+                            else: # for inflow with sanity, we need to make all outflows dependent on it, so that they are calculated before constraining the outflows
+                                for out_flow in out_flows:
+                                    if (in_flow, out_flow) not in dg_iter.edges: # avoid overwriting
+                                        dg_iter.add_edge(in_flow, out_flow)
+                                        self.logger.debug(f'ITER Graph: outflow {out_flow} implicitly depends on inflow {in_flow}')
+
+                    
+                    else: # no inflow, just determine the prioritisation of outflows
+                        pass
+                
+                    # set output priorities
+                    # outflow prioritisation
+                    # rule 1: first added first
+                    # rule 2: dependents ranked higher
+                    if len(out_flows) > 1:
+                        for i in range(len(out_flows)-1, 0, -1):
+                            for j in range(i):
+                                if self.is_dependent(out_flows[j+1], out_flows[j]):
+                                    temp = out_flows[j+1]
+                                    out_flows[j+1] = out_flows[j]
+                                    out_flows[j] = temp
+                    
+                    priority_level = 1
+                    for out_flow in out_flows:
+                        priority_level += 1
+
+                    self.stock_non_negative_out_flows[stock] = out_flows
+                
+                else: # no outflows
+                    if 'in' in in_out_flows: # no outflows, just inflows
+                        self.logger.debug(f'ITER Graph: no outflow')
+                        in_flows = in_out_flows['in']
+                        for in_flow in in_flows:
+                            nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
+                            self.logger.debug(f'ITER Graph: consider inflow {in_flow}')
+
+        ordered_vars_iter = list(nx.topological_sort(dg_iter))
+
+
+        self.logger.debug(f'ITER Graph: Dependent graph for iteration:')
+        self.logger.debug(f'ITER Graph: Nodes (after sanitization): {dg_iter.nodes(data=True)}')
+        self.logger.debug(f'ITER Graph: Edges (after sanitization): {dg_iter.edges(data=True)}')
+        self.logger.debug(f"ITER Graph: Ordered vars for iteration: {ordered_vars_iter}")
+
+        if not show:
+            return (dg_init, ordered_vars_init, dg_iter, ordered_vars_iter)
+        else:
+            if show == 'init':
+                dg = dg_init
+            elif show == 'iter':
+                dg = dg_iter
+            else:
+                raise Exception(f'Invalid show parameter {show}. Use "init" or "iter"')
+
+            import matplotlib.pyplot as plt
+            from networkx.drawing.nx_agraph import graphviz_layout
+            pos = graphviz_layout(dg, prog='dot')
+            # pos = nx.spring_layout(dg)
+            nx.draw(
+                dg,
+                pos,
+                with_labels=True,
+                node_size=300,
+                node_color="skyblue",
+                node_shape="s",
+                alpha=1,
+                linewidths=5
+                )
+            plt.show()
+            return (dg_init, ordered_vars_init, dg_iter, ordered_vars_iter)
+    
+    def generate_ordered_vars(self):
+        self.dg_init, self.ordered_vars_init, self.dg_iter, self.ordered_vars_iter = self.generate_full_dependent_graph()
+    
     def generate_cld(self, vars=None, show=False, loop=True):
         # Make sure the model equations are parsed
         if self.state == 'loaded':
@@ -3590,249 +4187,536 @@ class sdmodel(object):
                 linewidths=5
                 )
             plt.show()
-
-    def generate_full_dependent_graph(self, show=False):
-        stocks = list(self.stock_equations.keys())
-        flows = list(self.flow_equations.keys())
-        delayed_auxiliaries = list(self.delayed_auxiliary_equations.keys())
-
-        # Initialization phase
-        dg_init = nx.DiGraph()
-        for stock in stocks:
-            dg_stock = self.create_variable_dependency_graph(stock, mode='init')
-            dg_init = nx.compose(dg_init, dg_stock)
-        
-        # check each non-negative stock for dependencies of inflow and outflow and add to dg_init
-        for stock, in_out_flows in self.stock_flows.items():
-            if self.stock_non_negative[stock] is True:
-                self.logger.debug('GEN 0.init for non negative stock %s', stock)
-                if 'out' in in_out_flows:
-                    out_flows = in_out_flows['out']
-
-                    for out_flow in out_flows:
-                        if out_flow in dg_init:
-                            self.logger.debug('GEN --1.init for outflow %s', out_flow)
-                            # if stock explicitly depends on outflow for initiliazation, we cannot let outflow be constrained by stock in the initialization phase
-                            if nx.has_path(dg_init, out_flow, stock):
-                                pass
-                            else: # out_flow 
-                                nx.set_node_attributes(dg_init, {out_flow: {'out_from_non_negative_stock': stock}}) # this attribute triggers the constrains in runtime
-                        else:
-                            pass
-
-                    if 'in' in in_out_flows:
-                        in_flows = in_out_flows['in']
-                        # for each inflow, we need to check if it is dependent on (affected by) any outflow; if yes, we exclude it from outflow constraining.
-                        in_flow_sanities = {}
-
-                        for in_flow in in_flows:
-                            if in_flow in dg_init:
-                                self.logger.debug('GEN ----2.init for inflow %s', in_flow)
-                                in_flow_sanities[in_flow] = True
-                                for out_flow in out_flows:
-                                    if nx.has_path(dg_iter, out_flow, in_flow):
-                                        in_flow_sanities[in_flow] = False
-                                        # dg_init
-                                        if in_flow in dg_init:
-                                            nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': False}}) # this attribute excludes the inflow from 'how much can flow out'
-                                    if not in_flow_sanities[in_flow]:
-                                        break
-                                if in_flow_sanities[in_flow]:
-                                    # dg_init
-                                    if in_flow in dg_init:
-                                        nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
-                            else:
-                                pass
-
-                        # for inflows without sanity, we need to make them dependent on all outflows, so that they are only calculated after constraining the outflows
-                        for in_flow, sanity in in_flow_sanities.items():
-                            if not sanity:
-                                for out_flow in out_flows:
-                                    # dg_init
-                                    if (out_flow, in_flow) not in dg_init.edges: # avoid overwriting
-                                        dg_init.add_edge(out_flow, in_flow)
-                                        self.logger.debug('GEN ------3.init inflow %s implicitly depends on %s', in_flow, out_flow)
-
-                            else: # for inflow with sanity, we need to make all outflows dependent on it, so that they are calculated before constraining the outflows
-                                for out_flow in out_flows:
-                                    # dg_init
-                                    if (in_flow, out_flow) not in dg_init.edges: # avoid overwriting
-                                        dg_init.add_edge(in_flow, out_flow)
-                                        self.logger.debug('GEN ------4.init outflow %s implicitly depends on %s', out_flow, in_flow)
-                    
-                    else: # no inflow, just determine the prioritisation of outflows
-                        pass
-                
-                    # set output priorities
-                    # outflow prioritisation
-                    # rule 1: first added first
-                    # rule 2: dependents ranked higher
-                    if len(out_flows) > 1:
-                        for i in range(len(out_flows)-1, 0, -1):
-                            for j in range(i):
-                                if self.is_dependent(out_flows[j+1], out_flows[j]):
-                                    temp = out_flows[j+1]
-                                    out_flows[j+1] = out_flows[j]
-                                    out_flows[j] = temp
-                    
-                    priority_level = 1
-                    for out_flow in out_flows:
-                        if out_flow in dg_init:
-                            nx.set_node_attributes(dg_init, {out_flow: {'priority': priority_level}})
-
-                    self.stock_non_negative_out_flows[stock] = out_flows
-                
-                else: # no outflows
-                    if 'in' in in_out_flows: # no outflows, just inflows
-                        self.logger.debug('GEN --5.init no outflow')
-                        in_flows = in_out_flows['in']
-                        for in_flow in in_flows:
-                            if in_flow in dg_init:
-                                nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
-                                self.logger.debug("GEN --6.init consider inflow %s", in_flow)
-
-        # Conveyor: add dependency of leakflow on the conveyor
-        for conveyor_name, conveyor in self.conveyors.items():
-            leakflows=conveyor['leakflow']
-            for leakflow in leakflows:
-                # the 'value' (not leak_fraction) of leakflow depends on the conveyor
-                dg_init.add_edge(conveyor_name, leakflow) 
-
-                # the conveyor depends on the leak_fraction 
-                dg_leakflow = self.create_variable_dependency_graph(leakflow, mode='init')
-                dg_leak_fraction = deepcopy(dg_leakflow)
-                # replace leakflow with conveyor in the graph
-                dg_leak_fraction.remove_node(leakflow)
-                dg_leak_fraction.add_node(conveyor_name)
-                for pred in dg_leakflow.predecessors(leakflow):
-                    dg_leak_fraction.add_edge(pred, conveyor_name)
-                
-                dg_init = nx.compose(dg_init, dg_leak_fraction)
-
-        # Initialize delayed auxiliaries
-        for aux in self.delayed_auxiliary_equations_parsed:
-            dg_delayed_aux = self.create_variable_dependency_graph(aux, mode='init')
-            dg_init = nx.compose(dg_init, dg_delayed_aux)
-
-        # Iteration phase
-        dg_iter = nx.DiGraph()
-        for flow in flows:
-            dg_flow = self.create_variable_dependency_graph(flow, mode='iter')
-            dg_iter = nx.compose(dg_iter, dg_flow)
-
-        # add obsolete flows and auxiliaries to the dg_iter
-        for var in (self.flow_equations | self.aux_equations):
-            if var not in dg_iter.nodes:
-                dg_obsolete = self.create_variable_dependency_graph(var, mode='iter')
-                dg_iter = nx.compose(dg_iter, dg_obsolete)
-
-        # check each non-negative stock for dependencies of inflow and outflow and add to dg_iter
-        for stock, in_out_flows in self.stock_flows.items():
-            if self.stock_non_negative[stock] is True:
-                self.logger.debug('GEN 0.iter for non negative stock %s', stock)
-                if 'out' in in_out_flows:
-                    out_flows = in_out_flows['out']
-
-                    for out_flow in out_flows:
-                        self.logger.debug('GEN --1.iter for outflow %s', out_flow)
-                        nx.set_node_attributes(dg_iter, {out_flow: {'out_from_non_negative_stock': stock}}) # this attribute triggers the constrains in runtime
-
-                    if 'in' in in_out_flows:
-                        in_flows = in_out_flows['in']
-                        # for each inflow, we need to check if it is dependent on (affected by) any outflow; if yes, we exclude it from outflow constraining.
-                        in_flow_sanities = {}
-
-                        for in_flow in in_flows:
-                            self.logger.debug('GEN ----2.iter for inflow %s', in_flow)
-                            in_flow_sanities[in_flow] = True
-                            for out_flow in out_flows:
-                                if nx.has_path(dg_iter, out_flow, in_flow):
-                                    in_flow_sanities[in_flow] = False
-                                    nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': False}}) # this attribute excludes the inflow from 'how much can flow out'
-                                if not in_flow_sanities[in_flow]:
-                                    break
-                            if in_flow_sanities[in_flow]:
-                                nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
-                        
-                        # for inflows without sanity, we need to make them dependent on all outflows, so that they are only calculated after constraining the outflows
-                        for in_flow, sanity in in_flow_sanities.items():
-                            if not sanity:
-                                for out_flow in out_flows:
-                                    if (out_flow, in_flow) not in dg_iter.edges: # avoid overwriting
-                                        dg_iter.add_edge(out_flow, in_flow)
-                                        self.logger.debug('GEN ------3.iter inflow %s implicitly depends on %s', in_flow, out_flow)
-
-                            else: # for inflow with sanity, we need to make all outflows dependent on it, so that they are calculated before constraining the outflows
-                                for out_flow in out_flows:
-                                    if (in_flow, out_flow) not in dg_iter.edges: # avoid overwriting
-                                        dg_iter.add_edge(in_flow, out_flow)
-                                        self.logger.debug('GEN ------4.iter outflow %s implicitly depends on %s', out_flow, in_flow)
-
-                    
-                    else: # no inflow, just determine the prioritisation of outflows
-                        pass
-                
-                    # set output priorities
-                    # outflow prioritisation
-                    # rule 1: first added first
-                    # rule 2: dependents ranked higher
-                    if len(out_flows) > 1:
-                        for i in range(len(out_flows)-1, 0, -1):
-                            for j in range(i):
-                                if self.is_dependent(out_flows[j+1], out_flows[j]):
-                                    temp = out_flows[j+1]
-                                    out_flows[j+1] = out_flows[j]
-                                    out_flows[j] = temp
-                    
-                    priority_level = 1
-                    for out_flow in out_flows:
-                        priority_level += 1
-
-                    self.stock_non_negative_out_flows[stock] = out_flows
-                
-                else: # no outflows
-                    if 'in' in in_out_flows: # no outflows, just inflows
-                        self.logger.debug('GEN --5.iter no outflow')
-                        in_flows = in_out_flows['in']
-                        for in_flow in in_flows:
-                            nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
-                            self.logger.debug("GEN --6.iter consider inflow %s", in_flow)
-
-        self.logger.debug('GEN Dependent graph for init:')
-        self.logger.debug('GEN --nodes %s', dg_init.nodes(data=True))
-        self.logger.debug('GEN --edges %s', dg_init.edges(data=True))
-        self.logger.debug('GEN Dependent graph for iter:')
-        self.logger.debug('GEN --nodes %s', dg_iter.nodes(data=True))
-        self.logger.debug('GEN --edges %s', dg_iter.edges(data=True))
-
-        if not show:
-            return (dg_init, dg_iter)
-        else:
-            if show == 'init':
-                dg = dg_init
-            elif show == 'iter':
-                dg = dg_iter
-            else:
-                raise Exception(f'Invalid show parameter {show}. Use "init" or "iter"')
-
-            import matplotlib.pyplot as plt
-            from networkx.drawing.nx_agraph import graphviz_layout
-            pos = graphviz_layout(dg, prog='dot')
-            # pos = nx.spring_layout(dg)
-            nx.draw(
-                dg,
-                pos,
-                with_labels=True,
-                node_size=300,
-                node_color="skyblue",
-                node_shape="s",
-                alpha=1,
-                linewidths=5
-                )
-            plt.show()
-            return (dg_init, dg_iter)
     
-    def generate_ordered_vars(self):
-        self.dg_init, self.dg_iter = self.generate_full_dependent_graph()
-        self.ordered_vars_init = list(nx.topological_sort(self.dg_init))
-        self.ordered_vars_iter = list(nx.topological_sort(self.dg_iter))
+    def save_xmile(self, filepath=None, _force_update_all=False):
+        """
+        Save the model to XMILE format.
+        
+        This method updates an existing XMILE file with modifications made to the model.
+        It preserves the original structure, including views/layout, and only updates
+        modified variables. The model must have been loaded from an XMILE file.
+        
+        Args:
+            filepath: Path to save the file. If None, saves to original file with '_asdm' suffix.
+            _force_update_all: Internal testing parameter. If True, forces all variables to be
+                              updated (not just modified ones). This tests all equation serialization
+                              logic. Not intended for production use.
+        
+        Returns:
+            Path to the saved file
+            
+        Raises:
+            RuntimeError: If model was not loaded from an XMILE file
+        """
+        from pathlib import Path
+        
+        # Check if model was loaded from XMILE
+        if self._xmile_soup is None:
+            raise RuntimeError(
+                "Cannot save to XMILE: model was not loaded from an XMILE file. "
+                "save_xmile() can only be used to update existing XMILE files, "
+                "preserving their views and layout information."
+            )
+        
+        # Testing mode: mark all variables as modified to test serialization
+        if _force_update_all:
+            self.logger_model_creation.debug("Testing mode: forcing update of all variables")
+            self._modified_elements = set(
+                list(self.stock_equations.keys()) +
+                list(self.flow_equations.keys()) +
+                list(self.aux_equations.keys()) +
+                list(self.delayed_auxiliary_equations.keys())
+            )
+        
+        # Determine output filepath
+        if filepath is None:
+            if not hasattr(self, 'xmile_path') or self.xmile_path is None:
+                # This shouldn't happen if _xmile_soup exists - indicates inconsistent state
+                raise RuntimeError(
+                    "Inconsistent model state: _xmile_soup exists but xmile_path is not set. "
+                    "Please provide an explicit filepath for save_xmile()."
+                )
+            # Original file exists, add _asdm suffix before extension
+            original_path = Path(self.xmile_path)
+            filepath = original_path.parent / f"{original_path.stem}_asdm{original_path.suffix}"
+        else:
+            filepath = Path(filepath)
+        
+        self.logger_model_creation.info(f"Saving model to {filepath}")
+        
+        # Update existing XMILE structure
+        self.logger_model_creation.debug("Updating existing XMILE structure")
+        output_soup = self._update_xmile_structure()
+        
+        # Write to file
+        xml_string = str(output_soup)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(xml_string)
+        
+        self.logger_model_creation.info(f"Model saved successfully to {filepath}")
+        return filepath
+    
+    def _update_xmile_structure(self):
+        """Update existing XMILE structure with current model state."""
+        from copy import deepcopy
+        
+        # Work with a copy to avoid modifying the original
+        output_soup = deepcopy(self._xmile_soup)
+        
+        # Update sim_specs
+        self._update_sim_specs_in_soup(output_soup)
+        
+        # Update variables (only modified ones for efficiency)
+        self._update_variables_in_soup(output_soup)
+        
+        # Views/layout are already preserved in the soup
+        
+        return output_soup
+    
+    def _update_sim_specs_in_soup(self, soup):
+        """Update simulation specifications in soup."""
+        sim_specs = soup.find('sim_specs')
+        if sim_specs is None:
+            # Create sim_specs if it doesn't exist
+            xmile = soup.find('xmile')
+            sim_specs = soup.new_tag('sim_specs')
+            xmile.insert(0, sim_specs)
+        
+        # Update or create time_units attribute
+        sim_specs['time_units'] = self.sim_specs.get('time_units', 'Time')
+        
+        # Update start time
+        start = sim_specs.find('start')
+        if start is None:
+            start = soup.new_tag('start')
+            sim_specs.append(start)
+        start.string = str(self.sim_specs['initial_time'])
+        
+        # Update stop time
+        stop = sim_specs.find('stop')
+        if stop is None:
+            stop = soup.new_tag('stop')
+            sim_specs.append(stop)
+        stop_time = self.sim_specs['initial_time'] + self.sim_specs['simulation_time']
+        stop.string = str(stop_time)
+        
+        # Update dt (preserve reciprocal format if it was in original)
+        dt_elem = sim_specs.find('dt')
+        if dt_elem is None:
+            dt_elem = soup.new_tag('dt')
+            sim_specs.append(dt_elem)
+        
+        # Check if original had reciprocal format
+        if dt_elem.get('reciprocal') == 'true':
+            # Preserve reciprocal format
+            dt_elem.string = str(int(1.0 / self.sim_specs['dt']) if self.sim_specs['dt'] != 0 else 1)
+        else:
+            dt_elem.string = str(self.sim_specs['dt'])
+        
+        self.logger_model_creation.debug("Updated sim_specs in XMILE")
+    
+    def _update_variables_in_soup(self, soup):
+        """Update variables in soup (for updating existing XMILE)."""
+        variables_section = soup.find('variables')
+        if variables_section is None:
+            self.logger_model_creation.warning("No variables section found in original XMILE")
+            return
+        
+        # Update only modified variables
+        for var_name in self._modified_elements:
+            self.logger_model_creation.debug(f"Updating modified variable: {var_name}")
+            
+            # Get the original XMILE name from mapping
+            original_name = self._xmile_name_mapping.get(var_name, var_name.replace('_', ' '))
+            
+            # Find the variable in soup
+            var_elem = None
+            for tag_name in ['stock', 'flow', 'aux']:
+                var_elem = variables_section.find(tag_name, attrs={'name': original_name})
+                if var_elem:
+                    break
+            
+            if var_elem is None:
+                self.logger_model_creation.warning(f"Modified variable {var_name} (original: '{original_name}') not found in original XMILE, skipping")
+                continue
+            
+            # Update the equation
+            self._update_variable_equation_in_elem(soup, var_elem, var_name)
+        
+        # Update modified docs
+        for var_name in self._modified_docs:
+            self.logger_model_creation.debug(f"Updating documentation for: {var_name}")
+            
+            # Get the original XMILE name from mapping
+            original_name = self._xmile_name_mapping.get(var_name, var_name.replace('_', ' '))
+            
+            # Find the variable in soup
+            var_elem = None
+            for tag_name in ['stock', 'flow', 'aux']:
+                var_elem = variables_section.find(tag_name, attrs={'name': original_name})
+                if var_elem:
+                    break
+            
+            if var_elem is None:
+                self.logger_model_creation.warning(f"Variable {var_name} not found for doc update, skipping")
+                continue
+            
+            # Update the doc
+            self._update_variable_doc_in_elem(soup, var_elem, var_name)
+        
+        # Update modified tags (tags need to be combined with docs)
+        for var_name in self._modified_tags:
+            if var_name not in self._modified_docs:  # Only if not already updated via docs
+                self.logger_model_creation.debug(f"Updating tags for: {var_name}")
+                
+                # Get the original XMILE name from mapping
+                original_name = self._xmile_name_mapping.get(var_name, var_name.replace('_', ' '))
+                
+                # Find the variable in soup
+                var_elem = None
+                for tag_name in ['stock', 'flow', 'aux']:
+                    var_elem = variables_section.find(tag_name, attrs={'name': original_name})
+                    if var_elem:
+                        break
+                
+                if var_elem is None:
+                    self.logger_model_creation.warning(f"Variable {var_name} not found for tag update, skipping")
+                    continue
+                
+                # Update the doc with tags
+                self._update_variable_doc_in_elem(soup, var_elem, var_name)
+        
+        self.logger_model_creation.debug(f"Updated {len(self._modified_elements)} equations, {len(self._modified_docs)} docs, {len(self._modified_tags)} tags")
+    
+    def _add_equation_to_elem(self, soup, var_elem, var_name, equation):
+        """Add equation to a variable element.
+        
+        Note: This function does NOT add <dimensions> tags - those should already
+        exist in the original XMILE structure and are preserved during updates.
+        
+        Equation elements are inserted before structural tags (inflow, outflow,
+        non_negative, units) to preserve XMILE element ordering.
+        """
+        # Find insertion point - before structural/UI tags
+        # Note: UI tags (format, scale, summing) should be checked first so equations go before them
+        # summing is 'isee:summing' in Stella-specific namespace
+        insert_before = None
+        for tag_name in ['format', 'scale', 'summing', 'inflow', 'outflow', 'non_negative', 'units']:
+            elem = var_elem.find(tag_name)
+            if elem:
+                insert_before = elem
+                break
+        
+        def insert_element(new_elem):
+            """Helper to insert element at correct position."""
+            if insert_before:
+                insert_before.insert_before(new_elem)
+            else:
+                var_elem.append(new_elem)
+        
+        if isinstance(equation, dict):
+            # Subscripted variable - check format (parallel vs element-by-element)
+            # (dimensions should already exist in var_elem from original XMILE)
+            array_format = self._variable_array_format.get(var_name, 'element')
+            
+            if array_format == 'parallel':
+                # Parallel format: single <eqn> applies to all elements
+                # All values in the dict should be the same, so just take the first
+                first_eqn = next(iter(equation.values()))
+                
+                # If it's a DataFeeder, use the original equation (before DataFeeder replaced it)
+                if isinstance(first_eqn, DataFeeder):
+                    if var_name in self._original_equations:
+                        self.logger_model_creation.debug(f"Using original equation for {var_name} (currently DataFeeder)")
+                        eqn_elem = soup.new_tag('eqn')
+                        eqn_elem.string = self._original_equations[var_name]
+                        insert_element(eqn_elem)
+                    else:
+                        self.logger_model_creation.debug(f"Skipping DataFeeder for {var_name} - no original equation stored")
+                else:
+                    eqn_elem = soup.new_tag('eqn')
+                    eqn_elem.string = str(first_eqn)
+                    insert_element(eqn_elem)
+            else:
+                # Element-by-element format: separate <element> for each subscript
+                shared_graph_func_eqn = None  # For subscripted graph functions
+                
+                for subscript, sub_eqn in equation.items():
+                    # Skip DataFeeder objects in subscripted variables
+                    if isinstance(sub_eqn, DataFeeder):
+                        self.logger_model_creation.debug(f"Skipping DataFeeder for {var_name}[{subscript}] - will be recreated from data import")
+                        continue
+                        
+                    element_elem = soup.new_tag('element')
+                    if isinstance(subscript, tuple):
+                        element_elem['subscript'] = ', '.join(subscript)
+                    else:
+                        element_elem['subscript'] = str(subscript)
+                    
+                    # Check if this is a graph function
+                    if isinstance(sub_eqn, GraphFunc):
+                        # For subscripted graph functions, add <gf> inside <element>
+                        self._add_graph_function_content_to_elem(soup, element_elem, sub_eqn)
+                        
+                        # Store the shared eqn (all graph functions share the same .eqn attribute)
+                        if shared_graph_func_eqn is None and sub_eqn.eqn is not None:
+                            shared_graph_func_eqn = str(sub_eqn.eqn)
+                    else:
+                        # Regular equation
+                        eqn_elem = soup.new_tag('eqn')
+                        eqn_elem.string = str(sub_eqn)
+                        element_elem.append(eqn_elem)
+                    
+                    insert_element(element_elem)
+                
+                # Add shared eqn at parent level for subscripted graph functions
+                # This handles both GraphFuncs and variables where GraphFuncs were replaced by DataFeeders
+                if shared_graph_func_eqn is not None:
+                    eqn_elem = soup.new_tag('eqn')
+                    eqn_elem.string = shared_graph_func_eqn
+                    insert_element(eqn_elem)
+                elif var_name in self._original_equations and all(isinstance(v, DataFeeder) for v in equation.values()):
+                    # All elements are DataFeeders, but there was an original parent-level eqn
+                    # This can happen when graph functions are overridden by data imports
+                    eqn_elem = soup.new_tag('eqn')
+                    eqn_elem.string = self._original_equations[var_name]
+                    insert_element(eqn_elem)
+        elif isinstance(equation, DataFeeder):
+            # DataFeeder objects should not be saved as equations
+            # They will be recreated from data import specifications
+            self.logger_model_creation.debug(f"Skipping DataFeeder equation for {var_name} - will be recreated from data import")
+            # Don't add any equation element
+            pass
+        elif isinstance(equation, GraphFunc):
+            # Graph function
+            self._add_graph_function_to_elem(soup, var_elem, equation, insert_element)
+        elif isinstance(equation, Conveyor):
+            # Conveyor - XMILE format:
+            # 1. <eqn> - initial value
+            # 2. <inflow> and <outflow> (structural elements, already in var_elem)
+            # 3. <conveyor> containing <len>
+            # 4. <units> (if present)
+            
+            # Add initial value equation first
+            eqn_elem = soup.new_tag('eqn')
+            eqn_elem.string = str(equation.equation)
+            insert_element(eqn_elem)
+            
+            # Add conveyor element with len inside it, AFTER inflows/outflows
+            # Insert before units (if present), otherwise append at end
+            conveyor_elem = soup.new_tag('conveyor')
+            len_elem = soup.new_tag('len')
+            len_elem.string = str(equation.length_time_units)
+            conveyor_elem.append(len_elem)
+            
+            # Find units tag to insert before it, or append at end
+            units_elem = var_elem.find('units')
+            if units_elem:
+                units_elem.insert_before(conveyor_elem)
+            else:
+                var_elem.append(conveyor_elem)
+        else:
+            # Simple equation (string or number)
+            eqn_elem = soup.new_tag('eqn')
+            eqn_elem.string = str(equation)
+            insert_element(eqn_elem)
+    
+    def _add_graph_function_content_to_elem(self, soup, parent_elem, graph_func):
+        """Add graph function <gf> element to a parent element (for subscripted graph functions).
+        
+        This method adds ONLY the <gf> element without an <eqn>, used for subscripted
+        graph functions where each element has its own <gf>.
+        """
+        gf_elem = soup.new_tag('gf')
+        
+        # Add type attribute if present
+        if graph_func.out_of_bound_type is not None:
+            gf_elem['type'] = graph_func.out_of_bound_type
+        
+        # XMILE element order for graph functions:
+        # 1. xscale (if continuous) or nothing
+        # 2. yscale
+        # 3. xpts (if discrete)
+        # 4. ypts
+        
+        # Add xscale (for continuous functions)
+        if graph_func.xscale is not None:
+            xscale_elem = soup.new_tag('xscale', attrs={
+                'min': str(graph_func.xscale[0]),
+                'max': str(graph_func.xscale[1])
+            })
+            gf_elem.append(xscale_elem)
+        
+        # Add yscale
+        yscale_elem = soup.new_tag('yscale', attrs={
+            'min': str(graph_func.yscale[0]),
+            'max': str(graph_func.yscale[1])
+        })
+        gf_elem.append(yscale_elem)
+        
+        # Add xpts (only if explicitly provided, not generated from xscale)
+        if hasattr(graph_func, '_xpts_explicit') and graph_func._xpts_explicit:
+            xpts_elem = soup.new_tag('xpts')
+            xpts_elem.string = ','.join(str(x) for x in graph_func.xpts)
+            gf_elem.append(xpts_elem)
+        
+        # Add ypts
+        ypts_elem = soup.new_tag('ypts')
+        ypts_elem.string = ','.join(str(y) for y in graph_func.ypts)
+        gf_elem.append(ypts_elem)
+        
+        parent_elem.append(gf_elem)
+    
+    def _add_graph_function_to_elem(self, soup, var_elem, graph_func, insert_element):
+        """Add graph function to a variable element.
+        
+        XMILE format for graph functions:
+        1. <eqn> - the expression that uses the graph function
+        2. <gf> - the graph function definition
+        """
+        # Add the eqn that uses the graph function FIRST
+        if graph_func.eqn is not None:
+            eqn_elem = soup.new_tag('eqn')
+            eqn_elem.string = str(graph_func.eqn)
+            insert_element(eqn_elem)
+        
+        # Then add the gf element
+        gf_elem = soup.new_tag('gf')
+        
+        # Add type
+        if graph_func.out_of_bound_type is not None:
+            gf_elem['type'] = graph_func.out_of_bound_type
+        
+        # XMILE element order for graph functions:
+        # 1. xscale (if continuous) or nothing
+        # 2. yscale
+        # 3. xpts (if discrete)
+        # 4. ypts
+        
+        # Add xscale (for continuous functions)
+        if graph_func.xscale is not None:
+            xscale_elem = soup.new_tag('xscale', attrs={
+                'min': str(graph_func.xscale[0]),
+                'max': str(graph_func.xscale[1])
+            })
+            gf_elem.append(xscale_elem)
+        
+        # Add yscale
+        yscale_elem = soup.new_tag('yscale', attrs={
+            'min': str(graph_func.yscale[0]),
+            'max': str(graph_func.yscale[1])
+        })
+        gf_elem.append(yscale_elem)
+        
+        # Add xpts (only if explicitly provided, not generated from xscale)
+        if hasattr(graph_func, '_xpts_explicit') and graph_func._xpts_explicit:
+            xpts_elem = soup.new_tag('xpts')
+            xpts_elem.string = ','.join(str(x) for x in graph_func.xpts)
+            gf_elem.append(xpts_elem)
+        
+        # Add ypts
+        ypts_elem = soup.new_tag('ypts')
+        ypts_elem.string = ','.join(str(y) for y in graph_func.ypts)
+        gf_elem.append(ypts_elem)
+        
+        # Insert gf element at correct position:
+        # <gf> should come after <scale> (if present) but before other structural tags
+        gf_insert_before = None
+        for tag_name in ['inflow', 'outflow', 'non_negative', 'units']:
+            elem = var_elem.find(tag_name)
+            if elem:
+                gf_insert_before = elem
+                break
+        
+        if gf_insert_before:
+            gf_insert_before.insert_before(gf_elem)
+        else:
+            var_elem.append(gf_elem)
+    
+    def _update_variable_equation_in_elem(self, soup, var_elem, var_name):
+        """Update equation in an existing variable element."""
+        # Get current equation from model
+        equation = None
+        if var_name in self.stock_equations:
+            equation = self.stock_equations[var_name]
+        elif var_name in self.flow_equations:
+            equation = self.flow_equations[var_name]
+        elif var_name in self.aux_equations:
+            equation = self.aux_equations[var_name]
+        
+        if equation is None:
+            return
+        
+        # Don't update if it's a DataFeeder (will be recreated from data import)
+        if isinstance(equation, DataFeeder):
+            self.logger_model_creation.debug(f"Skipping update for {var_name} (DataFeeder)")
+            return
+        
+        # Special handling for subscripted variables with ALL DataFeeders
+        # These were likely graph functions overridden by data imports - restore original structure
+        if isinstance(equation, dict) and all(isinstance(v, DataFeeder) for v in equation.values()):
+            self.logger_model_creation.debug(f"Restoring original element structure for DataFeeder-only variable: {var_name}")
+            
+            # Remove current equation elements
+            for tag_name in ['eqn', 'element', 'gf', 'conveyor', 'len']:
+                for elem in var_elem.find_all(tag_name):
+                    elem.decompose()
+            
+            # Find original variable in _xmile_soup to restore element structure
+            original_name = self._xmile_name_mapping.get(var_name, var_name)
+            orig_var = None
+            for var_type in ['stock', 'flow', 'aux']:
+                orig_var = self._xmile_soup.find(var_type, attrs={'name': original_name})
+                if orig_var:
+                    break
+            
+            if orig_var:
+                # Copy original equation elements from source XMILE
+                for elem in orig_var.find_all(['element', 'eqn', 'gf'], recursive=False):
+                    # Clone the element and add to current var_elem
+                    from copy import deepcopy
+                    cloned = deepcopy(elem)
+                    
+                    # Insert at correct position
+                    insert_before = None
+                    for tag_name in ['format', 'scale', 'inflow', 'outflow', 'non_negative', 'units']:
+                        before_elem = var_elem.find(tag_name)
+                        if before_elem:
+                            insert_before = before_elem
+                            break
+                    
+                    if insert_before:
+                        insert_before.insert_before(cloned)
+                    else:
+                        var_elem.append(cloned)
+            return
+        
+        # Remove all equation-related elements (but preserve dimensions, doc, units, format, summing, etc.)
+        # This ensures a clean slate for the new equation
+        # Note: We preserve 'summing' (isee:summing) which is a Stella UI flag
+        for tag_name in ['eqn', 'element', 'gf', 'conveyor', 'len']:
+            for elem in var_elem.find_all(tag_name):
+                elem.decompose()
+        
+        # Add new equation
+        self._add_equation_to_elem(soup, var_elem, var_name, equation)
+    
+    def _update_variable_doc_in_elem(self, soup, var_elem, var_name):
+        """Update documentation in an existing variable element."""
+        # Get current doc and tags from model
+        doc_text = self.variable_docs.get(var_name, '')
+        tags = self.variable_tags.get(var_name, [])
+        
+        # Remove old doc element if exists
+        old_doc = var_elem.find('doc')
+        if old_doc:
+            old_doc.decompose()
+        
+        # Create new doc element if there's content
+        if doc_text or tags:
+            doc_elem = soup.new_tag('doc')
+            # Format with tags if they exist
+            full_doc_content = self.format_doc_content(tags, doc_text)
+            doc_elem.string = full_doc_content
+            var_elem.append(doc_elem)
