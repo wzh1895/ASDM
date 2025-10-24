@@ -47,3 +47,8 @@ asdm = "asdm.cli:main"
 Homepage = "https://github.com/wzh1895/ASDM"
 "Source Code" = "https://github.com/wzh1895/ASDM"
 "Matt Stammers's GitHub" = "https://github.com/MattStammers"
+
+[tool.pytest.ini_options]
+# Show all test results: passed, failed, skipped, etc.
+addopts = "-rA -v"
+testpaths = ["tests", "resources"]
