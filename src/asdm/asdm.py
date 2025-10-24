@@ -2880,9 +2880,9 @@ class sdmodel(object):
 
     def calculate_variable(self, var, dg, mode, subscript=None, leak_frac=False, conveyor_init=False, conveyor_len=False):
         if leak_frac or conveyor_init or conveyor_len:
-            self.logger.debug(f"    Calculating: {var:<15} on subscript {subscript}; flags leak_frac={leak_frac}, conveyor_init={conveyor_init}, conveyor_len={conveyor_len}")
+            self.logger.debug(f"Calculating: {var:<15} on subscript {subscript}; flags leak_frac={leak_frac}, conveyor_init={conveyor_init}, conveyor_len={conveyor_len}")
         else:
-            self.logger.debug(f"    Calculating: {var:<15} on subscript {subscript}")
+            self.logger.debug(f"Calculating: {var:<15} on subscript {subscript}")
         # debug
         if var in self.env_variables.keys():
             return
@@ -3077,9 +3077,9 @@ class sdmodel(object):
                                     else:
                                         self.stock_non_negative_temp_value[flow_to_stock] += self.name_space[var] * self.sim_specs['dt']
                             # situation 2:
-                            # Even if the flow is a unidirectional (positive) flow, it still can add to the "flow-to" stock's temp value, and this will affect how that stock constrains its out_flows
+                            # Even if the flow is a unidirectional (non-negative) flow, it still can add to the "flow-to" stock's temp value, and this will affect how that stock constrains its out_flows
                             else:
-                                self.logger.debug(f'    ----Flow {var} is a unidirectional (positive flow), adding its value {self.name_space[var]} to the "flow-to" stock {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
+                                self.logger.debug(f'    ----Flow {var} is a unidirectional (non-negative flow), adding its value {self.name_space[var]} to the "flow-to" stock {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
                                 if type(self.name_space[var]) is dict:
                                     for sub, sub_value in self.name_space[var].items():
                                         self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
@@ -3143,7 +3143,7 @@ class sdmodel(object):
                 else:
                     value = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode, subscript=subscript)
                     self.name_space[var] = value
-                self.logger.debug(f'    '+'Aux {var} = {value}')
+                self.logger.debug(f'Aux {var} = {value}')
                         
             else:
                 pass
@@ -3277,7 +3277,8 @@ class sdmodel(object):
         # self.current_iteration = 0
 
         for s in range(iterations):
-            self.logger.debug(f'--iteration {s} start, current time {self.sim_specs["current_time"]}--')
+            self.logger.debug("")
+            self.logger.debug(f'---- iteration {s} start, current time {self.sim_specs["current_time"]} ----')
             
             # Iter step 1: calculate flows and auxiliaries they depend on
             self.logger.debug('calculating flows and auxiliaries they depend on')
@@ -3297,19 +3298,20 @@ class sdmodel(object):
             
             self.time_slice[self.sim_specs['current_time']] = current_snapshot
 
-            self.logger.debug(f'--step {s} finished--') 
-            self.logger.debug(f'name_space {self.name_space}')
-            self.logger.debug(f'shadow_val {self.stock_shadow_values}')
+            self.logger.debug(f'---- iteration {s} finished ----') 
+            self.logger.debug(f'name_space: {self.name_space}')
+            self.logger.debug(f'shadow_val: {self.stock_shadow_values}')
+            self.logger.debug(f'time_expr_register: {self.solver.time_expr_register}')
 
             
             # Iter step 3: update simulation time
-            self.logger.debug('updating simulation time (current_time)')
+            self.logger.debug(f'updating simulation time (current_time) from {self.sim_specs["current_time"]} to {self.sim_specs["current_time"] + dt}')
             self.sim_specs['current_time'] += dt
             # self.current_iteration += 1
 
             # prepare name_space for next step
-            self.logger.debug('--- preparing name_space for next step ---')
-            self.logger.debug('clear name space')
+            self.logger.debug('---- preparing name_space for next step ----')
+            self.logger.debug('clearing name space')
             self.name_space.clear()
             self.logger.debug(f'name space: {self.name_space}')
 
@@ -3337,7 +3339,7 @@ class sdmodel(object):
             self.name_space['TIME'] = self.sim_specs['current_time']
             self.name_space['DT'] = self.sim_specs['dt']
 
-            self.logger.debug('--- end of preparation ---')
+            self.logger.debug('---- end of preparation ----')
 
         self.state = 'simulated'
 
@@ -3623,97 +3625,85 @@ class sdmodel(object):
             visited.remove(var)
             return graph
 
-    def generate_cld(self, vars=None, show=False, loop=True):
-        # Make sure the model equations are parsed
-        if self.state == 'loaded':
-            self.parse()
-
-        if vars is None:
-            vars = list(self.flow_equations.keys())
-        elif type(vars) is str:
-            vars = [vars]
-        
-        dg = nx.DiGraph()
-
-        for var in vars:
-            dg_var = self.create_variable_dependency_graph(var, mode='iter')
-            dg = nx.compose(dg, dg_var)
-
-        # create flow-to-stock edges if loop=True
-        if loop:
-            for flow in self.flow_stocks.keys():
-                if flow in vars:
-                    for stock in self.flow_stocks[flow].values():
-                        dg.add_edge(flow, stock)
-        
-        if not show:
-            return dg
-        else:
-            import matplotlib.pyplot as plt
-            from networkx.drawing.nx_agraph import graphviz_layout
-            pos = graphviz_layout(dg, prog='dot')
-            # pos = nx.spring_layout(dg)
-            nx.draw(
-                dg, 
-                pos, 
-                with_labels=True, 
-                node_size=300, 
-                node_color="skyblue", 
-                node_shape="s", 
-                alpha=1, 
-                linewidths=5
-                )
-            plt.show()
-
     def generate_full_dependent_graph(self, show=False):
-        stocks = list(self.stock_equations.keys())
-        flows = list(self.flow_equations.keys())
-        delayed_auxiliaries = list(self.delayed_auxiliary_equations.keys())
+        ########################
+        # Initialization graph #
+        ########################
 
-        # Initialization phase
+        self.logger.debug(f'{"*"*80}')
+        self.logger.debug(f'Initialization phase')
+        self.logger.debug(f'{"*"*80}')
+
         dg_init = nx.DiGraph()
-        for stock in stocks:
-            dg_stock = self.create_variable_dependency_graph(stock, mode='init')
-            dg_init = nx.compose(dg_init, dg_stock)
+        if len(self.stock_equations_parsed) > 0:
+            for stock in self.stock_equations_parsed:
+                dg_stock = self.create_variable_dependency_graph(stock, mode='init')
+                dg_init = nx.compose(dg_init, dg_stock)
+        else:
+            self.logger.debug(f"INIT Graph: No stocks, skipping")
+
+        if len(self.delayed_auxiliary_equations_parsed) > 0:
+            for delayed_aux in self.delayed_auxiliary_equations_parsed:
+                dg_delayed_aux = self.create_variable_dependency_graph(delayed_aux, mode='init')
+                dg_init = nx.compose(dg_init, dg_delayed_aux)
+        else:
+            self.logger.debug(f"INIT Graph: No delayed auxiliaries, skipping")
+
+        self.logger.debug(f'INIT Graph: Nodes (before sanitization): {dg_init.nodes(data=True)}')
+        self.logger.debug(f'INIT Graph: Edges (before sanitization): {dg_init.edges(data=True)}')
         
-        # check each non-negative stock for dependencies of inflow and outflow and add to dg_init
+        # check each non-negative stock for its dependency on inflows and outflows and add to dg_init
         for stock, in_out_flows in self.stock_flows.items():
             if self.stock_non_negative[stock] is True:
-                self.logger.debug('GEN 0.init for non negative stock %s', stock)
+                self.logger.debug(f'INIT Graph: Considering non-negative stock {stock}')
                 if 'out' in in_out_flows:
                     out_flows = in_out_flows['out']
 
                     for out_flow in out_flows:
                         if out_flow in dg_init:
-                            self.logger.debug('GEN --1.init for outflow %s', out_flow)
+                            self.logger.debug(f'INIT Graph: Outflow {out_flow} is in the graph, considering it')
                             # if stock explicitly depends on outflow for initiliazation, we cannot let outflow be constrained by stock in the initialization phase
                             if nx.has_path(dg_init, out_flow, stock):
-                                pass
-                            else: # out_flow 
+                                self.logger.debug(f'INIT Graph: Stock {stock} explicitly depends on outflow {out_flow}, skipping')
+                            else: # out_flow does not depend on stock, add it to the graph
+                                self.logger.debug(f'INIT Graph: Outflow {out_flow} does not depend on stock {stock}, adding to the graph, so that it is constrained by stock in the initialization phase')
                                 nx.set_node_attributes(dg_init, {out_flow: {'out_from_non_negative_stock': stock}}) # this attribute triggers the constrains in runtime
                         else:
-                            pass
+                            self.logger.debug(f'INIT Graph: Outflow {out_flow} is not in the graph, skipping it')
 
                     if 'in' in in_out_flows:
                         in_flows = in_out_flows['in']
-                        # for each inflow, we need to check if it is dependent on (affected by) any outflow; if yes, we exclude it from outflow constraining.
-                        in_flow_sanities = {}
+                        # for each inflow, we need to check if it depends on (i.e., is affected by) any outflow; if yes, we exclude it from outflow constraining.
+                        # Exception: when the inflow is a delayed outflow with an independent initial value; in this case, we do not consider its dependency on the outflow but consider it TRUE as a sanity inflow during initialization.
+                        
+                        in_flow_sanities = {} # sanity: True if the inflow is not explicitly dependent on any outflow
 
                         for in_flow in in_flows:
                             if in_flow in dg_init:
-                                self.logger.debug('GEN ----2.init for inflow %s', in_flow)
+                                self.logger.debug(f'INIT Graph: Inflow {in_flow} is in the graph, examining it...')
+                                # we assume all inflows are sanity at the beginning
                                 in_flow_sanities[in_flow] = True
                                 for out_flow in out_flows:
-                                    if nx.has_path(dg_iter, out_flow, in_flow):
-                                        in_flow_sanities[in_flow] = False
-                                        # dg_init
-                                        if in_flow in dg_init:
-                                            nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': False}}) # this attribute excludes the inflow from 'how much can flow out'
+                                    if out_flow in dg_init:
+                                        self.logger.debug(f'INIT Graph:     for Inflow {in_flow}, Outflow {out_flow} is in the graph, meaning it is needed during initialization')
+                                        if nx.has_path(dg_init, out_flow, in_flow):
+                                            self.logger.debug(f'INIT Graph:     Inflow {in_flow} explicitly depends on outflow {out_flow}, not a sanity inflow')
+                                            in_flow_sanities[in_flow] = False # if inflow depends on any outflow, it is not a sanity inflow
+                                            # dg_init
+                                            if in_flow in dg_init:
+                                                self.logger.debug(f'INIT Graph:     Inflow {in_flow} is excluded from outflow constraining')
+                                                nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': False}}) # this attribute excludes the inflow from 'how much can flow out'
+                                        else:
+                                            self.logger.debug(f'INIT Graph:     Inflow {in_flow} does not depend on outflow {out_flow} during initialization')
+                                    else:
+                                        self.logger.debug(f'INIT Graph:     for Inflow {in_flow}, Outflow {out_flow} is not in the graph, meaning it is not needed during initialization, skipping it')
+
                                     if not in_flow_sanities[in_flow]:
                                         break
                                 if in_flow_sanities[in_flow]:
                                     # dg_init
                                     if in_flow in dg_init:
+                                        self.logger.debug(f'INIT Graph: Inflow {in_flow} is included in outflow constraining')
                                         nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
                             else:
                                 pass
@@ -3725,14 +3715,14 @@ class sdmodel(object):
                                     # dg_init
                                     if (out_flow, in_flow) not in dg_init.edges: # avoid overwriting
                                         dg_init.add_edge(out_flow, in_flow)
-                                        self.logger.debug('GEN ------3.init inflow %s implicitly depends on %s', in_flow, out_flow)
+                                        self.logger.debug(f'INIT Graph: Inflow {in_flow} implicitly depends on outflow {out_flow}')
 
                             else: # for inflow with sanity, we need to make all outflows dependent on it, so that they are calculated before constraining the outflows
                                 for out_flow in out_flows:
                                     # dg_init
                                     if (in_flow, out_flow) not in dg_init.edges: # avoid overwriting
                                         dg_init.add_edge(in_flow, out_flow)
-                                        self.logger.debug('GEN ------4.init outflow %s implicitly depends on %s', out_flow, in_flow)
+                                        self.logger.debug(f'INIT Graph: Outflow {out_flow} implicitly depends on inflow {in_flow}')
                     
                     else: # no inflow, just determine the prioritisation of outflows
                         pass
@@ -3757,13 +3747,29 @@ class sdmodel(object):
                     self.stock_non_negative_out_flows[stock] = out_flows
                 
                 else: # no outflows
+                    self.logger.debug(f"INIT Graph: Stock {stock} has no outflows, only considering inflows")
                     if 'in' in in_out_flows: # no outflows, just inflows
-                        self.logger.debug('GEN --5.init no outflow')
+                        self.logger.debug(f"INIT Graph: Stock {stock} has inflows, considering them")
                         in_flows = in_out_flows['in']
                         for in_flow in in_flows:
                             if in_flow in dg_init:
-                                nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
-                                self.logger.debug("GEN --6.init consider inflow %s", in_flow)
+                                nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
+                                self.logger.debug(f"INIT Graph: Inflow {in_flow} is considered for non-negative stock {stock}")
+                    else:
+                        self.logger.debug(f"INIT Graph: Stock {stock} has no inflows, skipping")
+                
+                # temporary fix, further validation needed
+                if 'in' in in_out_flows:
+                    in_flows = in_out_flows['in']
+                    # Exception: when the stock depends on the inflow for initialization; in this case, we consider it FALSE as a sanity inflow during initialization.
+                    for in_flow in in_flows:
+                        if in_flow in dg_init:
+                            if nx.has_path(dg_init, in_flow, stock):
+                                nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': False}}) # this attribute excludes the inflow from 'how much can flow out'
+                        else:
+                            pass
+            else:
+                self.logger.debug(f"INIT Graph: Stock {stock} is not a non-negative stock, skipping")
 
         # Conveyor: add dependency of leakflow on the conveyor
         for conveyor_name, conveyor in self.conveyors.items():
@@ -3783,32 +3789,44 @@ class sdmodel(object):
                 
                 dg_init = nx.compose(dg_init, dg_leak_fraction)
 
-        # Initialize delayed auxiliaries
-        for aux in self.delayed_auxiliary_equations_parsed:
-            dg_delayed_aux = self.create_variable_dependency_graph(aux, mode='init')
-            dg_init = nx.compose(dg_init, dg_delayed_aux)
+        ordered_vars_init = list(nx.topological_sort(dg_init))
 
-        # Iteration phase
+        self.logger.debug(f'INIT Graph: Dependent graph for initialization:')
+        self.logger.debug(f'INIT Graph: Nodes (after sanitization): {dg_init.nodes(data=True)}')
+        self.logger.debug(f'INIT Graph: Edges (after sanitization): {dg_init.edges(data=True)}')
+        self.logger.debug(f"INIT Graph: Ordered vars for initialization: {ordered_vars_init}")
+
+        ###################
+        # Iteration graph #
+        ###################
+
+        self.logger.debug(f'{"*"*80}')
+        self.logger.debug(f'Iteration phase')
+        self.logger.debug(f'{"*"*80}')
+
         dg_iter = nx.DiGraph()
-        for flow in flows:
+        for flow in self.flow_equations_parsed:
             dg_flow = self.create_variable_dependency_graph(flow, mode='iter')
             dg_iter = nx.compose(dg_iter, dg_flow)
 
-        # add obsolete flows and auxiliaries to the dg_iter
-        for var in (self.flow_equations | self.aux_equations):
+        # add obsolete auxiliaries to the dg_iter
+        for var in self.aux_equations:
             if var not in dg_iter.nodes:
                 dg_obsolete = self.create_variable_dependency_graph(var, mode='iter')
                 dg_iter = nx.compose(dg_iter, dg_obsolete)
+        
+        self.logger.debug(f'ITER Graph: Nodes (before sanitization): {dg_iter.nodes(data=True)}')
+        self.logger.debug(f'ITER Graph: Edges (before sanitization): {dg_iter.edges(data=True)}')
 
         # check each non-negative stock for dependencies of inflow and outflow and add to dg_iter
         for stock, in_out_flows in self.stock_flows.items():
             if self.stock_non_negative[stock] is True:
-                self.logger.debug('GEN 0.iter for non negative stock %s', stock)
+                self.logger.debug(f'ITER Graph: for non negative stock {stock}')
                 if 'out' in in_out_flows:
                     out_flows = in_out_flows['out']
 
                     for out_flow in out_flows:
-                        self.logger.debug('GEN --1.iter for outflow %s', out_flow)
+                        self.logger.debug(f'ITER Graph: for outflow {out_flow}')
                         nx.set_node_attributes(dg_iter, {out_flow: {'out_from_non_negative_stock': stock}}) # this attribute triggers the constrains in runtime
 
                     if 'in' in in_out_flows:
@@ -3817,7 +3835,7 @@ class sdmodel(object):
                         in_flow_sanities = {}
 
                         for in_flow in in_flows:
-                            self.logger.debug('GEN ----2.iter for inflow %s', in_flow)
+                            self.logger.debug(f'ITER Graph: for inflow {in_flow}')
                             in_flow_sanities[in_flow] = True
                             for out_flow in out_flows:
                                 if nx.has_path(dg_iter, out_flow, in_flow):
@@ -3834,13 +3852,13 @@ class sdmodel(object):
                                 for out_flow in out_flows:
                                     if (out_flow, in_flow) not in dg_iter.edges: # avoid overwriting
                                         dg_iter.add_edge(out_flow, in_flow)
-                                        self.logger.debug('GEN ------3.iter inflow %s implicitly depends on %s', in_flow, out_flow)
+                                        self.logger.debug(f'ITER Graph: inflow {in_flow} implicitly depends on outflow {out_flow}')
 
                             else: # for inflow with sanity, we need to make all outflows dependent on it, so that they are calculated before constraining the outflows
                                 for out_flow in out_flows:
                                     if (in_flow, out_flow) not in dg_iter.edges: # avoid overwriting
                                         dg_iter.add_edge(in_flow, out_flow)
-                                        self.logger.debug('GEN ------4.iter outflow %s implicitly depends on %s', out_flow, in_flow)
+                                        self.logger.debug(f'ITER Graph: outflow {out_flow} implicitly depends on inflow {in_flow}')
 
                     
                     else: # no inflow, just determine the prioritisation of outflows
@@ -3866,21 +3884,22 @@ class sdmodel(object):
                 
                 else: # no outflows
                     if 'in' in in_out_flows: # no outflows, just inflows
-                        self.logger.debug('GEN --5.iter no outflow')
+                        self.logger.debug(f'ITER Graph: no outflow')
                         in_flows = in_out_flows['in']
                         for in_flow in in_flows:
                             nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
-                            self.logger.debug("GEN --6.iter consider inflow %s", in_flow)
+                            self.logger.debug(f'ITER Graph: consider inflow {in_flow}')
 
-        self.logger.debug('GEN Dependent graph for init:')
-        self.logger.debug('GEN --nodes %s', dg_init.nodes(data=True))
-        self.logger.debug('GEN --edges %s', dg_init.edges(data=True))
-        self.logger.debug('GEN Dependent graph for iter:')
-        self.logger.debug('GEN --nodes %s', dg_iter.nodes(data=True))
-        self.logger.debug('GEN --edges %s', dg_iter.edges(data=True))
+        ordered_vars_iter = list(nx.topological_sort(dg_iter))
+
+
+        self.logger.debug(f'ITER Graph: Dependent graph for iteration:')
+        self.logger.debug(f'ITER Graph: Nodes (after sanitization): {dg_iter.nodes(data=True)}')
+        self.logger.debug(f'ITER Graph: Edges (after sanitization): {dg_iter.edges(data=True)}')
+        self.logger.debug(f"ITER Graph: Ordered vars for iteration: {ordered_vars_iter}")
 
         if not show:
-            return (dg_init, dg_iter)
+            return (dg_init, ordered_vars_init, dg_iter, ordered_vars_iter)
         else:
             if show == 'init':
                 dg = dg_init
@@ -3907,6 +3926,6 @@ class sdmodel(object):
             return (dg_init, dg_iter)
     
     def generate_ordered_vars(self):
-        self.dg_init, self.dg_iter = self.generate_full_dependent_graph()
+        self.dg_init, self.ordered_vars_init, self.dg_iter, self.ordered_vars_iter = self.generate_full_dependent_graph()
         self.ordered_vars_init = list(nx.topological_sort(self.dg_init))
         self.ordered_vars_iter = list(nx.topological_sort(self.dg_iter))
