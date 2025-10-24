@@ -3510,97 +3510,99 @@ class sdmodel(object):
         if var in self.env_variables: # like 'TIME'
             visited.remove(var)
             return graph
-        
-        parsed_equation = all_equations[var]
 
         def get_dependent_variables(parsed_equation):
-            # self.logger.debug(f"Getting dependent variables for parsed equation of variable '{var}'")
-            # self.logger.debug(f"Parsed equation: {parsed_equation.nodes(data=True)}")
-            # dependent_variables = set()
-            # if type(parsed_equation) is not dict:
-            #     def trace_node(node_id, node_dependents=set()):
-            #         self.logger.debug(f"Tracing node {node_id} with current dependents: {node_dependents}, parsed equation: {parsed_equation.nodes(data=True)}")
-            #         node = parsed_equation.nodes[node_id]
-            #         print('aaa', node)
-            #         node_operator = node['operator']
-            #         self.logger.debug(f"Tracing node {node_id}: operator {node_operator}")
-            #         if node_operator not in ['DELAY', 'DELAY1', 'DELAY3', 'SMTH1', 'SMTH3']: # if it is not a delay function, it's likely not having initial value issue
-            #             self.logger.debug(f"Node {node_id} is not a delay/smooth function, skipping special handling")
-            #             node_dependents.update(node['operands'])
-            #         else: # these functions have 2 or 3 operands; if 2 then no initial value, only 1st is used for initialization; if 3 then with initial value, only 3rd is used for initialization; 1st is indirectly (through cumulation) used for iteration; 2nd is directly (delay time) used for iteration
-            #             self.logger.debug(f"Node {node_id} is a delay/smooth function {node_operator}, handling operands based on mode '{mode}'")
-            #             if mode == 'init':
-            #                 self.logger.debug(f"Initialization mode: only considering the operand used for initialization")
-            #                 if len(node['operands']) == 3:
-            #                     self.logger.debug(f"Node {node_id} has 3 operands, adding the 3rd operand for initialization")
-            #                     node_dependents.add(node['operands'][2])
-            #                 elif len(node['operands']) == 2:
-            #                     self.logger.debug(f"Node {node_id} has 2 operands, adding the 1st operand for initialization")
-            #                     node_dependents.add(node['operands'][0])
-            #             elif mode == 'iter':
-            #                 self.logger.debug(f"Iteration mode: only delay time")
-            #                 node_dependents.add(node['operands'][1])
-            #         self.logger.debug(f"    1. Node {node_id} dependents after tracing: {node_dependents}")
-            #         self.logger.debug(f"    2. Retrieving dependent variables for node {node_id}")
-                    
-            #         node_dependent_purged = set()
-            #         for node_dependent in node_dependents:
-            #             if parsed_equation.nodes[node_dependent]['operator'] in ['EQUALS', 'SPAREN']:
-            #                 self.logger.debug(f"    --Node {node_dependent} is a variable, adding to dependent variables")
-            #                 dependent_name = parsed_equation.nodes[node_dependent]['value']
-            #                 dependent_variables.add(dependent_name)
-            #             elif parsed_equation.nodes[node_dependent]['operator'] == 'IS': # it is a number, no dependent, skip
-            #                 self.logger.debug(f"    --Node {node_dependent} is a number, skipping")
-            #                 pass
-            #             else:
-            #                 node_dependent_purged.add(node_dependent)
-            #         self.logger.debug(f"    3. Dependent variables for variable {var}: {dependent_variables}")
-            #         self.logger.debug(f"    4. Remaining node dependents for node {node_id}: {node_dependent_purged}")
+            self.logger.debug("."*80)
+            self.logger.debug(f"Getting dependent variables of variable '{var}'")
+            dependent_variables = set()
+            self.id_level = 0
+            
+            def trace_node(parsed_equation, node_id):
+                self.id_level += 1
+                self.logger.debug(f"{"    "*self.id_level}-->Tracing node {node_id} with current dependent variables: {dependent_variables}, node detail: {parsed_equation.nodes[node_id]}")
+                node = parsed_equation.nodes[node_id]
+                operands_to_trace = set()
+                if len(node) == 0:
+                    successor_nodes = list(parsed_equation.successors(node_id))
+                    successor_id = successor_nodes[0]
+                    self.logger.debug(f"{"    "*self.id_level}This is root node, moving to its successsor node {successor_id}.")
+                    trace_node(parsed_equation, successor_id)
+                else:
+                    node_operator = node['operator']
+                    node_operands = node['operands']
+                    self.logger.debug(f"{"    "*self.id_level}Examining node {node_id} with operator {node_operator}")
+                    if node_operator in ['IS']:
+                        self.logger.debug(f"{"    "*self.id_level}Node {node_id} has operator {node_operator}, a number; no dependent, no further tracing needed.")
+                        return
+                    elif node_operator in ['DELAY', 'DELAY1', 'DELAY3', 'SMTH1', 'SMTH3']:
+                        # these functions have 2 or 3 operands; if 2 then no initial value, only 1st is used for initialization; if 3 then with initial value, only 3rd is used for initialization; 1st is indirectly (through cumulation) used for iteration; 2nd is directly (delay time) used for iteration
+                        self.logger.debug(f"{"    "*self.id_level}Node {node_id} is a delay/smooth function {node_operator}, handling operands based on mode '{mode}'")
+                        if mode == 'init':
+                            self.logger.debug(f"{"    "*self.id_level}Initialization mode: only considering the operand used for initialization")
+                            if len(node['operands']) == 3:
+                                self.logger.debug(f"{"    "*self.id_level}Node {node_id} has 3 operands, adding only the 3rd operand for initialization")
+                                operands_to_trace.add(node['operands'][2])
+                            elif len(node['operands']) == 2:
+                                self.logger.debug(f"{"    "*self.id_level}Node {node_id} has 2 operands, adding the target variable and delay time for initialization")
+                                operands_to_trace.add(node['operands'][0])
+                                operands_to_trace.add(node['operands'][1])
+                        elif mode == 'iter':
+                            self.logger.debug(f"{"    "*self.id_level}Iteration mode: considering target variable and delay time for iteration")
+                            operands_to_trace.add(node['operands'][0])
+                            operands_to_trace.add(node['operands'][1])
+                        else:
+                            raise Exception(f"Invalid mode: {mode}")
+                    elif node_operator in ['EQUALS', 'SPAREN']:
+                        self.logger.debug(f"{"    "*self.id_level}Node {node_id} has operator {node_operator}")
+                        dependent_variable_name = parsed_equation.nodes[node_id]['value']
+                        self.logger.debug(f"{"    "*self.id_level}-- Node {node_id} is a variable {dependent_variable_name}, adding to dependent variables; no further tracing needed.")
+                        dependent_variables.add(dependent_variable_name)
+                    else:
+                        for node_operand in node_operands:
+                            operands_to_trace.add(node_operand)
 
-            #         # the remaining nodes could have dependencies on other variables, trace them recursively
-            #         for node_dependent in node_dependent_purged:
-            #             trace_node(node_id=node_dependent, node_dependents=node_dependent_purged)
+                    # the remaining nodes (post-processing) could have dependencies on other variables, trace them recursively
+                    if len(operands_to_trace) == 0:
+                        pass
+                    else:
+                        for node_operand in operands_to_trace:
+                            trace_node(parsed_equation, node_operand)
+                self.id_level -= 1
 
-            #     trace_node(node_id=list(parsed_equation.successors('root'))[0])
-
-
-            # 20250831 this method is too coarse to detect if a, e.g., SMTH1 function depends on some var as input but has a different initial value
-            dependent_variables = list()
             if type(parsed_equation) is not dict:
-                leafs = [x for x in parsed_equation.nodes() if parsed_equation.out_degree(x)==0]
-                for leaf in leafs:
-                    if parsed_equation.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
-                        dependent_name = parsed_equation.nodes[leaf]['value']
-                        if dependent_name in self.element_names:
-                            continue
-                        # if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out # 20250831: Dimension now is a different kind of token
-                        dependent_variables.append(dependent_name)
-                        
+                trace_node(parsed_equation, node_id='root')
             else:
                 for _, sub_eqn in parsed_equation.items():
-                    leafs = [x for x in sub_eqn.nodes() if sub_eqn.out_degree(x)==0]
-                    for leaf in leafs:
-                        if sub_eqn.nodes[leaf]['operator'] in ['EQUALS', 'SPAREN']:
-                            dependent_name = sub_eqn.nodes[leaf]['value']
-                            if dependent_name in self.element_names:
-                                continue
-                            if dependent_name not in dependent_variables: # remove duplicates
-                                # if dependent_name in self.stock_equations.keys() | self.flow_equations.keys() | self.aux_equations.keys(): # Dimension names are not variables, should be filtered out # 20250831: Dimension now is a different kind of token
-                                dependent_variables.append(dependent_name)
+                    trace_node(sub_eqn, node_id='root')
+            
+            self.logger.debug(f"{"    "*self.id_level}Variable {var} is dependent on {dependent_variables}")
+            self.logger.debug("="*80)
+            
             return dependent_variables
+        
+        parsed_equation = all_equations[var]
         
         if type(parsed_equation) is list: # this variable might be a conveyor
             if var in self.conveyors:
                 dep_graph_len = get_dependent_variables(parsed_equation[0])
                 dep_graph_val = get_dependent_variables(parsed_equation[1])
                 # combine the two lists without duplicates
-                dependent_variables = list(set(dep_graph_len + dep_graph_val))
+                dependent_variables = list(set(dep_graph_len | dep_graph_val))
             else:
                 visited.remove(var)
                 raise Exception(f"Non-conveyor variable with parsed equation as list: {var}")
         else: # this is a normal variable
-            # now check is it a delay or smooth
-            dependent_variables = get_dependent_variables(parsed_equation)
+            if mode == 'init':
+                dependent_variables = get_dependent_variables(parsed_equation)
+            elif mode == 'iter':
+                if var in self.stock_equations:
+                    dependent_variables = list() # stock variables' equations are only for initialization, they are not dependent on any other variables during iteration step 1
+                    self.logger.debug(f'ITER Graph: Stock variable {var} is considered for iteration, but its equation is only used for initialization, thus no dependence on other variables during iteration')
+                else:
+                    dependent_variables = get_dependent_variables(parsed_equation)
+                    self.logger.debug(f'ITER Graph: Variable {var} is considered for iteration, it depends on: {dependent_variables}')
+            else:
+                raise Exception(f"Invalid mode: {mode}")
 
         if len(dependent_variables) == 0:
             graph.add_node(var)
