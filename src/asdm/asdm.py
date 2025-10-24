@@ -3739,43 +3739,43 @@ class sdmodel(object):
             
             def trace_node(parsed_equation, node_id):
                 self.id_level += 1
-                self.logger.debug(f"{"    "*self.id_level}-->Tracing node {node_id} with current dependent variables: {dependent_variables}, node detail: {parsed_equation.nodes[node_id]}")
+                self.logger.debug(f"{'    '*self.id_level}-->Tracing node {node_id} with current dependent variables: {dependent_variables}, node detail: {parsed_equation.nodes[node_id]}")
                 node = parsed_equation.nodes[node_id]
                 operands_to_trace = set()
                 if len(node) == 0:
                     successor_nodes = list(parsed_equation.successors(node_id))
                     successor_id = successor_nodes[0]
-                    self.logger.debug(f"{"    "*self.id_level}This is root node, moving to its successsor node {successor_id}.")
+                    self.logger.debug(f"{'    '*self.id_level}This is root node, moving to its successsor node {successor_id}.")
                     trace_node(parsed_equation, successor_id)
                 else:
                     node_operator = node['operator']
                     node_operands = node['operands']
-                    self.logger.debug(f"{"    "*self.id_level}Examining node {node_id} with operator {node_operator}")
+                    self.logger.debug(f"{'    '*self.id_level}Examining node {node_id} with operator {node_operator}")
                     if node_operator in ['IS']:
-                        self.logger.debug(f"{"    "*self.id_level}Node {node_id} has operator {node_operator}, a number; no dependent, no further tracing needed.")
+                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} has operator {node_operator}, a number; no dependent, no further tracing needed.")
                         return
                     elif node_operator in ['DELAY', 'DELAY1', 'DELAY3', 'SMTH1', 'SMTH3']:
                         # these functions have 2 or 3 operands; if 2 then no initial value, only 1st is used for initialization; if 3 then with initial value, only 3rd is used for initialization; 1st is indirectly (through cumulation) used for iteration; 2nd is directly (delay time) used for iteration
-                        self.logger.debug(f"{"    "*self.id_level}Node {node_id} is a delay/smooth function {node_operator}, handling operands based on mode '{mode}'")
+                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} is a delay/smooth function {node_operator}, handling operands based on mode '{mode}'")
                         if mode == 'init':
-                            self.logger.debug(f"{"    "*self.id_level}Initialization mode: only considering the operand used for initialization")
+                            self.logger.debug(f"{'    '*self.id_level}Initialization mode: only considering the operand used for initialization")
                             if len(node['operands']) == 3:
-                                self.logger.debug(f"{"    "*self.id_level}Node {node_id} has 3 operands, adding only the 3rd operand for initialization")
+                                self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 3 operands, adding only the 3rd operand for initialization")
                                 operands_to_trace.add(node['operands'][2])
                             elif len(node['operands']) == 2:
-                                self.logger.debug(f"{"    "*self.id_level}Node {node_id} has 2 operands, adding the target variable and delay time for initialization")
+                                self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 2 operands, adding the target variable and delay time for initialization")
                                 operands_to_trace.add(node['operands'][0])
                                 operands_to_trace.add(node['operands'][1])
                         elif mode == 'iter':
-                            self.logger.debug(f"{"    "*self.id_level}Iteration mode: considering target variable and delay time for iteration")
+                            self.logger.debug(f"{'    '*self.id_level}Iteration mode: considering target variable and delay time for iteration")
                             operands_to_trace.add(node['operands'][0])
                             operands_to_trace.add(node['operands'][1])
                         else:
                             raise Exception(f"Invalid mode: {mode}")
                     elif node_operator in ['EQUALS', 'SPAREN']:
-                        self.logger.debug(f"{"    "*self.id_level}Node {node_id} has operator {node_operator}")
+                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} has operator {node_operator}")
                         dependent_variable_name = parsed_equation.nodes[node_id]['value']
-                        self.logger.debug(f"{"    "*self.id_level}-- Node {node_id} is a variable {dependent_variable_name}, adding to dependent variables; no further tracing needed.")
+                        self.logger.debug(f"{'    '*self.id_level}-- Node {node_id} is a variable {dependent_variable_name}, adding to dependent variables; no further tracing needed.")
                         dependent_variables.add(dependent_variable_name)
                     else:
                         for node_operand in node_operands:
@@ -3795,7 +3795,7 @@ class sdmodel(object):
                 for _, sub_eqn in parsed_equation.items():
                     trace_node(sub_eqn, node_id='root')
             
-            self.logger.debug(f"{"    "*self.id_level}Variable {var} is dependent on {dependent_variables}")
+            self.logger.debug(f"{'    '*self.id_level}Variable {var} is dependent on {dependent_variables}")
             self.logger.debug("="*80)
             
             return dependent_variables
