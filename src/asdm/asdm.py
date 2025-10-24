@@ -1145,89 +1145,161 @@ class Solver(object):
                 if tuple([var_name, parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
                     value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])]
                 else:
-                    value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = value
+                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                    value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])]
             elif func_name == 'DELAY':
-                # expr value
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(expr_value)
-                else:
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = [expr_value]
-
-                # init value
-                if len(node_operands) == 2: # there's no initial value specified -> use the delayed expr's initial value
-                    init_value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0]
-                elif len(node_operands) == 3: # there's an initial value specified
+                if mode == 'init' and len(node_operands) == 3:
+                    # this is 'init' mode with 3 operands, meaning an initial value is specified; in this case, just calculate the initial value, not the other 2 operands.
                     init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                else:
-                    raise Exception(f"Invalid initial value for DELAY in operands {node_operands}")
-
-                # delay time
-                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
-                if delay_time > (self.sim_specs['current_time'] - self.sim_specs['initial_time']): # (- initial_time) because simulation might not start from time 0
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
                     value = init_value
-                else:
-                    delay_steps = delay_time / self.sim_specs['dt']
-                    value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][-int(delay_steps+1)]
-            elif func_name == 'DELAY1':
-                # args values
-                order = 1
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])] = [value]
+                else: # 'iter' mode or 'init' mode with 2 oprands
+                    # delay time is (1) the constant or (2) initial value of the target variable whose value is used for delay time
+                    if tuple([var_name, subscript, node_id, func_name, 'delay_time']) not in self.time_expr_register.keys():
+                        delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
+                    else:
+                        delay_time = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])]
 
-                if len(node_operands) == 3:
-                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                elif len(node_operands) == 2:
-                    init_value = expr_value
-                else:
-                    raise Exception('Invalid number of args for DELAY1.')
+                    # initial value
+                    if tuple([var_name, subscript, node_id, func_name, 'init_value']) not in self.time_expr_register.keys():
+                        if len(node_operands) == 3:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
+                        elif len(node_operands) == 2:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                        else:
+                            raise Exception('Invalid number of args for DELAY.')
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                    else:
+                        init_value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])]
+                    
+                    # calculate the current value of operand[0] and push it to the register
+                    expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                    if tuple([var_name, subscript, node_id, func_name, 'value']) in self.time_expr_register.keys():
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])].append(expr_value)
+                    else:
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])] = [expr_value]
+                    
+                    # determin which value to return
+                    if (self.sim_specs['current_time'] - self.sim_specs['initial_time']) < delay_time: # (use current - initial_time) because simulation might not start from time 0 (e.g., year 2011)
+                        value = init_value
+                    else:
+                        # take the past value from the stack
+                        delay_steps = delay_time / self.sim_specs['dt']
+                        value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])][-int(delay_steps+1)]
                 
-                # register
-                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = list()
+            elif func_name == 'DELAY1':
+                order = 1
+                if mode == 'init' and len(node_operands) == 3:
+                    # this is 'init' mode with 3 operands, meaning an initial value is specified; in this case, just calculate the initial value
+                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                    # initialize the stocks with init_value
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
+                    # delay_time needed for initialization
+                    delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
                     for i in range(order):
-                        self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(delay_time/order*init_value)
-                # outflows
-                outflows = list()
-                for i in range(order):
-                    outflows.append(self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i]/(delay_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
-                # inflows
-                self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
-                for i in range(1, order):
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
-
-                value = outflows[-1] / self.sim_specs['dt']
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
+                    value = init_value
+                else: # 'iter' mode or 'init' mode with 2 operands
+                    # delay_time is (1) the constant or (2) initial value of the target variable whose value is used for delay time
+                    if tuple([var_name, subscript, node_id, func_name, 'delay_time']) not in self.time_expr_register.keys():
+                        delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
+                    else:
+                        delay_time = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])]
+                    
+                    # initial value
+                    if tuple([var_name, subscript, node_id, func_name, 'init_value']) not in self.time_expr_register.keys():
+                        if len(node_operands) == 3:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
+                        elif len(node_operands) == 2:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                        else:
+                            raise Exception('Invalid number of args for DELAY1.')
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                    else:
+                        init_value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])]
+                    
+                    # initialize stocks if not already done
+                    if tuple([var_name, subscript, node_id, func_name, 'stocks']) not in self.time_expr_register.keys():
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
+                        for i in range(order):
+                            self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
+                    
+                    # calculate the current value of operand[0]
+                    expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                    
+                    # compute outflows from each stock
+                    outflows = list()
+                    for i in range(order):
+                        outflows.append(self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i]/(delay_time/order) * self.sim_specs['dt'])
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] -= outflows[i]
+                    
+                    # compute inflows to each stock
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][0] += expr_value * self.sim_specs['dt']
+                    for i in range(1, order):
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] += outflows[i-1]
+                    
+                    value = outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'DELAY3':
-                # arg values
                 order = 3
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
-                if len(node_operands) == 3:
+                if mode == 'init' and len(node_operands) == 3:
+                    # this is 'init' mode with 3 operands, meaning an initial value is specified; in this case, just calculate the initial value
                     init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                elif len(node_operands) == 2:
-                    init_value = expr_value
-                else:
-                    raise Exception('Invalid number of args for SMTH3.')
-                
-                # register
-                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = list()
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                    # initialize the stocks with init_value
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
+                    # delay_time needed for initialization
+                    delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
                     for i in range(order):
-                        self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(delay_time/order*init_value)
-                # outflows
-                outflows = list()
-                for i in range(order):
-                    outflows.append(self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i]/(delay_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
-                # inflows
-                self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
-                for i in range(1, order):
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
-
-                value = outflows[-1] / self.sim_specs['dt']
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
+                    value = init_value
+                else: # 'iter' mode or 'init' mode with 2 operands
+                    # delay_time is (1) the constant or (2) initial value of the target variable whose value is used for delay time
+                    if tuple([var_name, subscript, node_id, func_name, 'delay_time']) not in self.time_expr_register.keys():
+                        delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
+                    else:
+                        delay_time = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])]
+                    
+                    # initial value
+                    if tuple([var_name, subscript, node_id, func_name, 'init_value']) not in self.time_expr_register.keys():
+                        if len(node_operands) == 3:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
+                        elif len(node_operands) == 2:
+                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                        else:
+                            raise Exception('Invalid number of args for DELAY3.')
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                    else:
+                        init_value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])]
+                    
+                    # initialize stocks if not already done
+                    if tuple([var_name, subscript, node_id, func_name, 'stocks']) not in self.time_expr_register.keys():
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
+                        for i in range(order):
+                            self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
+                    
+                    # calculate the current value of operand[0]
+                    expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                    
+                    # compute outflows from each stock
+                    outflows = list()
+                    for i in range(order):
+                        outflows.append(self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i]/(delay_time/order) * self.sim_specs['dt'])
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] -= outflows[i]
+                    
+                    # compute inflows to each stock
+                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][0] += expr_value * self.sim_specs['dt']
+                    for i in range(1, order):
+                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] += outflows[i-1]
+                    
+                    value = outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'HISTORY':
                 # expr value
