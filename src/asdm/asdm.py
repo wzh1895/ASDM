@@ -547,34 +547,38 @@ class Solver(object):
 
         def plus(a, b):
             try:
-                return a + b
+                result = a + b
+                # Ensure scalar results are np.float64
+                return np.float64(result) if not isinstance(result, dict) else result
             except TypeError as e:
                 if type(a) is dict and type(b) is dict:
                     o = dict()
                     for k in a:
-                        o[k] = a[k] + b[k]
+                        o[k] = np.float64(a[k] + b[k])
                     return o
                 else:
                     raise e
 
         def minus(a, b):
             try:
-                return a - b
+                result = a - b
+                # Ensure scalar results are np.float64
+                return np.float64(result) if not isinstance(result, dict) else result
             except TypeError as e:
                 if type(a) is dict and type(b) is dict:
                     o = dict()
                     for k in a:
-                        o[k] = a[k] - b[k]
+                        o[k] = np.float64(a[k] - b[k])
                     return o
-                elif type(a) is dict and type(b) in [int, float]:
+                elif type(a) is dict and type(b) in [int, float, np.float64]:
                     o = dict()
                     for k in a:
-                        o[k] = a[k] - b
+                        o[k] = np.float64(a[k] - b)
                     return o
-                elif type(a) in [int, float] and type(b) is dict:
+                elif type(a) in [int, float, np.float64] and type(b) is dict:
                     o = dict()
                     for k in b:
-                        o[k] = a - b[k]
+                        o[k] = np.float64(a - b[k])
                     return o
                 else:
                     raise e
@@ -582,12 +586,14 @@ class Solver(object):
         def unary_minus(a):
             """Unary minus operator (negation)"""
             try:
-                return -a
+                result = -a
+                # Ensure scalar results are np.float64
+                return np.float64(result) if not isinstance(result, dict) else result
             except TypeError as e:
                 if type(a) is dict:
                     o = dict()
                     for k in a:
-                        o[k] = -a[k]
+                        o[k] = np.float64(-a[k])
                     return o
                 else:
                     raise e
@@ -595,34 +601,38 @@ class Solver(object):
         def unary_plus(a):
             """Unary plus operator"""
             try:
-                return +a
+                result = +a
+                # Ensure scalar results are np.float64
+                return np.float64(result) if not isinstance(result, dict) else result
             except TypeError as e:
                 if type(a) is dict:
                     o = dict()
                     for k in a:
-                        o[k] = +a[k]
+                        o[k] = np.float64(+a[k])
                     return o
                 else:
                     raise e
 
         def times(a, b):
             try:
-                return a * b
+                result = a * b
+                # Ensure scalar results are np.float64
+                return np.float64(result) if not isinstance(result, dict) else result
             except TypeError as e:
                 if type(a) is dict and type(b) is dict:
                     o = dict()
                     for k in a:
-                        o[k] = a[k] * b[k]
+                        o[k] = np.float64(a[k] * b[k])
                     return o
                 elif type(a) is dict and type(b) in [int, float, np.float64]:
                     o = dict()
                     for k in a:
-                        o[k] = a[k] * b
+                        o[k] = np.float64(a[k] * b)
                     return o
                 elif type(a) in [int, float, np.float64] and type(b) is dict:
                     o = dict()
                     for k in b:
-                        o[k] = a * b[k]
+                        o[k] = np.float64(a * b[k])
                     return o
                 else:
                     raise e
@@ -637,8 +647,8 @@ class Solver(object):
                     if key is not None:
                         msg += f" for subscript '{key}'"
                     print(msg)
-                    return 0
-                return x / y
+                    return np.float64(0)
+                return np.float64(x / y)
 
             # Scalar / Scalar
             if isinstance(a, (int, float, np.float64)) and isinstance(b, (int, float, np.float64)):
@@ -662,102 +672,108 @@ class Solver(object):
         
         def floor_divide(a, b):
             try:
-                return a // b
+                result = a // b
+                # Ensure scalar results are np.float64
+                return np.float64(result) if not isinstance(result, dict) else result
             except TypeError as e:
                 if type(a) is dict and type(b) is dict:
                     # self.logger.debug('    '*self.id_level+'[ '+var_name+' ] ', 'a//b', a, b)
                     o = dict()
                     for k in a:
-                        o[k] = a[k] // b[k]
+                        o[k] = np.float64(a[k] // b[k])
                     return o
                 elif type(a) is dict and type(b) in [int, float, np.float64]:
                     o = dict()
                     for k in a:
-                        o[k] = a[k] // b
+                        o[k] = np.float64(a[k] // b)
                     return o
                 elif type(a) in [int, float, np.float64] and type(b) is dict:
                     o = dict()
                     for k in b:
-                        o[k] = a // b[k]
+                        o[k] = np.float64(a // b[k])
                     return o
                 else:
                     raise e
         
         def safe_div(a, b, c=0):
             if b == 0:
-                return c
+                return np.float64(c)
             else:
-                return a / b
+                return np.float64(a / b)
 
         def mod(a, b):
             try:
-                return a % b
+                result = a % b
+                # Ensure scalar results are np.float64
+                return np.float64(result) if not isinstance(result, dict) else result
             except TypeError as e:
                 if type(a) is dict and type(b) is dict:
                     # self.logger.debug('    '*self.id_level+'[ '+var_name+' ] ', 'a % b', a, b)
                     o = dict()
                     for k in a:
-                        o[k] = a[k] % b[k]
+                        o[k] = np.float64(a[k] % b[k])
                     return o
                 elif type(a) is dict and type(b) in [int, float, np.float64]:
                     o = dict()
                     for k in a:
-                        o[k] = a[k] % b
+                        o[k] = np.float64(a[k] % b)
                     return o
                 elif type(a) in [int, float, np.float64] and type(b) is dict:
                     o = dict()
                     for k in b:
-                        o[k] = a % b[k]
+                        o[k] = np.float64(a % b[k])
                     return o
                 else:
                     raise e
                 
         def exp(a, b):
-            return a ** b
+            result = a ** b
+            return np.float64(result) if not isinstance(result, dict) else result
         
         def exp_e(a):
-            return np.e ** a
+            result = np.e ** a
+            return np.float64(result) if not isinstance(result, dict) else result
 
         def con(a, b, c):
-            if a:
-                return b
-            else:
-                return c
+            result = b if a else c
+            # Ensure scalar results are np.float64 (unless they're dicts or other types)
+            return np.float64(result) if isinstance(result, (int, float)) else result
 
         def step(stp, time):
             # self.logger.debug('step:', stp, time)
             if sim_specs['current_time'] >= time:
                 # self.logger.debug('step out:', stp)
-                return stp
+                return np.float64(stp)
             else:
                 # self.logger.debug('step out:', 0)
-                return 0
+                return np.float64(0)
             
         def pulse(volume, first_pulse=None, interval=None):
             if first_pulse is None:
                     first_pulse = sim_specs['initial_time']
             if interval is None:
                 if sim_specs['current_time'] >= first_pulse: # pulse for all dt after fist pulse
-                    return volume / sim_specs['dt']
+                    return np.float64(volume / sim_specs['dt'])
                 else:
-                    return 0
+                    return np.float64(0)
             elif interval == 0 or interval > sim_specs['simulation_time']: # only one pulse
                 if sim_specs['current_time'] == first_pulse:
-                    return volume / sim_specs['dt']
+                    return np.float64(volume / sim_specs['dt'])
                 else:
-                    return 0
+                    return np.float64(0)
             else:
                 if (sim_specs['current_time'] >= first_pulse) and (sim_specs['current_time'] - first_pulse) % interval == 0: # pulse every interval
-                    return volume / sim_specs['dt']
+                    return np.float64(volume / sim_specs['dt'])
                 else:
-                    return 0
+                    return np.float64(0)
             
         def rbinom(n, p):
             s = stats.binom.rvs(int(n), p, size=1)[0]
-            return float(s) # TODO: something is wrong here - the dimension of s goes high like [[[[30]]]] if not float()ed.
+            return np.float64(s)  # Convert to np.float64 to prevent dimension explosion
         
         def log10(a):
-            return np.log10(a)
+            result = np.log10(a)
+            return np.float64(result) if not isinstance(result, dict) else result
         
         def colon_range(start_operand, end_operand):
             """Handle colon operator for range selection like A34:A94"""
@@ -785,9 +801,9 @@ class Solver(object):
             
             # Handle optional parameters
             if xstart is not None and x <= xstart:
-                return yfrom
+                return np.float64(yfrom)
             if xfinish is not None and x >= xfinish:
-                return yto
+                return np.float64(yto)
             
             # Calculate the logistic function
             # Standard logistic: 1 / (1 + exp(-speed * (x - xmiddle)))
@@ -795,13 +811,13 @@ class Solver(object):
             try:
                 logistic_value = 1.0 / (1.0 + np.exp(-speed * (x - xmiddle)))
                 result = yfrom + (yto - yfrom) * logistic_value
-                return result
+                return np.float64(result)
             except (OverflowError, ZeroDivisionError):
                 # Handle extreme values
                 if x < xmiddle:
-                    return yfrom
+                    return np.float64(yfrom)
                 else:
-                    return yto
+                    return np.float64(yto)
         
         def expbound(yfrom, yto, x, exponent, xstart, xfinish):
             """
@@ -827,9 +843,9 @@ class Solver(object):
             
             # Handle boundary conditions
             if x <= xstart:
-                return yfrom
+                return np.float64(yfrom)
             if x >= xfinish:
-                return yto
+                return np.float64(yto)
             
             # Normalize x to [0, 1] range
             normalized_x = (x - xstart) / (xfinish - xstart)
@@ -848,22 +864,22 @@ class Solver(object):
                 
                 # Scale and shift to get final result
                 result = yfrom + (yto - yfrom) * exponential_value
-                return result
+                return np.float64(result)
                 
             except (OverflowError, ZeroDivisionError):
                 # Handle extreme values
                 if exponent > 0:
                     # For positive exponent, curve starts slow then accelerates
                     if normalized_x < 0.5:
-                        return yfrom + (yto - yfrom) * 0.1  # Small progress
+                        return np.float64(yfrom + (yto - yfrom) * 0.1)  # Small progress
                     else:
-                        return yfrom + (yto - yfrom) * 0.9  # Most progress
+                        return np.float64(yfrom + (yto - yfrom) * 0.9)  # Most progress
                 else:
                     # For negative exponent, curve starts fast then decelerates
                     if normalized_x < 0.5:
-                        return yfrom + (yto - yfrom) * 0.9  # Most progress
+                        return np.float64(yfrom + (yto - yfrom) * 0.9)  # Most progress
                     else:
-                        return yfrom + (yto - yfrom) * 0.99  # Nearly complete
+                        return np.float64(yfrom + (yto - yfrom) * 0.99)  # Nearly complete
         
         ### Function mapping ###
 
@@ -1538,26 +1554,26 @@ class GraphFunc(object):
         if self.out_of_bound_type is None: # default to continuous
             input = max(input, self.xpts[0])
             input = min(input, self.xpts[-1])
-            output = float(self.interp_func(input)) # the output (like array([1.])) needs to be converted to float to avoid dimension explosion
+            output = np.float64(self.interp_func(input))  # Convert to np.float64 to prevent dimension explosion
             return output
         elif self.out_of_bound_type == 'extrapolate':
             if input < self.xpts[0]:
-                output = float(self.interp_func_below(input))
+                output = np.float64(self.interp_func_below(input))
             elif input > self.xpts[-1]:
-                output = float(self.interp_func_above(input))
+                output = np.float64(self.interp_func_above(input))
             else:
-                output = float(self.interp_func(input))
+                output = np.float64(self.interp_func(input))
             return output
         elif self.out_of_bound_type == 'discrete':
             if input < self.xpts[0]:
-                return self.ypts[0]
+                return np.float64(self.ypts[0])
             elif input > self.xpts[-1]:
-                return self.ypts[-1]
+                return np.float64(self.ypts[-1])
             else:
                 for i, xpt in enumerate(self.xpts):
                     if input < xpt:
-                        return self.ypts[i-1]
-                return self.ypts[-1]
+                        return np.float64(self.ypts[i-1])
+                return np.float64(self.ypts[-1])
         else:
             raise Exception(f'Unknown out_of_bound_type {self.out_of_bound_type}')
     
@@ -1912,14 +1928,14 @@ class sdmodel(object):
             return
             
         time_units = sim_specs_root.get('time_units')
-        sim_start = float(sim_specs_root.find('start').text)
-        sim_stop = float(sim_specs_root.find('stop').text)
+        sim_start = np.float64(float(sim_specs_root.find('start').text))
+        sim_stop = np.float64(float(sim_specs_root.find('stop').text))
         sim_duration = sim_stop - sim_start
         
         sim_dt_root = sim_specs_root.find('dt')
-        sim_dt = float(sim_dt_root.text)
+        sim_dt = np.float64(float(sim_dt_root.text))
         if sim_dt_root.get('reciprocal') == 'true':
-            sim_dt = 1/sim_dt
+            sim_dt = np.float64(1/sim_dt)
         
         self.sim_specs['initial_time'] = sim_start
         self.sim_specs['current_time'] = sim_start
@@ -2144,14 +2160,14 @@ class sdmodel(object):
         
         if gf.find('xscale'):
             xscale = [
-                float(gf.find('xscale').get('min')),
-                float(gf.find('xscale').get('max'))
+                np.float64(float(gf.find('xscale').get('min'))),
+                np.float64(float(gf.find('xscale').get('max')))
             ]
         else:
             xscale = None
         
         if gf.find('xpts'):
-            xpts = [float(t) for t in gf.find('xpts').text.split(',')]
+            xpts = [np.float64(float(t)) for t in gf.find('xpts').text.split(',')]
         else:
             xpts = None
         
@@ -2159,10 +2175,10 @@ class sdmodel(object):
             raise Exception("GraphFunc: xscale and xpts cannot both be None.")
 
         yscale = [
-            float(gf.find('yscale').get('min')),
-            float(gf.find('yscale').get('max'))
+            np.float64(float(gf.find('yscale').get('min'))),
+            np.float64(float(gf.find('yscale').get('max')))
         ]
-        ypts = [float(t) for t in gf.find('ypts').text.split(',')]
+        ypts = [np.float64(float(t)) for t in gf.find('ypts').text.split(',')]
 
         equation = GraphFunc(
             out_of_bound_type=out_of_bound_type, 
@@ -2480,11 +2496,11 @@ class sdmodel(object):
                 
                 # Determine time step (dt) and starting time from processed data
                 if len(processed_time_values) > 1:
-                    data_dt = float(processed_time_values[1]) - float(processed_time_values[0])
-                    from_time = float(processed_time_values[0])
+                    data_dt = np.float64(float(processed_time_values[1]) - float(processed_time_values[0]))
+                    from_time = np.float64(float(processed_time_values[0]))
                 else:
                     data_dt = sim_dt
-                    from_time = float(processed_time_values[0]) if len(processed_time_values) > 0 else sim_start
+                    from_time = np.float64(float(processed_time_values[0])) if len(processed_time_values) > 0 else sim_start
                 
                 # Apply time-varying data to arrayed variables properly
                 self._apply_timevarying_data(col, processed_data, from_time, data_dt, resource_path)
@@ -2524,7 +2540,7 @@ class sdmodel(object):
     def _parse_number(self, value):
         """Parse a number that might have comma separators (e.g., '1,234' or '1,234.56')."""
         if pd.isna(value):
-            return float('nan')
+            return np.float64('nan')
         
         # Convert to string and handle common formatting
         str_val = str(value).strip()
@@ -2537,10 +2553,10 @@ class sdmodel(object):
         str_val = str_val.replace(',', '')
         
         try:
-            return float(str_val)
+            return np.float64(float(str_val))
         except (ValueError, TypeError) as e:
             logger_model_creation.error(f"Could not parse number '{value}': {e}")
-            return float('nan')
+            return np.float64('nan')
 
     def _handle_missing_time(self, data_values, time_values, sim_start, sim_end, sim_dt, variable_name, resource_path):
         """Handle missing time data by interpolation/extrapolation according to simulation period."""
