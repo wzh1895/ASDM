@@ -119,7 +119,9 @@ class Parser:
             'MIN': r'MIN(?=\s*\()',
             'MAX': r'MAX(?=\s*\()',
             'SAFEDIV': r'SAFEDIV(?=\s*\()',
-            'RBINOM': r'RBINOM(?=\s*\()',
+            'BINOMIAL': r'RBINOM(?=\s*\()',
+            'BINOMIAL': r'BINOMIAL(?=\s*\()',
+            'NORMAL': r'NORMAL(?=\s*\()',
             'INIT': r'INIT(?=\s*\()',
             'DELAY': r'DELAY(?=\s*\()',
             'DELAY1': r'DELAY1(?=\s*\()',
@@ -639,6 +641,14 @@ class Solver(object):
             s = stats.binom.rvs(int(n), p, size=1)[0]
             return np.float64(s)  # Convert to np.float64 to prevent dimension explosion
         
+        def normal(mean, stddev, seed=None, min=None, max=None, sample_size=1):
+            if seed is not None:
+                np.random.seed(seed)
+            value =  np.float64(np.random.normal(loc=mean, scale=stddev))
+            if min is not None and max is not None:
+                value = np.clip(value, min, max)
+            return value
+        
         def log10(a):
             result = np.log10(a)
             return np.float64(result)
@@ -774,6 +784,8 @@ class Solver(object):
             'STEP':     step,
             'MOD':      mod,
             'RBINOM':   rbinom,
+            'BINOMIAL': rbinom,
+            'NORMAL':   normal,
             'PULSE':    pulse,
             'EXP_OP':   exp,
             'EXP': exp_e,
