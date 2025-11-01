@@ -145,8 +145,6 @@ class Parser:
             'NAME': r'[a-zA-Z0-9_£$\?&]*', # add support for £ and $ in variable names
         }
 
-        self.HEAD = "PARSER"
-
         self.node_id = 0
         self.tokens = []
         self.current_index = 0
@@ -818,8 +816,6 @@ class Solver(object):
         self.time_expr_register = {}
         
         self.id_level = 0
-
-        self.HEAD = "SOLVER"
 
     def calculate_node(self, var_name, parsed_equation, mode, node_id='root', subscript=None):        
         self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0.0 processing node {node_id}:")
@@ -1588,9 +1584,6 @@ class DataFeeder(object):
 class sdmodel(object):
     # equations
     def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info', model_creation_debug_level='info', variable_filter=None):
-        # Debug
-        self.HEAD = 'ENGINE'
-        self.debug_level_trace_error = 0
         self.logger = logger_sdmodel
         self.logger_model_creation = logger_model_creation
 
