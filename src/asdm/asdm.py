@@ -197,7 +197,7 @@ class Parser:
         
         ast = self.parse_statement()
         if self.current_index != len(self.tokens):
-            raise ValueError(f"Unexpected end of parsing of expression {expression} at index {self.current_index} of tokens {self.tokens}")
+            raise ValueError(f"Unexpected end of parsing of expression {expression} at index {self.current_index} of tokens {self.tokens}\nProcessed tokens: {self.tokens[:self.current_index]} \nUnprocessed tokens: {self.tokens[self.current_index:]}")
         self.logger.debug("Completed parse")
         self.logger.debug(f"AST: {ast}")
         
