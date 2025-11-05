@@ -3238,7 +3238,7 @@ class sdmodel(object):
     def update_stocks(self):
         for stock, in_out_flows in self.stock_flows.items():
             if stock not in self.conveyors: # coneyors are updated separately
-                if stock in self.stock_shadow_values:
+                if stock in self.stock_next_dt_values:
                     self.logger.debug(f'updating stock {stock} next_dt_value is {self.stock_next_dt_values[stock]}')
                 else:
                     self.logger.debug(f'updating stock {stock} next_dt_value not exist, name_space value is {self.name_space[stock]}')
@@ -3248,37 +3248,37 @@ class sdmodel(object):
                         if direction == 'in':
                             for flow in flows:
                                 self.logger.debug(f'--inflow {flow} = {self.name_space[flow]}')
-                                if stock not in self.stock_shadow_values:
-                                    self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
-                                if type(self.stock_shadow_values[stock]) is dict:
+                                if stock not in self.stock_next_dt_values:
+                                    self.stock_next_dt_values[stock] = deepcopy(self.name_space[stock])
+                                if type(self.stock_next_dt_values[stock]) is dict:
                                     if type(self.name_space[flow]) is dict:
                                         for sub, sub_value in self.name_space[flow].items():
-                                            self.stock_shadow_values[stock][sub] += sub_value * self.sim_specs['dt']
+                                            self.stock_next_dt_values[stock][sub] += sub_value * self.sim_specs['dt']
                                     else:
-                                        for sub in self.stock_shadow_values[stock].keys():
-                                            self.stock_shadow_values[stock][sub] += self.name_space[flow] * self.sim_specs['dt']
+                                        for sub in self.stock_next_dt_values[stock].keys():
+                                            self.stock_next_dt_values[stock][sub] += self.name_space[flow] * self.sim_specs['dt']
                                 else:
-                                    self.stock_shadow_values[stock] += self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug(f'----stock_shadow_value {stock} bcomes {self.stock_shadow_values[stock]}')
+                                    self.stock_next_dt_values[stock] += self.name_space[flow] * self.sim_specs['dt']
+                                self.logger.debug(f'----stock_next_dt_value {stock} bcomes {self.stock_next_dt_values[stock]}')
                         elif direction == 'out':
                             for flow in flows:
                                 self.logger.debug(f'--outflow {flow} = {self.name_space[flow]}')
-                                if stock not in self.stock_shadow_values:
-                                    self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
-                                if type(self.stock_shadow_values[stock]) is dict:
+                                if stock not in self.stock_next_dt_values:
+                                    self.stock_next_dt_values[stock] = deepcopy(self.name_space[stock])
+                                if type(self.stock_next_dt_values[stock]) is dict:
                                     if type(self.name_space[flow]) is dict:
                                         for sub, sub_value in self.name_space[flow].items():
-                                            self.stock_shadow_values[stock][sub] -= sub_value * self.sim_specs['dt']
+                                            self.stock_next_dt_values[stock][sub] -= sub_value * self.sim_specs['dt']
                                     else:
-                                        for sub in self.stock_shadow_values[stock].keys():
-                                            self.stock_shadow_values[stock][sub] -= self.name_space[flow] * self.sim_specs['dt']
+                                        for sub in self.stock_next_dt_values[stock].keys():
+                                            self.stock_next_dt_values[stock][sub] -= self.name_space[flow] * self.sim_specs['dt']
                                 else:
-                                    self.stock_shadow_values[stock] -= self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug(f'    ----stock_shadow_value {stock} becomes {self.stock_shadow_values[stock]}')
+                                    self.stock_next_dt_values[stock] -= self.name_space[flow] * self.sim_specs['dt']
+                                self.logger.debug(f'    ----stock_next_dt_value {stock} becomes {self.stock_next_dt_values[stock]}')
                 else: # there are obsolete stocks that are not connected to any flows
                     self.logger.debug(f'stock {stock} is not connected to any flows')
-                    self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
-                    self.logger.debug(f'stock_shadow_value {stock} remains {self.stock_shadow_values[stock]}')
+                    self.stock_next_dt_values[stock] = deepcopy(self.name_space[stock])
+                    self.logger.debug(f'stock_next_dt_value {stock} remains {self.stock_next_dt_values[stock]}')
             else:
                 pass # conveyors are updated separately
     
@@ -3294,7 +3294,7 @@ class sdmodel(object):
 
             # in
             conveyor['conveyor'].inflow(total_flow_effect * self.sim_specs['dt'])
-            self.stock_shadow_values[conveyor_name] = conveyor['conveyor'].level()
+            self.stock_next_dt_values[conveyor_name] = conveyor['conveyor'].level()
 
     def simulate(self, time=None, dt=None):
         self.logger.debug(f'Simulation started with specs: {self.sim_specs}')
@@ -3441,7 +3441,7 @@ class sdmodel(object):
         self.sim_specs['current_time'] = self.sim_specs['initial_time']
         self.name_space = dict()
         self.name_space.update(self.env_variables)
-        self.stock_shadow_values = dict()
+        self.stock_next_dt_values = dict()
         self.time_slice = dict()
         for stock_name, stock in self.stocks.items():
             stock.initialized = False
