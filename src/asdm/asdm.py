@@ -3561,13 +3561,34 @@ class sdmodel(object):
                     if node_operator in ['IS']:
                         self.logger.debug(f"{'    '*self.id_level}Node {node_id} has operator {node_operator}, a number; no dependent, no further tracing needed.")
                         return
-                    elif node_operator in ['DELAY', 'DELAY1', 'DELAY3', 'SMTH1', 'SMTH3']:
+                    elif node_operator in ['DELAY', 'DELAY1', 'DELAY3']:
                         # these functions have 2 or 3 operands; if 2 then no initial value, only 1st is used for initialization; if 3 then with initial value, only 3rd is used for initialization; 1st is indirectly (through cumulation) used for iteration; 2nd is directly (delay time) used for iteration
-                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} is a delay/smooth function {node_operator}, handling operands based on mode '{mode}'")
+                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} is a delay function {node_operator}, handling operands based on mode '{mode}'")
                         if mode == 'init':
                             self.logger.debug(f"{'    '*self.id_level}Initialization mode: only considering the operand used for initialization")
                             if len(node['operands']) == 3:
                                 self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 3 operands, adding only the 3rd operand for initialization")
+                                operands_to_trace.add(node['operands'][2])
+                            elif len(node['operands']) == 2:
+                                self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 2 operands, adding the target variable and delay time for initialization")
+                                operands_to_trace.add(node['operands'][0])
+                                operands_to_trace.add(node['operands'][1])
+                        elif mode == 'iter':
+                            self.logger.debug(f"{'    '*self.id_level}Iteration mode: considering target variable and delay time for iteration")
+                            operands_to_trace.add(node['operands'][0])
+                            operands_to_trace.add(node['operands'][1])
+                        else:
+                            raise Exception(f"Invalid mode: {mode}")
+                    elif node_operator in ['SMTH1', 'SMTH3']:
+                        # these functions have 2 or 3 operands; 
+                        # if 2 then no initial value, both 1st (target var) and 2nd (smooth time) are used for initialization; 
+                        # if 3 then with initial value, both 2nd (smooth time) and 3rd (initial value) are used for initialization;
+                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} is a smooth function {node_operator}, handling operands based on mode '{mode}'")
+                        if mode == 'init':
+                            self.logger.debug(f"{'    '*self.id_level}Initialization mode: only considering the operand used for initialization")
+                            if len(node['operands']) == 3:
+                                self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 3 operands, adding only the 3rd operand for initialization")
+                                operands_to_trace.add(node['operands'][1])
                                 operands_to_trace.add(node['operands'][2])
                             elif len(node['operands']) == 2:
                                 self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 2 operands, adding the target variable and delay time for initialization")
