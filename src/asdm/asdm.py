@@ -14,7 +14,7 @@ from pathlib import Path
 logger_parser = logging.getLogger('asdm.parser')
 logger_solver = logging.getLogger('asdm.solver')
 logger_graph_function = logging.getLogger('asdm.graph_function')
-logger_conveyor = logging.getLogger('asdm.conveyor')
+logger_conveyor = logging.getLogger('asdm.convey')
 logger_data_feeder = logging.getLogger('asdm.data_feeder')
 logger_sdmodel = logging.getLogger('asdm.simrun')
 logger_model_creation = logging.getLogger('asdm.model_creation')
@@ -1387,8 +1387,18 @@ class GraphFunc(object):
 
 
 class Conveyor(object):
-    def __init__(self, length, eqn):
+    def __init__(self, length, eqn, conveyor_debug_level='info'):
         self.logger = logger_conveyor
+        if conveyor_debug_level == 'debug':
+            self.logger.setLevel(logging.DEBUG)
+        elif conveyor_debug_level == 'info':
+            self.logger.setLevel(logging.INFO)
+        elif conveyor_debug_level == 'warning':
+            self.logger.setLevel(logging.WARNING)
+        elif conveyor_debug_level == 'error':
+            self.logger.setLevel(logging.ERROR)
+        else:
+            raise Exception(f'Unknown debug level {conveyor_debug_level}')
 
         self.length_time_units = length
         self.equation = eqn
@@ -1425,6 +1435,7 @@ class Conveyor(object):
         self.is_initialized = True
 
     def level(self):
+        self.logger.debug(f"Report conveyor level: {self.total}")
         return self.total
 
     # order of execution:
@@ -1433,16 +1444,30 @@ class Conveyor(object):
     # 2 Pop the last slat
     # 3 Input as the first slat
 
+    def leak_linear_calc(self): # for initialization phase - just calculate the flow, not changing the slats
+        total_leaked = sum(self.leaks)
+        self.logger.debug(f"<leak_linear_calc> Report conveyor slats (no calculation): {self.slats}")
+        self.logger.debug(f"<leak_linear_calc> Report conveyor leaks (no calculation): {total_leaked}")
+        return total_leaked
+
     def leak_linear(self):
         for i in range(self.length_steps):
             self.slats[i] = self.slats[i] - self.leaks[i]
-        
+        self.logger.debug(f"<leak_linear> Report conveyor slats (after leak calculation): {self.slats}")
         total_leaked = sum(self.leaks)
+        self.logger.debug(f"<leak_linear> Report conveyor leaks (after leak calculation): {total_leaked}")
         self.total -= total_leaked
+        self.logger.debug(f"<leak_linear> Report conveyor level (after leak calculation): {self.total}")
         return total_leaked
-    
+
+    def outflow_calc(self): # for initialization phase - just calculate the flow, not changing the slats
+        last_slat = self.slats[-1] - self.leaks[-1] # this is to hypothetically consider the leak from the last slat, without actually changing the slats
+        self.logger.debug(f"<outflow_calc> Report conveyor last slat (no calculation): {last_slat}")
+        return last_slat
+
     def outflow(self):
         output = self.slats.pop()
+        self.logger.debug(f"<outflow> Report conveyor output (after outflow calculation): {output}")
         self.total -= output
         self.leaks.pop()
         return output
@@ -1451,6 +1476,7 @@ class Conveyor(object):
         self.total += value
         self.slats = [value] + self.slats
         self.leaks = [value* self.leak_fraction/self.length_steps]+self.leaks
+        self.logger.debug(f"<inflow> Report conveyor slats (after inflow calculation): {self.slats}")
 
 
 class Stock(object):
@@ -1501,10 +1527,10 @@ class DataFeeder(object):
 
 class sdmodel(object):
     # equations
-    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info', model_creation_debug_level='info', variable_filter=None):
+    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info', conveyor_debug_level='info', model_creation_debug_level='info', variable_filter=None):
         self.logger = logger_sdmodel
         self.logger_model_creation = logger_model_creation
-
+        self.conveyor_debug_level = conveyor_debug_level
         # model debug level
         if simulator_debug_level == 'debug':
             self.logger.setLevel(logging.DEBUG)
@@ -1563,7 +1589,7 @@ class sdmodel(object):
         self.stock_equations = dict()
         self.stock_equations_parsed = dict()
         self.stock_non_negative = dict()
-        self.stock_shadow_values = dict() # temporary device to store in/out flows' effect on stocks.
+        self.stock_next_dt_values = dict() # temporary device to store in/out flows' effect on stocks.
         self.stock_non_negative_temp_value = dict()
         self.stock_non_negative_out_flows = dict()
 
@@ -1930,7 +1956,7 @@ class sdmodel(object):
             equation_text = element_to_check.find('eqn').text if element_to_check.find('eqn') else var.find('eqn').text
             equation_text = equation_text.strip() if equation_text else equation_text
             length = var.find('len').text.strip() if var.find('len').text else var.find('len').text
-            equation = Conveyor(length, equation_text)
+            equation = Conveyor(length, equation_text, conveyor_debug_level=self.conveyor_debug_level)
         elif element_to_check.find('gf'):
             equation = self._read_graph_function(element_to_check)
             eqn_text = var.find('eqn').text
@@ -2928,15 +2954,16 @@ class sdmodel(object):
             if not (conveyor_init or conveyor_len):
                 if not self.conveyors[var]['conveyor'].is_initialized:
                     self.logger.debug(f"    Initializing conveyor {var}")
-                    # when initializing, equation of the conveyor needs to be evaluated, using flag conveyor_len=True 
+                    # length needs to be evaluated, using flag conveyor_len=True 
                     self.calculate_variable(var=var, dg=dg, mode=mode, subscript=subscript, conveyor_len=True)
                     conveyor_length = self.conveyors[var]['len']
                     length_steps = int(conveyor_length/self.sim_specs['dt'])
                     
-                    # when initializing, equation of the conveyor needs to be evaluated, using flag conveyor_init=True 
+                    # initial value needs to be evaluated, using flag conveyor_init=True 
                     self.calculate_variable(var=var, dg=dg, mode=mode, subscript=subscript, conveyor_init=True)
                     conveyor_init_value = self.conveyors[var]['val']
                     
+                    # leak fraction needs to be evaluated, using flag leak_frac=True
                     leak_flows = self.conveyors[var]['leakflow']
                     if len(leak_flows) == 0:
                         leak_fraction = 0
@@ -2944,31 +2971,59 @@ class sdmodel(object):
                         for leak_flow in leak_flows.keys():
                             self.calculate_variable(var=leak_flow, dg=dg, mode=mode, subscript=subscript, leak_frac=True)
                             leak_fraction = self.conveyors[var]['leakflow'][leak_flow] # TODO multiple leakflows
+                    
+                    # initialize conveyor using calculated parameters
                     self.conveyors[var]['conveyor'].initialize(length_steps, conveyor_init_value, leak_fraction)
                     
                     # put initialized conveyor value to name_space
                     value = self.conveyors[var]['conveyor'].level()
                     self.name_space[var] = value
+                    self.stock_next_dt_values[var] = value
 
-                    self.logger.debug(f"    Initialized conveyor {var}")
-                
-                if var not in self.stock_shadow_values:
-                    # self.logger.debug("Updating {} and its outflows".format(var))
-                    # self.logger.debug("    Name space1:", self.name_space)
+                    # put conveyor-related values to name_space
                     # leak
                     for leak_flow, leak_fraction in self.conveyors[var]['leakflow'].items():
-                        if leak_flow not in self.name_space: 
-                            # self.logger.debug('    Calculating leakflow {} for {}'.format(leak_flow, var))
-                            leaked_value = self.conveyors[var]['conveyor'].leak_linear()
-                            self.name_space[leak_flow] = leaked_value / self.sim_specs['dt'] # TODO: we should also consider when leak flows are subscripted
+                        if leak_flow not in self.name_space:
+                            self.logger.debug('    Leakflow {} not in name space, calculating for {}'.format(leak_flow, var))
+                            leaked_value = self.conveyors[var]['conveyor'].leak_linear_calc() # use special function to calculate but not affect conveyor slats
+                            self.name_space[leak_flow] = leaked_value / self.sim_specs['dt']
+                            self.logger.debug(f"    Calculated leakflow {leak_flow} for {var} = {self.name_space[leak_flow]}")
+                        else:
+                            self.logger.debug(f"    {leak_flow} is already in name space: {self.name_space[leak_flow]}")
                     # out
                     for outputflow in self.conveyors[var]['outputflow']:
                         if outputflow not in self.name_space:
-                            # self.logger.debug('    Calculating outflow {} for {}'.format(outputflow, var))
-                            outflow_value = self.conveyors[var]['conveyor'].outflow()
+                            self.logger.debug('    Outflow {} not in name space, calculating for {}'.format(outputflow, var))
+                            outflow_value = self.conveyors[var]['conveyor'].outflow_calc() # use special function to calculate but not affect conveyor slats
                             self.name_space[outputflow] = outflow_value / self.sim_specs['dt']
-                    # self.logger.debug("    Name space2:", self.name_space)
-                    self.stock_shadow_values[var] = self.conveyors[var]['conveyor'].level()
+                            self.logger.debug(f"    Calculated outflow {outputflow} for {var} = {self.name_space[outputflow]}")
+                        else:
+                            self.logger.debug(f"    {outputflow} is already in name space: {self.name_space[outputflow]}")
+                    self.stock_next_dt_values[var] = deepcopy(self.name_space[var])
+                    
+                    self.logger.debug(f"    Conveyor {var} initialized")
+                
+                elif self.conveyors[var]['conveyor'].is_initialized:
+                    if var not in self.stock_next_dt_values:
+                        # leak
+                        for leak_flow, leak_fraction in self.conveyors[var]['leakflow'].items():
+                            if leak_flow not in self.name_space: 
+                                self.logger.debug('    Leakflow {} not in name space, calculating for {}'.format(leak_flow, var))
+                                leaked_value = self.conveyors[var]['conveyor'].leak_linear()
+                                self.name_space[leak_flow] = leaked_value / self.sim_specs['dt'] # TODO: we should also consider when leak flows are subscripted
+                                self.logger.debug(f"    Calculated leakflow {leak_flow} for {var} = {self.name_space[leak_flow]}")
+                            else:
+                                self.logger.debug(f"    {leak_flow} is already in name space: {self.name_space[leak_flow]}")
+                        # out
+                        for outputflow in self.conveyors[var]['outputflow']:
+                            if outputflow not in self.name_space:
+                                self.logger.debug('    Outflow {} not in name space, calculating for {}'.format(outputflow, var))
+                                outflow_value = self.conveyors[var]['conveyor'].outflow()
+                                self.name_space[outputflow] = outflow_value / self.sim_specs['dt']
+                                self.logger.debug(f"    Calculated outflow {outputflow} for {var} = {self.name_space[outputflow]}")
+                        self.stock_next_dt_values[var] = self.conveyors[var]['conveyor'].level()
+                    else:
+                        pass
 
             elif conveyor_len:
                 # self.logger.debug('Calculating LEN for {}'.format(var))
@@ -3003,7 +3058,7 @@ class sdmodel(object):
                     self.name_space[var] = value
                 
                 self.stocks[var].initialized = True
-                self.stock_shadow_values[var] = deepcopy(self.name_space[var])
+                self.stock_next_dt_values[var] = deepcopy(self.name_space[var])
                 if self.stock_non_negative[var] is True:
                     self.stock_non_negative_temp_value[var] = deepcopy(self.name_space[var])
 
@@ -3032,9 +3087,13 @@ class sdmodel(object):
                     self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode)
 
             elif var in self.outflow_conveyors:
+                self.logger.debug(f"    {var} is an outflow from conveyor {self.outflow_conveyors[var]}")
                 # requiring an outflow's value triggers the calculation of its connected conveyor
                 if var not in self.name_space: # the outflow is not calculated, which means the conveyor has not been initialized
+                    self.logger.debug(f"    {var} is not in name space, calculating its conveyor {self.outflow_conveyors[var]}")
                     self.calculate_variable(var=self.outflow_conveyors[var], dg=dg, mode=mode, subscript=subscript)
+                else:
+                    self.logger.debug(f"    {var} is already in name space: {self.name_space[var]}")
 
             elif var in self.flow_equations: # var is a normal flow
                 if var not in self.name_space:
@@ -3180,9 +3239,9 @@ class sdmodel(object):
         for stock, in_out_flows in self.stock_flows.items():
             if stock not in self.conveyors: # coneyors are updated separately
                 if stock in self.stock_shadow_values:
-                    self.logger.debug(f'updating stock {stock} shadow_value is {self.stock_shadow_values[stock]}')
+                    self.logger.debug(f'updating stock {stock} next_dt_value is {self.stock_next_dt_values[stock]}')
                 else:
-                    self.logger.debug(f'updating stock {stock} shadow_value not exist, name_space value is {self.name_space[stock]}')
+                    self.logger.debug(f'updating stock {stock} next_dt_value not exist, name_space value is {self.name_space[stock]}')
                 
                 if len(in_out_flows) != 0:
                     for direction, flows in in_out_flows.items():
