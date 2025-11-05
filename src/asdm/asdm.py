@@ -651,7 +651,7 @@ class Solver(object):
         
         def normal(mean, stddev, seed=None, min=None, max=None, sample_size=1):
             if seed is not None:
-                np.random.seed(seed)
+                np.random.seed(np.int64(seed))
             value =  np.float64(np.random.normal(loc=mean, scale=stddev))
             if min is not None and max is not None:
                 value = np.clip(value, min, max)
