@@ -3296,7 +3296,82 @@ class sdmodel(object):
             conveyor['conveyor'].inflow(total_flow_effect * self.sim_specs['dt'])
             self.stock_next_dt_values[conveyor_name] = conveyor['conveyor'].level()
 
-    def simulate(self, time=None, dt=None):
+    def initialize(self):
+        # 20251103: Initialization values does not go directly into results; they are calculated automatically ad-hoc as structure changes
+        if self.state in ['loaded', 'changed']:
+            if self.state == 'changed':
+                self.logger.debug('Equation changed after last simulation, re-parsing.')
+            self.parse() # set state to 'parsed'
+        
+        self.logger.debug("")
+        self.logger.debug("*** Initialization ***")
+        self.logger.debug("")
+
+        self.generate_ordered_vars()
+        self.logger.debug("")
+        self.logger.debug(f"self.ordered_vars_init {self.ordered_vars_init}")
+        self.logger.debug("")
+
+        # Initialize self.stock_non_negative_temp_value
+        for stock, is_non_negative in self.stock_non_negative.items():
+            if is_non_negative:
+                self.stock_non_negative_temp_value[stock] = None
+
+        for var in self.ordered_vars_init:
+            self.calculate_variable(var=var, dg=self.dg_init, mode='init')
+
+        for var in self.ordered_vars_iter:
+            if var not in self.ordered_vars_init:
+                self.calculate_variable(var=var, dg=self.dg_iter, mode='iter')
+
+        # Stocks calcualted in initialization phase WILL stay into iteration phase
+        # Flows and auxiliaries calculated in initialization phase will NOT stay, their values are only for show, and will be discarded and recaculated in the 1st iteration of the iteration phase
+        
+        self.logger.debug(f'---- initialization finished ----') 
+        self.logger.debug(f'name_space: {self.name_space}')
+        self.logger.debug(f'next_dt_val: {self.stock_next_dt_values}')
+        self.logger.debug(f'time_expr_register: {self.solver.time_expr_register}')
+
+        # prepare name_space for next step
+        self.logger.debug('---- preparing name_space for next step ----')
+        self.logger.debug('clearing name space')
+        self.name_space.clear()
+        self.logger.debug(f'name space: {self.name_space}')
+
+        self.logger.debug('populate name_space using next_dt values')
+        # Here this next_dt value is used directly as the stock value for the next time step
+        # This is OK if the model equations are not changed 'dynamically' during the simulation
+        # However if flow equations are changed, either in themselves or in their dependencies,
+        # then the next_dt value will be incorrect.
+        for stock, stock_value in self.stock_next_dt_values.items():
+            self.name_space[stock] = deepcopy(stock_value)
+
+        # then we need to add delayed auxiliaries as they are implicit stocks
+        
+        self.logger.debug('clear next_dt value')
+        self.stock_next_dt_values.clear()
+        self.logger.debug(f'next_dt value: {self.stock_next_dt_values}')
+
+        self.logger.debug('populate non-negative temp value with their name_space values')
+        for k, v in self.stock_non_negative_temp_value.items():
+            self.stock_non_negative_temp_value[k] = deepcopy(self.name_space[k])
+        self.logger.debug(f'non-negative temp value: {self.stock_non_negative_temp_value}')
+        
+        self.name_space['TIME'] = self.sim_specs['current_time']
+        self.name_space['DT'] = self.sim_specs['dt']
+
+        self.logger.debug(f'name space: {self.name_space}')
+        self.logger.debug('---- end of preparation ----')
+
+        self.state = 'initialized'
+
+    def simulate(self, time=None, dt=None, pause=False):
+        '''
+        time:   simulation time
+        dt:     time step
+        pause:  if True, the simulation will pause after the specified time (stop after step 1);
+                if time is not specified, the simulation will pause after the last iteration 
+        '''
         self.logger.debug(f'Simulation started with specs: {self.sim_specs}')
         self.logger.debug(f'Equations: {self.stock_equations | self.flow_equations | self.aux_equations | self.delayed_auxiliary_equations}')
         
@@ -3304,126 +3379,110 @@ class sdmodel(object):
             time = self.sim_specs['simulation_time']
         if dt is None:
             dt = self.sim_specs['dt']
-        iterations = int(time/dt)
 
-        if self.state in ['simulated', 'changed']:
-            if self.state == 'changed':
-                self.logger.debug('Equation changed after last simulation, re-parsing.')
-                self.parse() # set state to 'parsed'
-                self.generate_ordered_vars()
-
-            self.logger.debug("")
-            self.logger.debug("*** Resuming ***")
-            self.logger.debug("")
-            # self.name_space.clear()
-            # # use last time slice as the initial values for the next simulation, do not do initialization again
-            # # self.sim_specs['current_time'] -= self.sim_specs['dt'] # go back to the last time step
-            # for stock in (self.stocks | self.conveyors):
-            #     last_value = self.time_slice[self.sim_specs['current_time'] - self.sim_specs['dt']][stock]
-            #     self.name_space[stock] = last_value
-            
-            # self.name_space['TIME'] = self.sim_specs['current_time']
-            # self.name_space['DT'] = self.sim_specs['dt']
-
-            self.logger.debug(f'Continuing simulation from time {self.sim_specs["current_time"]} for {iterations} iteration')
+        if self.state != 'initialized':
+            self.logger.debug('Simulation state is not initialized, initializing...')
+            self.initialize()
         
-        elif self.state == 'loaded':
-            # parse equations and order execution (compile)
-            self.parse() # set state to 'parsed'
-            self.generate_ordered_vars()
-            # Initialization Phase
-            self.logger.debug("")
-            self.logger.debug("*** Initialization ***")
-            self.logger.debug("")
-            self.logger.debug(f"self.ordered_vars_init {self.ordered_vars_init}")
+        # self.logger.debug("")
+        # self.logger.debug("*** Resuming ***")
+        # self.logger.debug("")
 
-            # Initialize self.stock_non_negative_temp_value
-            for stock, is_non_negative in self.stock_non_negative.items():
-                if is_non_negative:
-                    self.stock_non_negative_temp_value[stock] = None
-
-            for var in self.ordered_vars_init:
-                self.calculate_variable(var=var, dg=self.dg_init, mode='init')
+        # self.logger.debug(f'Continuing simulation from time {self.sim_specs["current_time"]} for {iterations} iteration')
         
-            # Since it's just loaded, we need 2 iterations (if we were to simulate 1 DT)
-            # The 1st iteration is to calculate the flows (and auxiliaries) based on the initialilized stocks (1st row of outcome) and update the stocks (2nd row of outcome)
-            # The 2nd iteration is to calculate the flows (and auxiliaries) based on the updated stocks (2nd row of outcome) and update the stocks.
-            # The updated stocks (in name_space) should be part of the 3rd row of outcome, but they are not saved (bus still in name_space) as we only simulate 1 DT.
-            iterations += 1 
-
-        # Iteration Phase
         self.logger.debug("")
         self.logger.debug("*** Iteration ***")
         self.logger.debug("")
+        
         self.logger.debug(f"self.ordered_vars_iter {self.ordered_vars_iter}")
-        self.logger.debug(f"Current name_space: {self.name_space}")
+        self.logger.debug(f"current name_space: {self.name_space}")
+        self.logger.debug("")
 
-        # self.current_iteration = 0
-
-        for s in range(iterations):
+        # Calculate end_time and number of iterations to avoid floating-point precision issues
+        end_time = self.sim_specs['initial_time'] + self.sim_specs['simulation_time']
+        num_iterations = int(round(self.sim_specs['simulation_time'] / dt))
+        
+        iteration = 1
+        while iteration <= num_iterations:
             self.logger.debug("")
-            self.logger.debug(f'---- iteration {s} start, current time {self.sim_specs["current_time"]} ----')
+            self.logger.debug(f'---- iteration no. {iteration} start ----')
+            self.logger.debug(f'01. name_space: {self.name_space}')
             
-            # Iter step 1: calculate flows and auxiliaries they depend on
-            self.logger.debug('calculating flows and auxiliaries they depend on')
+            # step 1
+            # calculate flows and auxiliaries they depend on
+            self.logger.debug('02. calculating flows and auxiliaries they depend on')
+            self.logger.debug(f"self.ordered_vars_iter {self.ordered_vars_iter}")
             for var in self.ordered_vars_iter:
                 self.calculate_variable(var=var, dg=self.dg_iter, mode='iter')
 
-            # Iter step 2: update stocks using flows and conveyors
-            self.logger.debug('updating stocks using flows and conveyors')
-            self.update_stocks() # update stock shadow values using flows
-            self.update_conveyors() # update stock shadow values as well as conveyors 
-
-            # Snapshot current name space
-            self.logger.debug('snapshotting current name space as a new time slice')
+            # Snapshot current name space, NOTE: the snapshot takes place IN THE MIDDLE of iteration
+            self.logger.debug(f'03. snapshotting current name space as a new time slice for time {self.name_space['TIME']}')
             current_snapshot = deepcopy(self.name_space)
             current_snapshot[self.sim_specs['time_units']] = current_snapshot['TIME']
             current_snapshot.pop('TIME')
-            
             self.time_slice[self.sim_specs['current_time']] = current_snapshot
 
-            self.logger.debug(f'---- iteration {s} finished ----') 
-            self.logger.debug(f'name_space: {self.name_space}')
-            self.logger.debug(f'shadow_val: {self.stock_shadow_values}')
-            self.logger.debug(f'time_expr_register: {self.solver.time_expr_register}')
+            # step 2
+            # update stocks using flows and conveyors
+            self.logger.debug('04. updating: flows -->  next_dt values of stocks...')
+            self.update_stocks() # update stock next_dt values using flows
+            self.logger.debug('05. updating: conveyors...')
+            self.update_conveyors() # update stock next_dt values as well as conveyors 
+            # TODO: we need to add delayed auxiliaries as they are implicit stocks
 
-            
-            # Iter step 3: update simulation time
-            self.logger.debug(f'updating simulation time (current_time) from {self.sim_specs["current_time"]} to {self.sim_specs["current_time"] + dt}')
-            self.sim_specs['current_time'] += dt
-            # self.current_iteration += 1
-
-            # prepare name_space for next step
-            self.logger.debug('---- preparing name_space for next step ----')
-            self.logger.debug('clearing name space')
-            self.name_space.clear()
-            self.logger.debug(f'name space: {self.name_space}')
-
-            self.logger.debug('populate name_space using shadow values')
-            # Here this shadow value is used directly as the stock value for the next time step
-            # This is OK if the model equations are not changed 'dynamically' during the simulation
-            # However if flow equations are changed, either in themselves or in their dependencies,
-            # then the shadow value will be incorrect.
-            for stock, stock_value in self.stock_shadow_values.items():
+            self.logger.debug('06. updating: stocks in name_space <-- next_dt values of stocks...')
+            for stock, stock_value in self.stock_next_dt_values.items():
                 self.name_space[stock] = deepcopy(stock_value)
 
-            # then we need to add delayed auxiliaries as they are implicit stocks
+            # step 3
+            # update simulation time
+            self.logger.debug(f'07. updating simulation time (current_time) from {self.sim_specs["current_time"]} to {self.sim_specs["current_time"] + dt}...')
+            self.sim_specs['current_time'] += dt
 
-            self.logger.debug(f'name space: {self.name_space}')
+            self.logger.debug(f'---- iteration {iteration} finished ----')
+            self.logger.debug(f'08. name_space: {self.name_space}')
             
-            self.logger.debug('clear shadow value')
-            self.stock_shadow_values.clear()
-            self.logger.debug(f'shadow value: {self.stock_shadow_values}')
-
-            self.logger.debug('populate non-negative temp value with their name_space values')
+            # prepare name_space for next step
+            self.logger.debug('---- preparing name_space for next step ----')
+            
+            self.logger.debug('09. updating: stocks in name_space --> non-negative temp values...')
             for k, v in self.stock_non_negative_temp_value.items():
                 self.stock_non_negative_temp_value[k] = deepcopy(self.name_space[k])
-            self.logger.debug(f'non-negative temp value: {self.stock_non_negative_temp_value}')
+            self.logger.debug(f'10. non-negative temp value: {self.stock_non_negative_temp_value}')
             
+            self.logger.debug('11. clearing name space...')
+            self.name_space.clear()
+            self.logger.debug(f'12. name space: {self.name_space}')
+
+            # putting stocks and env variables back to name_space
+            self.logger.debug('13. updating: env variables --> name_space...')
             self.name_space['TIME'] = self.sim_specs['current_time']
             self.name_space['DT'] = self.sim_specs['dt']
+            self.logger.debug('14. updating: next_dt values of stocks --> name_space...')
+            for stock, stock_value in self.stock_next_dt_values.items():
+                self.name_space[stock] = deepcopy(stock_value)
+
+            self.logger.debug('15. clearing next_dt value...')
+            self.stock_next_dt_values.clear()
 
             self.logger.debug('---- end of preparation ----')
+
+            iteration += 1
+
+        # to finialize the simulation, a Final iteration (only step 1: calculate converters and flows) is needed
+        # step 1
+        # calculate flows and auxiliaries they depend on
+        self.logger.debug('16. calculating flows and auxiliaries they depend on')
+        for var in self.ordered_vars_iter:
+            self.calculate_variable(var=var, dg=self.dg_iter, mode='iter')
+
+        # Snapshot current name space - note the snapshot takes place IN THE MIDDLE of iteration
+        self.logger.debug(f'17. snapshotting current name space as a new time slice for time {self.name_space['TIME']}')
+        current_snapshot = deepcopy(self.name_space)
+        current_snapshot[self.sim_specs['time_units']] = current_snapshot['TIME']
+        current_snapshot.pop('TIME')
+        self.time_slice[self.sim_specs['current_time']] = current_snapshot
+        # end of the final iteration
 
         self.state = 'simulated'
 
