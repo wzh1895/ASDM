@@ -3416,7 +3416,7 @@ class sdmodel(object):
                 self.calculate_variable(var=var, dg=self.dg_iter, mode='iter')
 
             # Snapshot current name space, NOTE: the snapshot takes place IN THE MIDDLE of iteration
-            self.logger.debug(f'03. snapshotting current name space as a new time slice for time {self.name_space['TIME']}')
+            self.logger.debug(f"03. snapshotting current name space as a new time slice for time {self.name_space['TIME']}")
             current_snapshot = deepcopy(self.name_space)
             current_snapshot[self.sim_specs['time_units']] = current_snapshot['TIME']
             current_snapshot.pop('TIME')
@@ -3477,7 +3477,7 @@ class sdmodel(object):
             self.calculate_variable(var=var, dg=self.dg_iter, mode='iter')
 
         # Snapshot current name space - note the snapshot takes place IN THE MIDDLE of iteration
-        self.logger.debug(f'17. snapshotting current name space as a new time slice for time {self.name_space['TIME']}')
+        self.logger.debug(f"17. snapshotting current name space as a new time slice for time {self.name_space['TIME']}")
         current_snapshot = deepcopy(self.name_space)
         current_snapshot[self.sim_specs['time_units']] = current_snapshot['TIME']
         current_snapshot.pop('TIME')
