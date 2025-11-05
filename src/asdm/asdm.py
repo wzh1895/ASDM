@@ -109,7 +109,7 @@ class Parser:
             'PLUS': r'\+',
             'MINUS': r'\-',
             'TIMES': r'\*',
-            'FLOORDIVIDE': r'\/\/',
+            'SAFEDIVIDE': r'\/\/',
             'DIVIDE': r'\/',
             'MOD': r'MOD(?=\s)', # there are spaces surronding MOD, but the front space is strip()-ed
             'EXP_OP': r'\^',
@@ -359,7 +359,7 @@ class Parser:
         """Parse a term for '*' and '/' with higher precedence."""
         self.logger.debug(f"parse_term         {self.tokens[self.current_index:]} ")
         nodes = [self.parse_exponent_op()]
-        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['TIMES', 'DIVIDE', 'FLOORDIVIDE']:
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['TIMES', 'DIVIDE', 'SAFEDIVIDE']:
             op = self.tokens[self.current_index]
             self.current_index += 1
             left = nodes.pop()
@@ -578,11 +578,6 @@ class Solver(object):
             # Ensure scalar results are np.float64
             return np.float64(result)
         
-        def floor_divide(a, b):
-            result = a // b
-            # Ensure scalar results are np.float64
-            return np.float64(result)
-        
         def safe_div(a, b, c=0):
             if b == 0:
                 return np.float64(c)
@@ -774,7 +769,7 @@ class Solver(object):
             'UNARY_MINUS': unary_minus,
             'TIMES':    times,
             'DIVIDE':   divide,
-            'FLOORDIVIDE': floor_divide,
+            'SAFEDIVIDE': safe_div,
             'MIN':      min,
             'MAX':      max,
             'SAFEDIV':  safe_div,
