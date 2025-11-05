@@ -2438,8 +2438,8 @@ class sdmodel(object):
             target_dict = None
             
             for var_dict, var_type in [(self.stock_equations, 'stock'), 
-                                     (self.aux_equations, 'auxiliary'), 
-                                     (self.flow_equations, 'flow')]:
+                (self.aux_equations, 'auxiliary'), 
+                (self.flow_equations, 'flow')]:
                 if processed_name in var_dict:
                     target_dict = var_dict
                     variable_found = True
@@ -2478,8 +2478,8 @@ class sdmodel(object):
             variable_found = False
             
             for var_dict, var_type in [(self.stock_equations, 'stock'), 
-                                     (self.aux_equations, 'auxiliary'), 
-                                     (self.flow_equations, 'flow')]:
+                (self.aux_equations, 'auxiliary'), 
+                (self.flow_equations, 'flow')]:
                 if processed_name in var_dict:
                     # Create DataFeeder for the entire variable
                     data_feeder = DataFeeder(
@@ -2512,9 +2512,9 @@ class sdmodel(object):
             doc_text: Raw doc content from XMILE
             
         Returns:
-            tuple: (tags_list, text_content)
-                   tags_list: List of tag strings (empty if no tags)
-                   text_content: Documentation text (empty string if none)
+            tuple:  (tags_list, text_content)
+                    tags_list: List of tag strings (empty if no tags)
+                    text_content: Documentation text (empty string if none)
         """
         if not doc_text:
             return ([], '')
@@ -3790,22 +3790,30 @@ class sdmodel(object):
             return graph
 
     def generate_full_dependent_graph(self, show=False):
-        ########################
-        # Initialization graph #
-        ########################
+        #################################
+        # Generate Initialization Graph #
+        #################################
 
-        self.logger.debug(f'{"*"*80}')
-        self.logger.debug(f'Initialization phase')
-        self.logger.debug(f'{"*"*80}')
+        self.logger.debug('')
+        self.logger.debug('--- Generating Initialization Graph ---')
+        self.logger.debug('')
 
         dg_init = nx.DiGraph()
+
+        # Vriables that need to be included in the initialization graph: 
+        # - stocks
+        # - flows or converters needed for stock initialization
+        # - delayed auxiliaries which in nature are stocks
+
+        # stocks
         if len(self.stock_equations_parsed) > 0:
             for stock in self.stock_equations_parsed:
                 dg_stock = self.create_variable_dependency_graph(stock, mode='init')
                 dg_init = nx.compose(dg_init, dg_stock)
         else:
             self.logger.debug(f"INIT Graph: No stocks, skipping")
-
+        
+        # delayed auxiliaries
         if len(self.delayed_auxiliary_equations_parsed) > 0:
             for delayed_aux in self.delayed_auxiliary_equations_parsed:
                 dg_delayed_aux = self.create_variable_dependency_graph(delayed_aux, mode='init')
@@ -3960,13 +3968,13 @@ class sdmodel(object):
         self.logger.debug(f'INIT Graph: Edges (after sanitization): {dg_init.edges(data=True)}')
         self.logger.debug(f"INIT Graph: Ordered vars for initialization: {ordered_vars_init}")
 
-        ###################
-        # Iteration graph #
-        ###################
+        ############################
+        # Generate Iteration Graph #
+        ############################
 
-        self.logger.debug(f'{"*"*80}')
-        self.logger.debug(f'Iteration phase')
-        self.logger.debug(f'{"*"*80}')
+        self.logger.debug('')
+        self.logger.debug('--- Generating Iteration Graph ---')
+        self.logger.debug('')
 
         dg_iter = nx.DiGraph()
         for flow in self.flow_equations_parsed:
@@ -4145,8 +4153,8 @@ class sdmodel(object):
         Args:
             filepath: Path to save the file. If None, saves to original file with '_asdm' suffix.
             _force_update_all: Internal testing parameter. If True, forces all variables to be
-                              updated (not just modified ones). This tests all equation serialization
-                              logic. Not intended for production use.
+                                updated (not just modified ones). This tests all equation serialization
+                                logic. Not intended for production use.
         
         Returns:
             Path to the saved file
