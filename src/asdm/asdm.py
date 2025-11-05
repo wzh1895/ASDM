@@ -14,7 +14,7 @@ from pathlib import Path
 logger_parser = logging.getLogger('asdm.parser')
 logger_solver = logging.getLogger('asdm.solver')
 logger_graph_function = logging.getLogger('asdm.graph_function')
-logger_conveyor = logging.getLogger('asdm.conveyor')
+logger_conveyor = logging.getLogger('asdm.convey')
 logger_data_feeder = logging.getLogger('asdm.data_feeder')
 logger_sdmodel = logging.getLogger('asdm.simrun')
 logger_model_creation = logging.getLogger('asdm.model_creation')
@@ -109,7 +109,7 @@ class Parser:
             'PLUS': r'\+',
             'MINUS': r'\-',
             'TIMES': r'\*',
-            'FLOORDIVIDE': r'\/\/',
+            'SAFEDIVIDE': r'\/\/',
             'DIVIDE': r'\/',
             'MOD': r'MOD(?=\s)', # there are spaces surronding MOD, but the front space is strip()-ed
             'EXP_OP': r'\^',
@@ -119,7 +119,9 @@ class Parser:
             'MIN': r'MIN(?=\s*\()',
             'MAX': r'MAX(?=\s*\()',
             'SAFEDIV': r'SAFEDIV(?=\s*\()',
-            'RBINOM': r'RBINOM(?=\s*\()',
+            'BINOMIAL': r'RBINOM(?=\s*\()',
+            'BINOMIAL': r'BINOMIAL(?=\s*\()',
+            'NORMAL': r'NORMAL(?=\s*\()',
             'INIT': r'INIT(?=\s*\()',
             'DELAY': r'DELAY(?=\s*\()',
             'DELAY1': r'DELAY1(?=\s*\()',
@@ -142,8 +144,6 @@ class Parser:
             'ABSOLUTENAME': r'"[\s\S]*?"', # match quoted strings
             'NAME': r'[a-zA-Z0-9_£$\?&]*', # add support for £ and $ in variable names
         }
-
-        self.HEAD = "PARSER"
 
         self.node_id = 0
         self.tokens = []
@@ -197,7 +197,7 @@ class Parser:
         
         ast = self.parse_statement()
         if self.current_index != len(self.tokens):
-            raise ValueError(f"Unexpected end of parsing of expression {expression} at index {self.current_index} of tokens {self.tokens}")
+            raise ValueError(f"Unexpected end of parsing of expression {expression} at index {self.current_index} of tokens {self.tokens}\nProcessed tokens: {self.tokens[:self.current_index]} \nUnprocessed tokens: {self.tokens[self.current_index:]}")
         self.logger.debug("Completed parse")
         self.logger.debug(f"AST: {ast}")
         
@@ -359,7 +359,7 @@ class Parser:
         """Parse a term for '*' and '/' with higher precedence."""
         self.logger.debug(f"parse_term         {self.tokens[self.current_index:]} ")
         nodes = [self.parse_exponent_op()]
-        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['TIMES', 'DIVIDE', 'FLOORDIVIDE']:
+        while self.current_index < len(self.tokens) and self.tokens[self.current_index][0] in ['TIMES', 'DIVIDE', 'SAFEDIVIDE']:
             op = self.tokens[self.current_index]
             self.current_index += 1
             left = nodes.pop()
@@ -546,218 +546,120 @@ class Solver(object):
                 raise Exception
 
         def plus(a, b):
-            try:
-                return a + b
-            except TypeError as e:
-                if type(a) is dict and type(b) is dict:
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] + b[k]
-                    return o
-                else:
-                    raise e
+            result = a + b
+            # Ensure scalar results are np.float64
+            return np.float64(result)
 
         def minus(a, b):
-            try:
-                return a - b
-            except TypeError as e:
-                if type(a) is dict and type(b) is dict:
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] - b[k]
-                    return o
-                elif type(a) is dict and type(b) in [int, float]:
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] - b
-                    return o
-                elif type(a) in [int, float] and type(b) is dict:
-                    o = dict()
-                    for k in b:
-                        o[k] = a - b[k]
-                    return o
-                else:
-                    raise e
+            result = a - b
+            # Ensure scalar results are np.float64
+            return np.float64(result)
 
         def unary_minus(a):
             """Unary minus operator (negation)"""
-            try:
-                return -a
-            except TypeError as e:
-                if type(a) is dict:
-                    o = dict()
-                    for k in a:
-                        o[k] = -a[k]
-                    return o
-                else:
-                    raise e
+            result = -a
+            # Ensure scalar results are np.float64
+            return np.float64(result)
 
         def unary_plus(a):
             """Unary plus operator"""
-            try:
-                return +a
-            except TypeError as e:
-                if type(a) is dict:
-                    o = dict()
-                    for k in a:
-                        o[k] = +a[k]
-                    return o
-                else:
-                    raise e
+            result = +a
+            # Ensure scalar results are np.float64
+            return np.float64(result)
 
         def times(a, b):
-            try:
-                return a * b
-            except TypeError as e:
-                if type(a) is dict and type(b) is dict:
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] * b[k]
-                    return o
-                elif type(a) is dict and type(b) in [int, float, np.float64]:
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] * b
-                    return o
-                elif type(a) in [int, float, np.float64] and type(b) is dict:
-                    o = dict()
-                    for k in b:
-                        o[k] = a * b[k]
-                    return o
-                else:
-                    raise e
+            result = a * b
+            # Ensure scalar results are np.float64
+            return np.float64(result)
 
         def divide(a, b):
             """ Safely divide a by b, handling scalars and dictionaries, with logging for division by zero. """
-            
-            def safe_div(x, y, key=None):
-                """ Helper function to safely divide x by y and log warnings if y is zero. """
-                if y == 0:
-                    msg = f"Warning: Divide by zero encountered in divide({x}, {y}), returning 0"
-                    if key is not None:
-                        msg += f" for subscript '{key}'"
-                    print(msg)
-                    return 0
-                return x / y
-
-            # Scalar / Scalar
-            if isinstance(a, (int, float, np.float64)) and isinstance(b, (int, float, np.float64)):
-                return safe_div(a, b)
-
-            # Dictionary / Dictionary
-            if isinstance(a, dict) and isinstance(b, dict):
-                return {k: safe_div(a[k], b.get(k, 1), k) for k in a}
-
-            # Dictionary / Scalar
-            if isinstance(a, dict) and isinstance(b, (int, float, np.float64)):
-                return {k: safe_div(a[k], b, k) for k in a}
-
-            # Scalar / Dictionary
-            if isinstance(a, (int, float, np.float64)) and isinstance(b, dict):
-                return {k: safe_div(a, b[k], k) for k in b}
-
-            # Unsupported types
-            self.logger.error(f"TypeError in divide(): Unsupported types {type(a)} and {type(b)}")
-            raise TypeError(f"Unsupported types for division: {type(a)}, {type(b)}")
-        
-        def floor_divide(a, b):
-            try:
-                return a // b
-            except TypeError as e:
-                if type(a) is dict and type(b) is dict:
-                    # self.logger.debug('    '*self.id_level+'[ '+var_name+' ] ', 'a//b', a, b)
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] // b[k]
-                    return o
-                elif type(a) is dict and type(b) in [int, float, np.float64]:
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] // b
-                    return o
-                elif type(a) in [int, float, np.float64] and type(b) is dict:
-                    o = dict()
-                    for k in b:
-                        o[k] = a // b[k]
-                    return o
-                else:
-                    raise e
+            result = a / b
+            # Ensure scalar results are np.float64
+            return np.float64(result)
         
         def safe_div(a, b, c=0):
             if b == 0:
-                return c
+                return np.float64(c)
             else:
-                return a / b
+                return np.float64(a / b)
 
         def mod(a, b):
-            try:
-                return a % b
-            except TypeError as e:
-                if type(a) is dict and type(b) is dict:
-                    # self.logger.debug('    '*self.id_level+'[ '+var_name+' ] ', 'a % b', a, b)
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] % b[k]
-                    return o
-                elif type(a) is dict and type(b) in [int, float, np.float64]:
-                    o = dict()
-                    for k in a:
-                        o[k] = a[k] % b
-                    return o
-                elif type(a) in [int, float, np.float64] and type(b) is dict:
-                    o = dict()
-                    for k in b:
-                        o[k] = a % b[k]
-                    return o
-                else:
-                    raise e
+            result = a % b
+            # Ensure scalar results are np.float64
+            return np.float64(result)
                 
         def exp(a, b):
-            return a ** b
+            result = a ** b
+            return np.float64(result)
         
         def exp_e(a):
-            return np.e ** a
+            result = np.e ** a
+            return np.float64(result)
 
         def con(a, b, c):
-            if a:
-                return b
-            else:
-                return c
+            result = b if a else c
+            # Ensure scalar results are np.float64
+            return np.float64(result)
+
+        # Time comparison epsilon to handle floating-point precision issues
+        TIME_EPSILON = 1e-6  # Small epsilon
+        
+        def time_eq(t1, t2):
+            """Check if two time values are approximately equal within epsilon tolerance."""
+            return abs(t1 - t2) < TIME_EPSILON
+        
+        def time_ge(t1, t2):
+            """Check if t1 >= t2 with epsilon tolerance."""
+            return t1 > t2 - TIME_EPSILON
 
         def step(stp, time):
             # self.logger.debug('step:', stp, time)
-            if sim_specs['current_time'] >= time:
+            if time_ge(sim_specs['current_time'], time):
                 # self.logger.debug('step out:', stp)
-                return stp
+                return np.float64(stp)
             else:
                 # self.logger.debug('step out:', 0)
-                return 0
+                return np.float64(0)
             
         def pulse(volume, first_pulse=None, interval=None):
             if first_pulse is None:
                     first_pulse = sim_specs['initial_time']
             if interval is None:
-                if sim_specs['current_time'] >= first_pulse: # pulse for all dt after fist pulse
-                    return volume / sim_specs['dt']
+                if time_ge(sim_specs['current_time'], first_pulse): # pulse for all dt after fist pulse
+                    return np.float64(volume / sim_specs['dt'])
                 else:
-                    return 0
+                    return np.float64(0)
             elif interval == 0 or interval > sim_specs['simulation_time']: # only one pulse
-                if sim_specs['current_time'] == first_pulse:
-                    return volume / sim_specs['dt']
+                if time_eq(sim_specs['current_time'], first_pulse):
+                    return np.float64(volume / sim_specs['dt'])
                 else:
-                    return 0
+                    return np.float64(0)
             else:
-                if (sim_specs['current_time'] >= first_pulse) and (sim_specs['current_time'] - first_pulse) % interval == 0: # pulse every interval
-                    return volume / sim_specs['dt']
-                else:
-                    return 0
+                # Check if current time is at or past first pulse and at a pulse interval
+                time_since_first = sim_specs['current_time'] - first_pulse
+                if time_ge(sim_specs['current_time'], first_pulse):
+                    # Check if we're at a pulse point (within epsilon of an interval multiple)
+                    remainder = time_since_first % interval
+                    if remainder < TIME_EPSILON or abs(remainder - interval) < TIME_EPSILON:
+                        return np.float64(volume / sim_specs['dt'])
+                return np.float64(0)
             
         def rbinom(n, p):
             s = stats.binom.rvs(int(n), p, size=1)[0]
-            return float(s) # TODO: something is wrong here - the dimension of s goes high like [[[[30]]]] if not float()ed.
+            return np.float64(s)  # Convert to np.float64 to prevent dimension explosion
+        
+        def normal(mean, stddev, seed=None, min=None, max=None, sample_size=1):
+            if seed is not None:
+                np.random.seed(np.int64(seed))
+            value =  np.float64(np.random.normal(loc=mean, scale=stddev))
+            if min is not None and max is not None:
+                value = np.clip(value, min, max)
+            return value
         
         def log10(a):
-            return np.log10(a)
+            result = np.log10(a)
+            return np.float64(result)
         
         def colon_range(start_operand, end_operand):
             """Handle colon operator for range selection like A34:A94"""
@@ -785,9 +687,9 @@ class Solver(object):
             
             # Handle optional parameters
             if xstart is not None and x <= xstart:
-                return yfrom
+                return np.float64(yfrom)
             if xfinish is not None and x >= xfinish:
-                return yto
+                return np.float64(yto)
             
             # Calculate the logistic function
             # Standard logistic: 1 / (1 + exp(-speed * (x - xmiddle)))
@@ -795,13 +697,13 @@ class Solver(object):
             try:
                 logistic_value = 1.0 / (1.0 + np.exp(-speed * (x - xmiddle)))
                 result = yfrom + (yto - yfrom) * logistic_value
-                return result
+                return np.float64(result)
             except (OverflowError, ZeroDivisionError):
                 # Handle extreme values
                 if x < xmiddle:
-                    return yfrom
+                    return np.float64(yfrom)
                 else:
-                    return yto
+                    return np.float64(yto)
         
         def expbound(yfrom, yto, x, exponent, xstart, xfinish):
             """
@@ -827,9 +729,9 @@ class Solver(object):
             
             # Handle boundary conditions
             if x <= xstart:
-                return yfrom
+                return np.float64(yfrom)
             if x >= xfinish:
-                return yto
+                return np.float64(yto)
             
             # Normalize x to [0, 1] range
             normalized_x = (x - xstart) / (xfinish - xstart)
@@ -848,22 +750,22 @@ class Solver(object):
                 
                 # Scale and shift to get final result
                 result = yfrom + (yto - yfrom) * exponential_value
-                return result
+                return np.float64(result)
                 
             except (OverflowError, ZeroDivisionError):
                 # Handle extreme values
                 if exponent > 0:
                     # For positive exponent, curve starts slow then accelerates
                     if normalized_x < 0.5:
-                        return yfrom + (yto - yfrom) * 0.1  # Small progress
+                        return np.float64(yfrom + (yto - yfrom) * 0.1)  # Small progress
                     else:
-                        return yfrom + (yto - yfrom) * 0.9  # Most progress
+                        return np.float64(yfrom + (yto - yfrom) * 0.9)  # Most progress
                 else:
                     # For negative exponent, curve starts fast then decelerates
                     if normalized_x < 0.5:
-                        return yfrom + (yto - yfrom) * 0.9  # Most progress
+                        return np.float64(yfrom + (yto - yfrom) * 0.9)  # Most progress
                     else:
-                        return yfrom + (yto - yfrom) * 0.99  # Nearly complete
+                        return np.float64(yfrom + (yto - yfrom) * 0.99)  # Nearly complete
         
         ### Function mapping ###
 
@@ -882,7 +784,7 @@ class Solver(object):
             'UNARY_MINUS': unary_minus,
             'TIMES':    times,
             'DIVIDE':   divide,
-            'FLOORDIVIDE': floor_divide,
+            'SAFEDIVIDE': safe_div,
             'MIN':      min,
             'MAX':      max,
             'SAFEDIV':  safe_div,
@@ -890,6 +792,8 @@ class Solver(object):
             'STEP':     step,
             'MOD':      mod,
             'RBINOM':   rbinom,
+            'BINOMIAL': rbinom,
+            'NORMAL':   normal,
             'PULSE':    pulse,
             'EXP_OP':   exp,
             'EXP': exp_e,
@@ -922,8 +826,6 @@ class Solver(object):
         self.time_expr_register = {}
         
         self.id_level = 0
-
-        self.HEAD = "SOLVER"
 
     def calculate_node(self, var_name, parsed_equation, mode, node_id='root', subscript=None):        
         self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] v0.0 processing node {node_id}:")
@@ -1142,44 +1044,44 @@ class Solver(object):
             self.logger.debug(f"{'    '*self.id_level}[ {var_name}:{subscript} ] time-related func. operator: {node_operator} operands {node_operands}")
             func_name = node_operator
             if func_name == 'INIT':
-                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
-                    value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])]
+                if (var_name, subscript, node_id, func_name, 'value') in self.time_expr_register.keys():
+                    value = self.time_expr_register[(var_name, subscript, node_id, func_name, 'value')]
                 else:
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                    value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])]
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'value')] = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                    value = self.time_expr_register[(var_name, subscript, node_id, func_name, 'value')]
             elif func_name == 'DELAY':
                 if mode == 'init' and len(node_operands) == 3:
                     # this is 'init' mode with 3 operands, meaning an initial value is specified; in this case, just calculate the initial value, not the other 2 operands.
                     init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'init_value')] = init_value
                     value = init_value
-                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])] = [value]
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'value')] = [value]
                 else: # 'iter' mode or 'init' mode with 2 oprands
                     # delay time is (1) the constant or (2) initial value of the target variable whose value is used for delay time
-                    if tuple([var_name, subscript, node_id, func_name, 'delay_time']) not in self.time_expr_register.keys():
+                    if (var_name, subscript, node_id, func_name, 'delay_time') not in self.time_expr_register.keys():
                         delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'delay_time')] = delay_time
                     else:
-                        delay_time = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])]
+                        delay_time = self.time_expr_register[(var_name, subscript, node_id, func_name, 'delay_time')]
 
                     # initial value
-                    if tuple([var_name, subscript, node_id, func_name, 'init_value']) not in self.time_expr_register.keys():
+                    if (var_name, subscript, node_id, func_name, 'init_value') not in self.time_expr_register.keys():
                         if len(node_operands) == 3:
                             init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
                         elif len(node_operands) == 2:
                             init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
                         else:
                             raise Exception('Invalid number of args for DELAY.')
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'init_value')] = init_value
                     else:
-                        init_value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])]
+                        init_value = self.time_expr_register[(var_name, subscript, node_id, func_name, 'init_value')]
                     
                     # calculate the current value of operand[0] and push it to the register
                     expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                    if tuple([var_name, subscript, node_id, func_name, 'value']) in self.time_expr_register.keys():
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])].append(expr_value)
+                    if (var_name, subscript, node_id, func_name, 'value') in self.time_expr_register.keys():
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'value')].append(expr_value)
                     else:
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])] = [expr_value]
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'value')] = [expr_value]
                     
                     # determin which value to return
                     if (self.sim_specs['current_time'] - self.sim_specs['initial_time']) < delay_time: # (use current - initial_time) because simulation might not start from time 0 (e.g., year 2011)
@@ -1187,203 +1089,111 @@ class Solver(object):
                     else:
                         # take the past value from the stack
                         delay_steps = delay_time / self.sim_specs['dt']
-                        value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'value'])][-int(delay_steps+1)]
+                        value = self.time_expr_register[(var_name, subscript, node_id, func_name, 'value')][-int(delay_steps+1)]
                 
-            elif func_name == 'DELAY1':
-                order = 1
-                if mode == 'init' and len(node_operands) == 3:
-                    # this is 'init' mode with 3 operands, meaning an initial value is specified; in this case, just calculate the initial value
-                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
-                    # initialize the stocks with init_value
-                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
+            elif func_name in ['DELAY1', 'DELAY3']:
+                if func_name == 'DELAY1':
+                    order = 1
+                else:
+                    order = 3
+                
+                if (var_name, subscript, node_id, func_name, 'stocks') not in self.time_expr_register: # this variable was not included in dg_init, so we need to initialize it at its first evaluation
+                    if len(node_operands) == 3:
+                        # this is 'init' mode with 3 operands, meaning an initial value is specified; in this case, just calculate delay time the initial value
+                        init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'init_value')] = init_value
+                    elif len(node_operands) == 2:
+                        # this is 'init' mode with 2 operands, meaning the value of the target variable is used for the initial value
+                        expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                        init_value = expr_value
+                    else:
+                        raise Exception(f'Invalid number of args for {func_name}.')
+                    
                     # delay_time needed for initialization
                     delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
-                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
-                    for i in range(order):
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
-                    value = init_value
-                else: # 'iter' mode or 'init' mode with 2 operands
-                    # delay_time is (1) the constant or (2) initial value of the target variable whose value is used for delay time
-                    if tuple([var_name, subscript, node_id, func_name, 'delay_time']) not in self.time_expr_register.keys():
-                        delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
-                    else:
-                        delay_time = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])]
-                    
-                    # initial value
-                    if tuple([var_name, subscript, node_id, func_name, 'init_value']) not in self.time_expr_register.keys():
-                        if len(node_operands) == 3:
-                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                        elif len(node_operands) == 2:
-                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                        else:
-                            raise Exception('Invalid number of args for DELAY1.')
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
-                    else:
-                        init_value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])]
-                    
-                    # initialize stocks if not already done
-                    if tuple([var_name, subscript, node_id, func_name, 'stocks']) not in self.time_expr_register.keys():
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
-                        for i in range(order):
-                            self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
-                    
-                    # calculate the current value of operand[0]
-                    expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                    
-                    # compute outflows from each stock
-                    outflows = list()
-                    for i in range(order):
-                        outflows.append(self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i]/(delay_time/order) * self.sim_specs['dt'])
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] -= outflows[i]
-                    
-                    # compute inflows to each stock
-                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][0] += expr_value * self.sim_specs['dt']
-                    for i in range(1, order):
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] += outflows[i-1]
-                    
-                    value = outflows[-1] / self.sim_specs['dt']
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'delay_time')] = delay_time
 
-            elif func_name == 'DELAY3':
-                order = 3
-                if mode == 'init' and len(node_operands) == 3:
-                    # this is 'init' mode with 3 operands, meaning an initial value is specified; in this case, just calculate the initial value
-                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
                     # initialize the stocks with init_value
-                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
-                    # delay_time needed for initialization
-                    delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
-                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')] = []
                     for i in range(order):
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')].append(delay_time/order*init_value)
                     value = init_value
-                else: # 'iter' mode or 'init' mode with 2 operands
-                    # delay_time is (1) the constant or (2) initial value of the target variable whose value is used for delay time
-                    if tuple([var_name, subscript, node_id, func_name, 'delay_time']) not in self.time_expr_register.keys():
-                        delay_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])] = delay_time
-                    else:
-                        delay_time = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'delay_time'])]
-                    
-                    # initial value
-                    if tuple([var_name, subscript, node_id, func_name, 'init_value']) not in self.time_expr_register.keys():
-                        if len(node_operands) == 3:
-                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                        elif len(node_operands) == 2:
-                            init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                        else:
-                            raise Exception('Invalid number of args for DELAY3.')
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])] = init_value
-                    else:
-                        init_value = self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'init_value'])]
-                    
-                    # initialize stocks if not already done
-                    if tuple([var_name, subscript, node_id, func_name, 'stocks']) not in self.time_expr_register.keys():
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])] = list()
-                        for i in range(order):
-                            self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])].append(delay_time/order*init_value)
-                    
+                else:
                     # calculate the current value of operand[0]
                     expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+
+                    # delay time
+                    delay_time = self.time_expr_register[(var_name, subscript, node_id, func_name, 'delay_time')]
                     
                     # compute outflows from each stock
-                    outflows = list()
+                    outflows = []
                     for i in range(order):
-                        outflows.append(self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i]/(delay_time/order) * self.sim_specs['dt'])
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] -= outflows[i]
+                        outflows.append(self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')][i]/(delay_time/order) * self.sim_specs['dt'])
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')][i] -= outflows[i]
                     
                     # compute inflows to each stock
-                    self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][0] += expr_value * self.sim_specs['dt']
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')][0] += expr_value * self.sim_specs['dt']
                     for i in range(1, order):
-                        self.time_expr_register[tuple([var_name, subscript, node_id, func_name, 'stocks'])][i] += outflows[i-1]
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')][i] += outflows[i-1]
                     
                     value = outflows[-1] / self.sim_specs['dt']
 
             elif func_name == 'HISTORY':
                 # expr value
                 expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(expr_value)
+                if (var_name, subscript, node_id, func_name, 'value') in self.time_expr_register.keys():
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'value')][self.sim_specs['current_time']] = expr_value
                 else:
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = [expr_value]
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'value')] = {self.sim_specs['current_time']: expr_value}
 
                 # historical time
                 historical_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
                 if historical_time > self.sim_specs['current_time'] or historical_time < self.sim_specs['initial_time']:
                     value = 0
                 else:
-                    historical_steps = (historical_time - self.sim_specs['initial_time']) / self.sim_specs['dt']
-                    value = self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][int(historical_steps)]
+                    value = self.time_expr_register[(var_name, subscript, node_id, func_name, 'value')][historical_time]
 
-            elif func_name == 'SMTH1':
-                # arg values
-                order = 1
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                if type(expr_value) is dict:
-                    if subscript is not None:
-                        expr_value = expr_value[subscript]
-                    else:
-                        raise Exception('Invalid subscript.')
+            elif func_name in ['SMTH1', 'SMTH3']: # 20251104 updated
+                if func_name == 'SMTH1':
+                    order = 1
+                elif func_name == 'SMTH3':
+                    order = 3
+                # delay_time is dynamically evaluated
                 smth_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
-                if len(node_operands) == 3:
-                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                elif len(node_operands) == 2:
-                    init_value = expr_value
-                else:
-                    raise Exception('Invalid number of args for SMTH1.')
-                
-                # register
-                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = list()
-                    for i in range(order):
-                        self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(smth_time/order*init_value)
-                # outflows
-                outflows = list()
-                for i in range(order):
-                    outflows.append(self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i]/(smth_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
-                # inflows
-                self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
-                for i in range(1, order):
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
-
-                value = outflows[-1] / self.sim_specs['dt']
-
-            elif func_name == 'SMTH3':
-                # arg values
-                order = 3
-                expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
-                if type(expr_value) is dict:
-                    if subscript is not None:
-                        expr_value = expr_value[subscript]
+                self.time_expr_register[(var_name, subscript, node_id, func_name, 'smth_time')] = smth_time
+                    
+                if (var_name, subscript, node_id, func_name, 'stocks') not in self.time_expr_register: # this variable was not included in dg_init, so we need to initialize it at its first evaluation
+                    if len(node_operands) == 3:
+                        # this is 'init' mode with 3 oprands, meaning an initial value is specified; in this case, just calculate the initial value
+                        init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)                
+                    elif len(node_operands) == 2:
+                        # this is 'init' mode with 2 operands, meaning the value of the target variable is used for the initial value
+                        expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                        init_value = expr_value
                     else:
-                        raise Exception('Invalid subscript.')
-                smth_time = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[1], subscript=subscript)
-                if len(node_operands) == 3:
-                    init_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[2], subscript=subscript)
-                elif len(node_operands) == 2:
-                    init_value = expr_value
-                else:
-                    raise Exception('Invalid number of args for SMTH3.')
-                
-                # register
-                if tuple([var_name, parsed_equation, node_id, node_operands[0]]) not in self.time_expr_register.keys():
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])] = list()
-                    for i in range(order):
-                        self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])].append(smth_time/order*init_value)
-                # outflows
-                outflows = list()
-                for i in range(order):
-                    outflows.append(self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i]/(smth_time/order) * self.sim_specs['dt'])
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] -= outflows[i]
-                # inflows
-                self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][0] += expr_value * self.sim_specs['dt']
-                for i in range(1, order):
-                    self.time_expr_register[tuple([var_name, parsed_equation, node_id, node_operands[0]])][i] += outflows[i-1]
+                        raise Exception(f'Invalid number of args for {func_name}.')
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'init_value')] = init_value
 
-                value = outflows[-1] / self.sim_specs['dt']
+                    # initialize the stocks and flows with init_value
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')] = []
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'flows')] = []
+                    for i in range(order):
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')].append(init_value)
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'flows')].append(np.float64(0))     
+                    value = init_value
+                else:
+                    # use current (last) stock's value as value, then update flows and stocks
+                    value = self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')][-1]
+
+                    # calculate smooth flows
+                    expr_value = self.calculate_node(var_name=var_name, parsed_equation=parsed_equation, mode=mode, node_id=node_operands[0], subscript=subscript)
+                    self.time_expr_register[(var_name, subscript, node_id, func_name, 'flows')][0] = (expr_value - self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')][0]) / (smth_time/order)
+                    for i in range(1, order):
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'flows')][i] = (self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')][i-1] - self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')][i]) / (smth_time/order)
+                    
+                    # calculate stocks
+                    for i in range(0, order):
+                        self.time_expr_register[(var_name, subscript, node_id, func_name, 'stocks')][i] += self.time_expr_register[(var_name, subscript, node_id, func_name, 'flows')][i] * self.sim_specs['dt']
 
             else:
                 raise Exception(f'Unknown time-related operator {node_operator}')
@@ -1538,26 +1348,26 @@ class GraphFunc(object):
         if self.out_of_bound_type is None: # default to continuous
             input = max(input, self.xpts[0])
             input = min(input, self.xpts[-1])
-            output = float(self.interp_func(input)) # the output (like array([1.])) needs to be converted to float to avoid dimension explosion
+            output = np.float64(self.interp_func(input))  # Convert to np.float64 to prevent dimension explosion
             return output
         elif self.out_of_bound_type == 'extrapolate':
             if input < self.xpts[0]:
-                output = float(self.interp_func_below(input))
+                output = np.float64(self.interp_func_below(input))
             elif input > self.xpts[-1]:
-                output = float(self.interp_func_above(input))
+                output = np.float64(self.interp_func_above(input))
             else:
-                output = float(self.interp_func(input))
+                output = np.float64(self.interp_func(input))
             return output
         elif self.out_of_bound_type == 'discrete':
             if input < self.xpts[0]:
-                return self.ypts[0]
+                return np.float64(self.ypts[0])
             elif input > self.xpts[-1]:
-                return self.ypts[-1]
+                return np.float64(self.ypts[-1])
             else:
                 for i, xpt in enumerate(self.xpts):
                     if input < xpt:
-                        return self.ypts[i-1]
-                return self.ypts[-1]
+                        return np.float64(self.ypts[i-1])
+                return np.float64(self.ypts[-1])
         else:
             raise Exception(f'Unknown out_of_bound_type {self.out_of_bound_type}')
     
@@ -1577,8 +1387,18 @@ class GraphFunc(object):
 
 
 class Conveyor(object):
-    def __init__(self, length, eqn):
+    def __init__(self, length, eqn, conveyor_debug_level='info'):
         self.logger = logger_conveyor
+        if conveyor_debug_level == 'debug':
+            self.logger.setLevel(logging.DEBUG)
+        elif conveyor_debug_level == 'info':
+            self.logger.setLevel(logging.INFO)
+        elif conveyor_debug_level == 'warning':
+            self.logger.setLevel(logging.WARNING)
+        elif conveyor_debug_level == 'error':
+            self.logger.setLevel(logging.ERROR)
+        else:
+            raise Exception(f'Unknown debug level {conveyor_debug_level}')
 
         self.length_time_units = length
         self.equation = eqn
@@ -1615,6 +1435,7 @@ class Conveyor(object):
         self.is_initialized = True
 
     def level(self):
+        self.logger.debug(f"Report conveyor level: {self.total}")
         return self.total
 
     # order of execution:
@@ -1623,16 +1444,30 @@ class Conveyor(object):
     # 2 Pop the last slat
     # 3 Input as the first slat
 
+    def leak_linear_calc(self): # for initialization phase - just calculate the flow, not changing the slats
+        total_leaked = sum(self.leaks)
+        self.logger.debug(f"<leak_linear_calc> Report conveyor slats (no calculation): {self.slats}")
+        self.logger.debug(f"<leak_linear_calc> Report conveyor leaks (no calculation): {total_leaked}")
+        return total_leaked
+
     def leak_linear(self):
         for i in range(self.length_steps):
             self.slats[i] = self.slats[i] - self.leaks[i]
-        
+        self.logger.debug(f"<leak_linear> Report conveyor slats (after leak calculation): {self.slats}")
         total_leaked = sum(self.leaks)
+        self.logger.debug(f"<leak_linear> Report conveyor leaks (after leak calculation): {total_leaked}")
         self.total -= total_leaked
+        self.logger.debug(f"<leak_linear> Report conveyor level (after leak calculation): {self.total}")
         return total_leaked
-    
+
+    def outflow_calc(self): # for initialization phase - just calculate the flow, not changing the slats
+        last_slat = self.slats[-1] - self.leaks[-1] # this is to hypothetically consider the leak from the last slat, without actually changing the slats
+        self.logger.debug(f"<outflow_calc> Report conveyor last slat (no calculation): {last_slat}")
+        return last_slat
+
     def outflow(self):
         output = self.slats.pop()
+        self.logger.debug(f"<outflow> Report conveyor output (after outflow calculation): {output}")
         self.total -= output
         self.leaks.pop()
         return output
@@ -1641,6 +1476,7 @@ class Conveyor(object):
         self.total += value
         self.slats = [value] + self.slats
         self.leaks = [value* self.leak_fraction/self.length_steps]+self.leaks
+        self.logger.debug(f"<inflow> Report conveyor slats (after inflow calculation): {self.slats}")
 
 
 class Stock(object):
@@ -1691,13 +1527,10 @@ class DataFeeder(object):
 
 class sdmodel(object):
     # equations
-    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info', model_creation_debug_level='info', variable_filter=None):
-        # Debug
-        self.HEAD = 'ENGINE'
-        self.debug_level_trace_error = 0
+    def __init__(self, from_xmile=None, parser_debug_level='info', solver_debug_level='info', simulator_debug_level='info', conveyor_debug_level='info', model_creation_debug_level='info', variable_filter=None):
         self.logger = logger_sdmodel
         self.logger_model_creation = logger_model_creation
-
+        self.conveyor_debug_level = conveyor_debug_level
         # model debug level
         if simulator_debug_level == 'debug':
             self.logger.setLevel(logging.DEBUG)
@@ -1756,7 +1589,7 @@ class sdmodel(object):
         self.stock_equations = dict()
         self.stock_equations_parsed = dict()
         self.stock_non_negative = dict()
-        self.stock_shadow_values = dict() # temporary device to store in/out flows' effect on stocks.
+        self.stock_next_dt_values = dict() # temporary device to store in/out flows' effect on stocks.
         self.stock_non_negative_temp_value = dict()
         self.stock_non_negative_out_flows = dict()
 
@@ -1912,14 +1745,14 @@ class sdmodel(object):
             return
             
         time_units = sim_specs_root.get('time_units')
-        sim_start = float(sim_specs_root.find('start').text)
-        sim_stop = float(sim_specs_root.find('stop').text)
+        sim_start = np.float64(float(sim_specs_root.find('start').text))
+        sim_stop = np.float64(float(sim_specs_root.find('stop').text))
         sim_duration = sim_stop - sim_start
         
         sim_dt_root = sim_specs_root.find('dt')
-        sim_dt = float(sim_dt_root.text)
+        sim_dt = np.float64(float(sim_dt_root.text))
         if sim_dt_root.get('reciprocal') == 'true':
-            sim_dt = 1/sim_dt
+            sim_dt = np.float64(1/sim_dt)
         
         self.sim_specs['initial_time'] = sim_start
         self.sim_specs['current_time'] = sim_start
@@ -2123,7 +1956,7 @@ class sdmodel(object):
             equation_text = element_to_check.find('eqn').text if element_to_check.find('eqn') else var.find('eqn').text
             equation_text = equation_text.strip() if equation_text else equation_text
             length = var.find('len').text.strip() if var.find('len').text else var.find('len').text
-            equation = Conveyor(length, equation_text)
+            equation = Conveyor(length, equation_text, conveyor_debug_level=self.conveyor_debug_level)
         elif element_to_check.find('gf'):
             equation = self._read_graph_function(element_to_check)
             eqn_text = var.find('eqn').text
@@ -2144,14 +1977,14 @@ class sdmodel(object):
         
         if gf.find('xscale'):
             xscale = [
-                float(gf.find('xscale').get('min')),
-                float(gf.find('xscale').get('max'))
+                np.float64(float(gf.find('xscale').get('min'))),
+                np.float64(float(gf.find('xscale').get('max')))
             ]
         else:
             xscale = None
         
         if gf.find('xpts'):
-            xpts = [float(t) for t in gf.find('xpts').text.split(',')]
+            xpts = [np.float64(float(t)) for t in gf.find('xpts').text.split(',')]
         else:
             xpts = None
         
@@ -2159,10 +1992,10 @@ class sdmodel(object):
             raise Exception("GraphFunc: xscale and xpts cannot both be None.")
 
         yscale = [
-            float(gf.find('yscale').get('min')),
-            float(gf.find('yscale').get('max'))
+            np.float64(float(gf.find('yscale').get('min'))),
+            np.float64(float(gf.find('yscale').get('max')))
         ]
-        ypts = [float(t) for t in gf.find('ypts').text.split(',')]
+        ypts = [np.float64(float(t)) for t in gf.find('ypts').text.split(',')]
 
         equation = GraphFunc(
             out_of_bound_type=out_of_bound_type, 
@@ -2480,11 +2313,11 @@ class sdmodel(object):
                 
                 # Determine time step (dt) and starting time from processed data
                 if len(processed_time_values) > 1:
-                    data_dt = float(processed_time_values[1]) - float(processed_time_values[0])
-                    from_time = float(processed_time_values[0])
+                    data_dt = np.float64(float(processed_time_values[1]) - float(processed_time_values[0]))
+                    from_time = np.float64(float(processed_time_values[0]))
                 else:
                     data_dt = sim_dt
-                    from_time = float(processed_time_values[0]) if len(processed_time_values) > 0 else sim_start
+                    from_time = np.float64(float(processed_time_values[0])) if len(processed_time_values) > 0 else sim_start
                 
                 # Apply time-varying data to arrayed variables properly
                 self._apply_timevarying_data(col, processed_data, from_time, data_dt, resource_path)
@@ -2524,7 +2357,7 @@ class sdmodel(object):
     def _parse_number(self, value):
         """Parse a number that might have comma separators (e.g., '1,234' or '1,234.56')."""
         if pd.isna(value):
-            return float('nan')
+            return np.float64('nan')
         
         # Convert to string and handle common formatting
         str_val = str(value).strip()
@@ -2537,10 +2370,10 @@ class sdmodel(object):
         str_val = str_val.replace(',', '')
         
         try:
-            return float(str_val)
+            return np.float64(float(str_val))
         except (ValueError, TypeError) as e:
             logger_model_creation.error(f"Could not parse number '{value}': {e}")
-            return float('nan')
+            return np.float64('nan')
 
     def _handle_missing_time(self, data_values, time_values, sim_start, sim_end, sim_dt, variable_name, resource_path):
         """Handle missing time data by interpolation/extrapolation according to simulation period."""
@@ -2605,8 +2438,8 @@ class sdmodel(object):
             target_dict = None
             
             for var_dict, var_type in [(self.stock_equations, 'stock'), 
-                                     (self.aux_equations, 'auxiliary'), 
-                                     (self.flow_equations, 'flow')]:
+                (self.aux_equations, 'auxiliary'), 
+                (self.flow_equations, 'flow')]:
                 if processed_name in var_dict:
                     target_dict = var_dict
                     variable_found = True
@@ -2645,8 +2478,8 @@ class sdmodel(object):
             variable_found = False
             
             for var_dict, var_type in [(self.stock_equations, 'stock'), 
-                                     (self.aux_equations, 'auxiliary'), 
-                                     (self.flow_equations, 'flow')]:
+                (self.aux_equations, 'auxiliary'), 
+                (self.flow_equations, 'flow')]:
                 if processed_name in var_dict:
                     # Create DataFeeder for the entire variable
                     data_feeder = DataFeeder(
@@ -2679,9 +2512,9 @@ class sdmodel(object):
             doc_text: Raw doc content from XMILE
             
         Returns:
-            tuple: (tags_list, text_content)
-                   tags_list: List of tag strings (empty if no tags)
-                   text_content: Documentation text (empty string if none)
+            tuple:  (tags_list, text_content)
+                    tags_list: List of tag strings (empty if no tags)
+                    text_content: Documentation text (empty string if none)
         """
         if not doc_text:
             return ([], '')
@@ -3121,15 +2954,16 @@ class sdmodel(object):
             if not (conveyor_init or conveyor_len):
                 if not self.conveyors[var]['conveyor'].is_initialized:
                     self.logger.debug(f"    Initializing conveyor {var}")
-                    # when initializing, equation of the conveyor needs to be evaluated, using flag conveyor_len=True 
+                    # length needs to be evaluated, using flag conveyor_len=True 
                     self.calculate_variable(var=var, dg=dg, mode=mode, subscript=subscript, conveyor_len=True)
                     conveyor_length = self.conveyors[var]['len']
                     length_steps = int(conveyor_length/self.sim_specs['dt'])
                     
-                    # when initializing, equation of the conveyor needs to be evaluated, using flag conveyor_init=True 
+                    # initial value needs to be evaluated, using flag conveyor_init=True 
                     self.calculate_variable(var=var, dg=dg, mode=mode, subscript=subscript, conveyor_init=True)
                     conveyor_init_value = self.conveyors[var]['val']
                     
+                    # leak fraction needs to be evaluated, using flag leak_frac=True
                     leak_flows = self.conveyors[var]['leakflow']
                     if len(leak_flows) == 0:
                         leak_fraction = 0
@@ -3137,31 +2971,59 @@ class sdmodel(object):
                         for leak_flow in leak_flows.keys():
                             self.calculate_variable(var=leak_flow, dg=dg, mode=mode, subscript=subscript, leak_frac=True)
                             leak_fraction = self.conveyors[var]['leakflow'][leak_flow] # TODO multiple leakflows
+                    
+                    # initialize conveyor using calculated parameters
                     self.conveyors[var]['conveyor'].initialize(length_steps, conveyor_init_value, leak_fraction)
                     
                     # put initialized conveyor value to name_space
                     value = self.conveyors[var]['conveyor'].level()
                     self.name_space[var] = value
+                    self.stock_next_dt_values[var] = value
 
-                    self.logger.debug(f"    Initialized conveyor {var}")
-                
-                if var not in self.stock_shadow_values:
-                    # self.logger.debug("Updating {} and its outflows".format(var))
-                    # self.logger.debug("    Name space1:", self.name_space)
+                    # put conveyor-related values to name_space
                     # leak
                     for leak_flow, leak_fraction in self.conveyors[var]['leakflow'].items():
-                        if leak_flow not in self.name_space: 
-                            # self.logger.debug('    Calculating leakflow {} for {}'.format(leak_flow, var))
-                            leaked_value = self.conveyors[var]['conveyor'].leak_linear()
-                            self.name_space[leak_flow] = leaked_value / self.sim_specs['dt'] # TODO: we should also consider when leak flows are subscripted
+                        if leak_flow not in self.name_space:
+                            self.logger.debug('    Leakflow {} not in name space, calculating for {}'.format(leak_flow, var))
+                            leaked_value = self.conveyors[var]['conveyor'].leak_linear_calc() # use special function to calculate but not affect conveyor slats
+                            self.name_space[leak_flow] = leaked_value / self.sim_specs['dt']
+                            self.logger.debug(f"    Calculated leakflow {leak_flow} for {var} = {self.name_space[leak_flow]}")
+                        else:
+                            self.logger.debug(f"    {leak_flow} is already in name space: {self.name_space[leak_flow]}")
                     # out
                     for outputflow in self.conveyors[var]['outputflow']:
                         if outputflow not in self.name_space:
-                            # self.logger.debug('    Calculating outflow {} for {}'.format(outputflow, var))
-                            outflow_value = self.conveyors[var]['conveyor'].outflow()
+                            self.logger.debug('    Outflow {} not in name space, calculating for {}'.format(outputflow, var))
+                            outflow_value = self.conveyors[var]['conveyor'].outflow_calc() # use special function to calculate but not affect conveyor slats
                             self.name_space[outputflow] = outflow_value / self.sim_specs['dt']
-                    # self.logger.debug("    Name space2:", self.name_space)
-                    self.stock_shadow_values[var] = self.conveyors[var]['conveyor'].level()
+                            self.logger.debug(f"    Calculated outflow {outputflow} for {var} = {self.name_space[outputflow]}")
+                        else:
+                            self.logger.debug(f"    {outputflow} is already in name space: {self.name_space[outputflow]}")
+                    self.stock_next_dt_values[var] = deepcopy(self.name_space[var])
+                    
+                    self.logger.debug(f"    Conveyor {var} initialized")
+                
+                elif self.conveyors[var]['conveyor'].is_initialized:
+                    if var not in self.stock_next_dt_values:
+                        # leak
+                        for leak_flow, leak_fraction in self.conveyors[var]['leakflow'].items():
+                            if leak_flow not in self.name_space: 
+                                self.logger.debug('    Leakflow {} not in name space, calculating for {}'.format(leak_flow, var))
+                                leaked_value = self.conveyors[var]['conveyor'].leak_linear()
+                                self.name_space[leak_flow] = leaked_value / self.sim_specs['dt'] # TODO: we should also consider when leak flows are subscripted
+                                self.logger.debug(f"    Calculated leakflow {leak_flow} for {var} = {self.name_space[leak_flow]}")
+                            else:
+                                self.logger.debug(f"    {leak_flow} is already in name space: {self.name_space[leak_flow]}")
+                        # out
+                        for outputflow in self.conveyors[var]['outputflow']:
+                            if outputflow not in self.name_space:
+                                self.logger.debug('    Outflow {} not in name space, calculating for {}'.format(outputflow, var))
+                                outflow_value = self.conveyors[var]['conveyor'].outflow()
+                                self.name_space[outputflow] = outflow_value / self.sim_specs['dt']
+                                self.logger.debug(f"    Calculated outflow {outputflow} for {var} = {self.name_space[outputflow]}")
+                        self.stock_next_dt_values[var] = self.conveyors[var]['conveyor'].level()
+                    else:
+                        pass
 
             elif conveyor_len:
                 # self.logger.debug('Calculating LEN for {}'.format(var))
@@ -3196,7 +3058,7 @@ class sdmodel(object):
                     self.name_space[var] = value
                 
                 self.stocks[var].initialized = True
-                self.stock_shadow_values[var] = deepcopy(self.name_space[var])
+                self.stock_next_dt_values[var] = deepcopy(self.name_space[var])
                 if self.stock_non_negative[var] is True:
                     self.stock_non_negative_temp_value[var] = deepcopy(self.name_space[var])
 
@@ -3225,9 +3087,13 @@ class sdmodel(object):
                     self.conveyors[self.leak_conveyors[var]]['leakflow'][var] = self.solver.calculate_node(var_name=var, parsed_equation=parsed_equation, mode=mode)
 
             elif var in self.outflow_conveyors:
+                self.logger.debug(f"    {var} is an outflow from conveyor {self.outflow_conveyors[var]}")
                 # requiring an outflow's value triggers the calculation of its connected conveyor
                 if var not in self.name_space: # the outflow is not calculated, which means the conveyor has not been initialized
+                    self.logger.debug(f"    {var} is not in name space, calculating its conveyor {self.outflow_conveyors[var]}")
                     self.calculate_variable(var=self.outflow_conveyors[var], dg=dg, mode=mode, subscript=subscript)
+                else:
+                    self.logger.debug(f"    {var} is already in name space: {self.name_space[var]}")
 
             elif var in self.flow_equations: # var is a normal flow
                 if var not in self.name_space:
@@ -3372,47 +3238,47 @@ class sdmodel(object):
     def update_stocks(self):
         for stock, in_out_flows in self.stock_flows.items():
             if stock not in self.conveyors: # coneyors are updated separately
-                if stock in self.stock_shadow_values:
-                    self.logger.debug(f'updating stock {stock} shadow_value is {self.stock_shadow_values[stock]}')
+                if stock in self.stock_next_dt_values:
+                    self.logger.debug(f'updating stock {stock} next_dt_value is {self.stock_next_dt_values[stock]}')
                 else:
-                    self.logger.debug(f'updating stock {stock} shadow_value not exist, name_space value is {self.name_space[stock]}')
+                    self.logger.debug(f'updating stock {stock} next_dt_value not exist, name_space value is {self.name_space[stock]}')
                 
                 if len(in_out_flows) != 0:
                     for direction, flows in in_out_flows.items():
                         if direction == 'in':
                             for flow in flows:
                                 self.logger.debug(f'--inflow {flow} = {self.name_space[flow]}')
-                                if stock not in self.stock_shadow_values:
-                                    self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
-                                if type(self.stock_shadow_values[stock]) is dict:
+                                if stock not in self.stock_next_dt_values:
+                                    self.stock_next_dt_values[stock] = deepcopy(self.name_space[stock])
+                                if type(self.stock_next_dt_values[stock]) is dict:
                                     if type(self.name_space[flow]) is dict:
                                         for sub, sub_value in self.name_space[flow].items():
-                                            self.stock_shadow_values[stock][sub] += sub_value * self.sim_specs['dt']
+                                            self.stock_next_dt_values[stock][sub] += sub_value * self.sim_specs['dt']
                                     else:
-                                        for sub in self.stock_shadow_values[stock].keys():
-                                            self.stock_shadow_values[stock][sub] += self.name_space[flow] * self.sim_specs['dt']
+                                        for sub in self.stock_next_dt_values[stock].keys():
+                                            self.stock_next_dt_values[stock][sub] += self.name_space[flow] * self.sim_specs['dt']
                                 else:
-                                    self.stock_shadow_values[stock] += self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug(f'----stock_shadow_value {stock} bcomes {self.stock_shadow_values[stock]}')
+                                    self.stock_next_dt_values[stock] += self.name_space[flow] * self.sim_specs['dt']
+                                self.logger.debug(f'----stock_next_dt_value {stock} bcomes {self.stock_next_dt_values[stock]}')
                         elif direction == 'out':
                             for flow in flows:
                                 self.logger.debug(f'--outflow {flow} = {self.name_space[flow]}')
-                                if stock not in self.stock_shadow_values:
-                                    self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
-                                if type(self.stock_shadow_values[stock]) is dict:
+                                if stock not in self.stock_next_dt_values:
+                                    self.stock_next_dt_values[stock] = deepcopy(self.name_space[stock])
+                                if type(self.stock_next_dt_values[stock]) is dict:
                                     if type(self.name_space[flow]) is dict:
                                         for sub, sub_value in self.name_space[flow].items():
-                                            self.stock_shadow_values[stock][sub] -= sub_value * self.sim_specs['dt']
+                                            self.stock_next_dt_values[stock][sub] -= sub_value * self.sim_specs['dt']
                                     else:
-                                        for sub in self.stock_shadow_values[stock].keys():
-                                            self.stock_shadow_values[stock][sub] -= self.name_space[flow] * self.sim_specs['dt']
+                                        for sub in self.stock_next_dt_values[stock].keys():
+                                            self.stock_next_dt_values[stock][sub] -= self.name_space[flow] * self.sim_specs['dt']
                                 else:
-                                    self.stock_shadow_values[stock] -= self.name_space[flow] * self.sim_specs['dt']
-                                self.logger.debug(f'    ----stock_shadow_value {stock} becomes {self.stock_shadow_values[stock]}')
+                                    self.stock_next_dt_values[stock] -= self.name_space[flow] * self.sim_specs['dt']
+                                self.logger.debug(f'    ----stock_next_dt_value {stock} becomes {self.stock_next_dt_values[stock]}')
                 else: # there are obsolete stocks that are not connected to any flows
                     self.logger.debug(f'stock {stock} is not connected to any flows')
-                    self.stock_shadow_values[stock] = deepcopy(self.name_space[stock])
-                    self.logger.debug(f'stock_shadow_value {stock} remains {self.stock_shadow_values[stock]}')
+                    self.stock_next_dt_values[stock] = deepcopy(self.name_space[stock])
+                    self.logger.debug(f'stock_next_dt_value {stock} remains {self.stock_next_dt_values[stock]}')
             else:
                 pass # conveyors are updated separately
     
@@ -3428,9 +3294,84 @@ class sdmodel(object):
 
             # in
             conveyor['conveyor'].inflow(total_flow_effect * self.sim_specs['dt'])
-            self.stock_shadow_values[conveyor_name] = conveyor['conveyor'].level()
+            self.stock_next_dt_values[conveyor_name] = conveyor['conveyor'].level()
 
-    def simulate(self, time=None, dt=None):
+    def initialize(self):
+        # 20251103: Initialization values does not go directly into results; they are calculated automatically ad-hoc as structure changes
+        if self.state in ['loaded', 'changed']:
+            if self.state == 'changed':
+                self.logger.debug('Equation changed after last simulation, re-parsing.')
+            self.parse() # set state to 'parsed'
+        
+        self.logger.debug("")
+        self.logger.debug("*** Initialization ***")
+        self.logger.debug("")
+
+        self.generate_ordered_vars()
+        self.logger.debug("")
+        self.logger.debug(f"self.ordered_vars_init {self.ordered_vars_init}")
+        self.logger.debug("")
+
+        # Initialize self.stock_non_negative_temp_value
+        for stock, is_non_negative in self.stock_non_negative.items():
+            if is_non_negative:
+                self.stock_non_negative_temp_value[stock] = None
+
+        for var in self.ordered_vars_init:
+            self.calculate_variable(var=var, dg=self.dg_init, mode='init')
+
+        for var in self.ordered_vars_iter:
+            if var not in self.ordered_vars_init:
+                self.calculate_variable(var=var, dg=self.dg_iter, mode='iter')
+
+        # Stocks calcualted in initialization phase WILL stay into iteration phase
+        # Flows and auxiliaries calculated in initialization phase will NOT stay, their values are only for show, and will be discarded and recaculated in the 1st iteration of the iteration phase
+        
+        self.logger.debug(f'---- initialization finished ----') 
+        self.logger.debug(f'name_space: {self.name_space}')
+        self.logger.debug(f'next_dt_val: {self.stock_next_dt_values}')
+        self.logger.debug(f'time_expr_register: {self.solver.time_expr_register}')
+
+        # prepare name_space for next step
+        self.logger.debug('---- preparing name_space for next step ----')
+        self.logger.debug('clearing name space')
+        self.name_space.clear()
+        self.logger.debug(f'name space: {self.name_space}')
+
+        self.logger.debug('populate name_space using next_dt values')
+        # Here this next_dt value is used directly as the stock value for the next time step
+        # This is OK if the model equations are not changed 'dynamically' during the simulation
+        # However if flow equations are changed, either in themselves or in their dependencies,
+        # then the next_dt value will be incorrect.
+        for stock, stock_value in self.stock_next_dt_values.items():
+            self.name_space[stock] = deepcopy(stock_value)
+
+        # then we need to add delayed auxiliaries as they are implicit stocks
+        
+        self.logger.debug('clear next_dt value')
+        self.stock_next_dt_values.clear()
+        self.logger.debug(f'next_dt value: {self.stock_next_dt_values}')
+
+        self.logger.debug('populate non-negative temp value with their name_space values')
+        for k, v in self.stock_non_negative_temp_value.items():
+            self.stock_non_negative_temp_value[k] = deepcopy(self.name_space[k])
+        self.logger.debug(f'non-negative temp value: {self.stock_non_negative_temp_value}')
+        
+        self.name_space['TIME'] = self.sim_specs['current_time']
+        self.name_space['DT'] = self.sim_specs['dt']
+
+        self.logger.debug(f'name space: {self.name_space}')
+        self.logger.debug('---- end of preparation ----')
+
+        self.state = 'initialized'
+
+    def simulate(self, time=None, dt=None, pause=False):
+        '''
+        time:   simulation time
+        dt:     time step
+        pause:  if True, the simulation will pause after the specified time (stop after step 1);
+                if time is not specified, the simulation will pause after the last iteration 
+        '''
         self.logger.debug(f'Simulation started with specs: {self.sim_specs}')
         self.logger.debug(f'Equations: {self.stock_equations | self.flow_equations | self.aux_equations | self.delayed_auxiliary_equations}')
         
@@ -3438,126 +3379,110 @@ class sdmodel(object):
             time = self.sim_specs['simulation_time']
         if dt is None:
             dt = self.sim_specs['dt']
-        iterations = int(time/dt)
 
-        if self.state in ['simulated', 'changed']:
-            if self.state == 'changed':
-                self.logger.debug('Equation changed after last simulation, re-parsing.')
-                self.parse() # set state to 'parsed'
-                self.generate_ordered_vars()
-
-            self.logger.debug("")
-            self.logger.debug("*** Resuming ***")
-            self.logger.debug("")
-            # self.name_space.clear()
-            # # use last time slice as the initial values for the next simulation, do not do initialization again
-            # # self.sim_specs['current_time'] -= self.sim_specs['dt'] # go back to the last time step
-            # for stock in (self.stocks | self.conveyors):
-            #     last_value = self.time_slice[self.sim_specs['current_time'] - self.sim_specs['dt']][stock]
-            #     self.name_space[stock] = last_value
-            
-            # self.name_space['TIME'] = self.sim_specs['current_time']
-            # self.name_space['DT'] = self.sim_specs['dt']
-
-            self.logger.debug(f'Continuing simulation from time {self.sim_specs["current_time"]} for {iterations} iteration')
+        if self.state != 'initialized':
+            self.logger.debug('Simulation state is not initialized, initializing...')
+            self.initialize()
         
-        elif self.state == 'loaded':
-            # parse equations and order execution (compile)
-            self.parse() # set state to 'parsed'
-            self.generate_ordered_vars()
-            # Initialization Phase
-            self.logger.debug("")
-            self.logger.debug("*** Initialization ***")
-            self.logger.debug("")
-            self.logger.debug(f"self.ordered_vars_init {self.ordered_vars_init}")
+        # self.logger.debug("")
+        # self.logger.debug("*** Resuming ***")
+        # self.logger.debug("")
 
-            # Initialize self.stock_non_negative_temp_value
-            for stock, is_non_negative in self.stock_non_negative.items():
-                if is_non_negative:
-                    self.stock_non_negative_temp_value[stock] = None
-
-            for var in self.ordered_vars_init:
-                self.calculate_variable(var=var, dg=self.dg_init, mode='init')
+        # self.logger.debug(f'Continuing simulation from time {self.sim_specs["current_time"]} for {iterations} iteration')
         
-            # Since it's just loaded, we need 2 iterations (if we were to simulate 1 DT)
-            # The 1st iteration is to calculate the flows (and auxiliaries) based on the initialilized stocks (1st row of outcome) and update the stocks (2nd row of outcome)
-            # The 2nd iteration is to calculate the flows (and auxiliaries) based on the updated stocks (2nd row of outcome) and update the stocks.
-            # The updated stocks (in name_space) should be part of the 3rd row of outcome, but they are not saved (bus still in name_space) as we only simulate 1 DT.
-            iterations += 1 
-
-        # Iteration Phase
         self.logger.debug("")
         self.logger.debug("*** Iteration ***")
         self.logger.debug("")
+        
         self.logger.debug(f"self.ordered_vars_iter {self.ordered_vars_iter}")
-        self.logger.debug(f"Current name_space: {self.name_space}")
+        self.logger.debug(f"current name_space: {self.name_space}")
+        self.logger.debug("")
 
-        # self.current_iteration = 0
-
-        for s in range(iterations):
+        # Calculate end_time and number of iterations to avoid floating-point precision issues
+        end_time = self.sim_specs['initial_time'] + self.sim_specs['simulation_time']
+        num_iterations = int(round(self.sim_specs['simulation_time'] / dt))
+        
+        iteration = 1
+        while iteration <= num_iterations:
             self.logger.debug("")
-            self.logger.debug(f'---- iteration {s} start, current time {self.sim_specs["current_time"]} ----')
+            self.logger.debug(f'---- iteration no. {iteration} start ----')
+            self.logger.debug(f'01. name_space: {self.name_space}')
             
-            # Iter step 1: calculate flows and auxiliaries they depend on
-            self.logger.debug('calculating flows and auxiliaries they depend on')
+            # step 1
+            # calculate flows and auxiliaries they depend on
+            self.logger.debug('02. calculating flows and auxiliaries they depend on')
+            self.logger.debug(f"self.ordered_vars_iter {self.ordered_vars_iter}")
             for var in self.ordered_vars_iter:
                 self.calculate_variable(var=var, dg=self.dg_iter, mode='iter')
 
-            # Iter step 2: update stocks using flows and conveyors
-            self.logger.debug('updating stocks using flows and conveyors')
-            self.update_stocks() # update stock shadow values using flows
-            self.update_conveyors() # update stock shadow values as well as conveyors 
-
-            # Snapshot current name space
-            self.logger.debug('snapshotting current name space as a new time slice')
+            # Snapshot current name space, NOTE: the snapshot takes place IN THE MIDDLE of iteration
+            self.logger.debug(f"03. snapshotting current name space as a new time slice for time {self.name_space['TIME']}")
             current_snapshot = deepcopy(self.name_space)
             current_snapshot[self.sim_specs['time_units']] = current_snapshot['TIME']
             current_snapshot.pop('TIME')
-            
             self.time_slice[self.sim_specs['current_time']] = current_snapshot
 
-            self.logger.debug(f'---- iteration {s} finished ----') 
-            self.logger.debug(f'name_space: {self.name_space}')
-            self.logger.debug(f'shadow_val: {self.stock_shadow_values}')
-            self.logger.debug(f'time_expr_register: {self.solver.time_expr_register}')
+            # step 2
+            # update stocks using flows and conveyors
+            self.logger.debug('04. updating: flows -->  next_dt values of stocks...')
+            self.update_stocks() # update stock next_dt values using flows
+            self.logger.debug('05. updating: conveyors...')
+            self.update_conveyors() # update stock next_dt values as well as conveyors 
+            # TODO: we need to add delayed auxiliaries as they are implicit stocks
 
-            
-            # Iter step 3: update simulation time
-            self.logger.debug(f'updating simulation time (current_time) from {self.sim_specs["current_time"]} to {self.sim_specs["current_time"] + dt}')
-            self.sim_specs['current_time'] += dt
-            # self.current_iteration += 1
-
-            # prepare name_space for next step
-            self.logger.debug('---- preparing name_space for next step ----')
-            self.logger.debug('clearing name space')
-            self.name_space.clear()
-            self.logger.debug(f'name space: {self.name_space}')
-
-            self.logger.debug('populate name_space using shadow values')
-            # Here this shadow value is used directly as the stock value for the next time step
-            # This is OK if the model equations are not changed 'dynamically' during the simulation
-            # However if flow equations are changed, either in themselves or in their dependencies,
-            # then the shadow value will be incorrect.
-            for stock, stock_value in self.stock_shadow_values.items():
+            self.logger.debug('06. updating: stocks in name_space <-- next_dt values of stocks...')
+            for stock, stock_value in self.stock_next_dt_values.items():
                 self.name_space[stock] = deepcopy(stock_value)
 
-            # then we need to add delayed auxiliaries as they are implicit stocks
+            # step 3
+            # update simulation time
+            self.logger.debug(f'07. updating simulation time (current_time) from {self.sim_specs["current_time"]} to {self.sim_specs["current_time"] + dt}...')
+            self.sim_specs['current_time'] += dt
 
-            self.logger.debug(f'name space: {self.name_space}')
+            self.logger.debug(f'---- iteration {iteration} finished ----')
+            self.logger.debug(f'08. name_space: {self.name_space}')
             
-            self.logger.debug('clear shadow value')
-            self.stock_shadow_values.clear()
-            self.logger.debug(f'shadow value: {self.stock_shadow_values}')
-
-            self.logger.debug('populate non-negative temp value with their name_space values')
+            # prepare name_space for next step
+            self.logger.debug('---- preparing name_space for next step ----')
+            
+            self.logger.debug('09. updating: stocks in name_space --> non-negative temp values...')
             for k, v in self.stock_non_negative_temp_value.items():
                 self.stock_non_negative_temp_value[k] = deepcopy(self.name_space[k])
-            self.logger.debug(f'non-negative temp value: {self.stock_non_negative_temp_value}')
+            self.logger.debug(f'10. non-negative temp value: {self.stock_non_negative_temp_value}')
             
+            self.logger.debug('11. clearing name space...')
+            self.name_space.clear()
+            self.logger.debug(f'12. name space: {self.name_space}')
+
+            # putting stocks and env variables back to name_space
+            self.logger.debug('13. updating: env variables --> name_space...')
             self.name_space['TIME'] = self.sim_specs['current_time']
             self.name_space['DT'] = self.sim_specs['dt']
+            self.logger.debug('14. updating: next_dt values of stocks --> name_space...')
+            for stock, stock_value in self.stock_next_dt_values.items():
+                self.name_space[stock] = deepcopy(stock_value)
+
+            self.logger.debug('15. clearing next_dt value...')
+            self.stock_next_dt_values.clear()
 
             self.logger.debug('---- end of preparation ----')
+
+            iteration += 1
+
+        # to finialize the simulation, a Final iteration (only step 1: calculate converters and flows) is needed
+        # step 1
+        # calculate flows and auxiliaries they depend on
+        self.logger.debug('16. calculating flows and auxiliaries they depend on')
+        for var in self.ordered_vars_iter:
+            self.calculate_variable(var=var, dg=self.dg_iter, mode='iter')
+
+        # Snapshot current name space - note the snapshot takes place IN THE MIDDLE of iteration
+        self.logger.debug(f"17. snapshotting current name space as a new time slice for time {self.name_space['TIME']}")
+        current_snapshot = deepcopy(self.name_space)
+        current_snapshot[self.sim_specs['time_units']] = current_snapshot['TIME']
+        current_snapshot.pop('TIME')
+        self.time_slice[self.sim_specs['current_time']] = current_snapshot
+        # end of the final iteration
 
         self.state = 'simulated'
 
@@ -3575,7 +3500,7 @@ class sdmodel(object):
         self.sim_specs['current_time'] = self.sim_specs['initial_time']
         self.name_space = dict()
         self.name_space.update(self.env_variables)
-        self.stock_shadow_values = dict()
+        self.stock_next_dt_values = dict()
         self.time_slice = dict()
         for stock_name, stock in self.stocks.items():
             stock.initialized = False
@@ -3754,13 +3679,34 @@ class sdmodel(object):
                     if node_operator in ['IS']:
                         self.logger.debug(f"{'    '*self.id_level}Node {node_id} has operator {node_operator}, a number; no dependent, no further tracing needed.")
                         return
-                    elif node_operator in ['DELAY', 'DELAY1', 'DELAY3', 'SMTH1', 'SMTH3']:
+                    elif node_operator in ['DELAY', 'DELAY1', 'DELAY3']:
                         # these functions have 2 or 3 operands; if 2 then no initial value, only 1st is used for initialization; if 3 then with initial value, only 3rd is used for initialization; 1st is indirectly (through cumulation) used for iteration; 2nd is directly (delay time) used for iteration
-                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} is a delay/smooth function {node_operator}, handling operands based on mode '{mode}'")
+                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} is a delay function {node_operator}, handling operands based on mode '{mode}'")
                         if mode == 'init':
                             self.logger.debug(f"{'    '*self.id_level}Initialization mode: only considering the operand used for initialization")
                             if len(node['operands']) == 3:
                                 self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 3 operands, adding only the 3rd operand for initialization")
+                                operands_to_trace.add(node['operands'][2])
+                            elif len(node['operands']) == 2:
+                                self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 2 operands, adding the target variable and delay time for initialization")
+                                operands_to_trace.add(node['operands'][0])
+                                operands_to_trace.add(node['operands'][1])
+                        elif mode == 'iter':
+                            self.logger.debug(f"{'    '*self.id_level}Iteration mode: considering target variable and delay time for iteration")
+                            operands_to_trace.add(node['operands'][0])
+                            operands_to_trace.add(node['operands'][1])
+                        else:
+                            raise Exception(f"Invalid mode: {mode}")
+                    elif node_operator in ['SMTH1', 'SMTH3']:
+                        # these functions have 2 or 3 operands; 
+                        # if 2 then no initial value, both 1st (target var) and 2nd (smooth time) are used for initialization; 
+                        # if 3 then with initial value, both 2nd (smooth time) and 3rd (initial value) are used for initialization;
+                        self.logger.debug(f"{'    '*self.id_level}Node {node_id} is a smooth function {node_operator}, handling operands based on mode '{mode}'")
+                        if mode == 'init':
+                            self.logger.debug(f"{'    '*self.id_level}Initialization mode: only considering the operand used for initialization")
+                            if len(node['operands']) == 3:
+                                self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 3 operands, adding only the 3rd operand for initialization")
+                                operands_to_trace.add(node['operands'][1])
                                 operands_to_trace.add(node['operands'][2])
                             elif len(node['operands']) == 2:
                                 self.logger.debug(f"{'    '*self.id_level}Node {node_id} has 2 operands, adding the target variable and delay time for initialization")
@@ -3844,22 +3790,30 @@ class sdmodel(object):
             return graph
 
     def generate_full_dependent_graph(self, show=False):
-        ########################
-        # Initialization graph #
-        ########################
+        #################################
+        # Generate Initialization Graph #
+        #################################
 
-        self.logger.debug(f'{"*"*80}')
-        self.logger.debug(f'Initialization phase')
-        self.logger.debug(f'{"*"*80}')
+        self.logger.debug('')
+        self.logger.debug('--- Generating Initialization Graph ---')
+        self.logger.debug('')
 
         dg_init = nx.DiGraph()
+
+        # Vriables that need to be included in the initialization graph: 
+        # - stocks
+        # - flows or converters needed for stock initialization
+        # - delayed auxiliaries which in nature are stocks
+
+        # stocks
         if len(self.stock_equations_parsed) > 0:
             for stock in self.stock_equations_parsed:
                 dg_stock = self.create_variable_dependency_graph(stock, mode='init')
                 dg_init = nx.compose(dg_init, dg_stock)
         else:
             self.logger.debug(f"INIT Graph: No stocks, skipping")
-
+        
+        # delayed auxiliaries
         if len(self.delayed_auxiliary_equations_parsed) > 0:
             for delayed_aux in self.delayed_auxiliary_equations_parsed:
                 dg_delayed_aux = self.create_variable_dependency_graph(delayed_aux, mode='init')
@@ -4014,13 +3968,13 @@ class sdmodel(object):
         self.logger.debug(f'INIT Graph: Edges (after sanitization): {dg_init.edges(data=True)}')
         self.logger.debug(f"INIT Graph: Ordered vars for initialization: {ordered_vars_init}")
 
-        ###################
-        # Iteration graph #
-        ###################
+        ############################
+        # Generate Iteration Graph #
+        ############################
 
-        self.logger.debug(f'{"*"*80}')
-        self.logger.debug(f'Iteration phase')
-        self.logger.debug(f'{"*"*80}')
+        self.logger.debug('')
+        self.logger.debug('--- Generating Iteration Graph ---')
+        self.logger.debug('')
 
         dg_iter = nx.DiGraph()
         for flow in self.flow_equations_parsed:
@@ -4199,8 +4153,8 @@ class sdmodel(object):
         Args:
             filepath: Path to save the file. If None, saves to original file with '_asdm' suffix.
             _force_update_all: Internal testing parameter. If True, forces all variables to be
-                              updated (not just modified ones). This tests all equation serialization
-                              logic. Not intended for production use.
+                                updated (not just modified ones). This tests all equation serialization
+                                logic. Not intended for production use.
         
         Returns:
             Path to the saved file
