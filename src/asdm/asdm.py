@@ -602,9 +602,20 @@ class Solver(object):
             # Ensure scalar results are np.float64
             return np.float64(result)
 
+        # Time comparison epsilon to handle floating-point precision issues
+        TIME_EPSILON = 1e-6  # Small epsilon
+        
+        def time_eq(t1, t2):
+            """Check if two time values are approximately equal within epsilon tolerance."""
+            return abs(t1 - t2) < TIME_EPSILON
+        
+        def time_ge(t1, t2):
+            """Check if t1 >= t2 with epsilon tolerance."""
+            return t1 > t2 - TIME_EPSILON
+
         def step(stp, time):
             # self.logger.debug('step:', stp, time)
-            if sim_specs['current_time'] >= time:
+            if time_ge(sim_specs['current_time'], time):
                 # self.logger.debug('step out:', stp)
                 return np.float64(stp)
             else:
@@ -615,20 +626,24 @@ class Solver(object):
             if first_pulse is None:
                     first_pulse = sim_specs['initial_time']
             if interval is None:
-                if sim_specs['current_time'] >= first_pulse: # pulse for all dt after fist pulse
+                if time_ge(sim_specs['current_time'], first_pulse): # pulse for all dt after fist pulse
                     return np.float64(volume / sim_specs['dt'])
                 else:
                     return np.float64(0)
             elif interval == 0 or interval > sim_specs['simulation_time']: # only one pulse
-                if sim_specs['current_time'] == first_pulse:
+                if time_eq(sim_specs['current_time'], first_pulse):
                     return np.float64(volume / sim_specs['dt'])
                 else:
                     return np.float64(0)
             else:
-                if (sim_specs['current_time'] >= first_pulse) and (sim_specs['current_time'] - first_pulse) % interval == 0: # pulse every interval
-                    return np.float64(volume / sim_specs['dt'])
-                else:
-                    return np.float64(0)
+                # Check if current time is at or past first pulse and at a pulse interval
+                time_since_first = sim_specs['current_time'] - first_pulse
+                if time_ge(sim_specs['current_time'], first_pulse):
+                    # Check if we're at a pulse point (within epsilon of an interval multiple)
+                    remainder = time_since_first % interval
+                    if remainder < TIME_EPSILON or abs(remainder - interval) < TIME_EPSILON:
+                        return np.float64(volume / sim_specs['dt'])
+                return np.float64(0)
             
         def rbinom(n, p):
             s = stats.binom.rvs(int(n), p, size=1)[0]
