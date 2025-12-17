@@ -2645,6 +2645,10 @@ class sdmodel(object):
                             self.stock_equations[name][k_new] = self.format_new_equation(v_new)
             else:
                 self.stock_equations[name] = new_equation
+            
+            # Set stock to not initialized
+            self.stocks[name].initialized = False
+        
         elif name in self.flow_equations:
             if type(new_equation) is dict:
                 if type(self.flow_equations[name]) is not dict: # if the old equation is not subscripted
@@ -3351,7 +3355,6 @@ class sdmodel(object):
         self.logger.debug('clear next_dt value')
         self.stock_next_dt_values.clear()
         self.logger.debug(f'next_dt value: {self.stock_next_dt_values}')
-
         self.logger.debug('populate non-negative temp value with their name_space values')
         for k, v in self.stock_non_negative_temp_value.items():
             self.stock_non_negative_temp_value[k] = deepcopy(self.name_space[k])
@@ -3400,7 +3403,7 @@ class sdmodel(object):
 
         # Calculate end_time and number of iterations to avoid floating-point precision issues
         end_time = self.sim_specs['initial_time'] + self.sim_specs['simulation_time']
-        num_iterations = int(round(self.sim_specs['simulation_time'] / dt))
+        num_iterations = int(round(time / dt))
         
         iteration = 1
         while iteration <= num_iterations:
@@ -3519,7 +3522,7 @@ class sdmodel(object):
         self.solver = Solver(
             sim_specs=self.sim_specs,
             dimension_elements=self.dimension_elements,
-            var_dimension=self.var_dimension,
+            var_dimensions=self.var_dimensions,
             name_space=self.name_space,
             graph_functions=self.graph_functions,
             )
