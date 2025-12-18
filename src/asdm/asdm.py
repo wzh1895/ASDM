@@ -3302,6 +3302,14 @@ class sdmodel(object):
 
     def initialize(self):
         # 20251103: Initialization values does not go directly into results; they are calculated automatically ad-hoc as structure changes
+        # 20251217: Preserve stock values if we're re-initializing during a simulation (state == 'changed')
+        preserved_stocks = {}
+        if self.state == 'changed':
+            self.logger.debug('Equation changed after last simulation, preserving stock values.')
+            for stock in self.stock_equations.keys() | self.conveyors.keys():
+                if stock in self.name_space:
+                    preserved_stocks[stock] = deepcopy(self.name_space[stock])
+        
         if self.state in ['loaded', 'changed']:
             if self.state == 'changed':
                 self.logger.debug('Equation changed after last simulation, re-parsing.')
@@ -3346,9 +3354,17 @@ class sdmodel(object):
         # Here this next_dt value is used directly as the stock value for the next time step
         # This is OK if the model equations are not changed 'dynamically' during the simulation
         # However if flow equations are changed, either in themselves or in their dependencies,
-        # then the next_dt value will be incorrect.
-        for stock, stock_value in self.stock_next_dt_values.items():
-            self.name_space[stock] = deepcopy(stock_value)
+        # then the next_dt value will be incorrect. 20251217: In such case, the model must be continuing 
+        # from a 'changed' state, and we should have preserved stocks, so use those instead
+        if preserved_stocks:
+            self.logger.debug('restoring preserved stock values from before parameter change')
+            for stock, stock_value in preserved_stocks.items():
+                self.name_space[stock] = deepcopy(stock_value)
+            # clear preserved stocks to prevent (mistakenly) using them again
+            preserved_stocks.clear()
+        else:
+            for stock, stock_value in self.stock_next_dt_values.items():
+                self.name_space[stock] = deepcopy(stock_value)
 
         # then we need to add delayed auxiliaries as they are implicit stocks
         
@@ -3372,7 +3388,7 @@ class sdmodel(object):
         '''
         time:   simulation time
         dt:     time step
-        pause:  if True, the simulation will pause after the specified time (stop after step 1);
+        pause:  if True, the simulation will pause after the specified time;
                 if time is not specified, the simulation will pause after the last iteration 
         '''
         self.logger.debug(f'Simulation started with specs: {self.sim_specs}')
@@ -3383,8 +3399,8 @@ class sdmodel(object):
         if dt is None:
             dt = self.sim_specs['dt']
 
-        if self.state != 'initialized':
-            self.logger.debug('Simulation state is not initialized, initializing...')
+        if self.state not in ['initialized', 'simulated']:
+            self.logger.debug(f'Simulation state is {self.state}, initializing...')
             self.initialize()
         
         # self.logger.debug("")
