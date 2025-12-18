@@ -56,43 +56,59 @@ Export simulation results:
 
 ---
 
-## **Web-Based Simulation Interface**
-ASDM now includes a **web-based simulation interface** that allows users to:
-- Upload `.stmx` or `.xmile` models for simulation.  
-- Download simulation results as a **CSV file**.  
-- Select variables and visualise them on an **interactive chart**.  
+## **Running Simulations**
 
-![ASDM Simulator](media/asdm_simulator.png)
+Beyond the Python API, ASDM provides two ways to run simulations without writing code:
 
-### **Quick Start**
-Run the ASDM web simulator with:
+### **Web Interface**
+Perfect for exploring models, visualizing results, and quick iterations.
+
+**Launch the simulator:**
 ```sh
 asdm simulator
 ```
-By default, this starts a local server at `http://127.0.0.1:8080`. If port 8080 is unavailable, specify a different port, for example:
-```sh
-asdm simulator --port 8081
-```
-You can also bind to all network interfaces to allow access from others:
-```sh
-asdm simulator --host 0.0.0.0
-```
-Once started, the browser will automatically open the simulator page.
+Opens in your browser at `http://127.0.0.1:8080`. 
 
-You can also provide a model file directly to run it automatically:
+**Run a specific model immediately:**
 ```sh
-asdm simulator path/to/model.stmx
+asdm simulator model.stmx
 ```
-This will launch the simulator and automatically run the specified model, displaying results immediately.
 
-### **Features**
-- **Drag-and-drop file upload**: Upload your `.stmx` or `.xmile` model file.
-- **Simulation results in a table**: Automatically display after the model runs.
-- **CSV download**: You can download simulation results as a CSV file.
-- **Interactive charting**:
-  - Select variables from a dropdown list.
-  - Automatically detects the **time column name** (e.g., "Years", "Months", etc.).
-  - Uses **Plotly.js** to generate interactive line charts.
+**Options:**
+- `--port 8081` — Use a different port
+- `--host 0.0.0.0` — Allow access from other machines
+
+**Features:**
+- Drag-and-drop model upload (`.stmx`, `.xmile`)
+- Interactive charts with variable selection
+- Download results as CSV
+- Auto-detects time units
+
+![ASDM Simulator](media/asdm_simulator.png)
+
+---
+
+### **Command Line**
+Ideal for batch processing, automation, and integrating into pipelines.
+
+**Run a simulation:**
+```sh
+asdm run model.stmx
+```
+Results saved as `model.csv` by default.
+
+**Custom output:**
+```sh
+asdm run model.stmx --output results.csv
+```
+
+**Use in scripts:**
+```sh
+# Process multiple models
+for model in models/*.stmx; do
+  asdm run "$model" --output "results/$(basename $model .stmx).csv"
+done
+```
 
 ---
 
@@ -129,10 +145,8 @@ ASDM is open-source and released under the **MIT licence**.
 
 ## **Contributors**
 ### **Wang Zhao** (`main author`)
-- Postgraduate research student & research assistant at **University of Strathclyde, UK**.
-- Software engineer at **Newcastle Marine Services, UK**.
-- Speaker at multiple conferences on SD modelling.
-- Contact: [wang.zhao@strath.ac.uk](mailto:wang.zhao@strath.ac.uk); [wzh1895@outlook.com](mailto:wzh1895@outlook.com)
+- Scientific Collaborator at **Swiss Tropical and Public Health Institute, Switzerland**.
+- Contact: [wang.zhao@swisstph.ch](mailto:wang.zhao@swisstph.ch); [wzh1895@outlook.com](mailto:wzh1895@outlook.com)
 - Conference talk: [Watch Here on YouTube](https://www.youtube.com/watch?v=I_0YpIKc3yI&t=2321s).
 
 ### **Matt Stammers** (`contributor`)
