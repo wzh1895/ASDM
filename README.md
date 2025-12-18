@@ -6,14 +6,7 @@ ASDM is a Python library that enables users to create and simulate System Dynami
 
 ### **ASDM's Contribution & Impact**
 
-Check out this presentation: [Project Care Home Demand](https://www.youtube.com/watch?v=tP1X38h8Ks4), given by **Sally Thompson**, Senior Healthcare Analyst at *The Strategy Unit* (part of NHS Midlands and Lancashire CSU). The presentation [highlights](https://www.youtube.com/watch?v=tP1X38h8Ks4&t=492s) the role of ASDM in developing an [**online SD model-based simulator**](https://connect.strategyunitwm.nhs.uk/care-home-demand/).
-
-
-### **Library Structure**
-- `asdm/asdm.py` contains the main functionalities, including the lexer, parser, and interpreter.
-- `asdm/utilities.py` provides a data visualisation tool.
-- `asdm/inference/` consists of tools for model calibration.
-- `asdm/simulator/` provides a **web-based simulation interface** for easy model execution, result downloading, and visualisation.
+Check out this presentation: [Project Care Home Demand](https://www.youtube.com/watch?v=tP1X38h8Ks4), which [highlights](https://www.youtube.com/watch?v=tP1X38h8Ks4&t=492s) the role of ASDM in developing an [online SD model-based simulator](https://connect.strategyunitwm.nhs.uk/care-home-demand/). The presentation is given by **Sally Thompson**, Senior Healthcare Analyst at The Strategy Unit (part of NHS Midlands and Lancashire CSU).
 
 ---
 ## **Installation**
