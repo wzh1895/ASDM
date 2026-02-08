@@ -2645,6 +2645,10 @@ class sdmodel(object):
                             self.stock_equations[name][k_new] = self.format_new_equation(v_new)
             else:
                 self.stock_equations[name] = new_equation
+            
+            # Set stock to not initialized
+            self.stocks[name].initialized = False
+        
         elif name in self.flow_equations:
             if type(new_equation) is dict:
                 if type(self.flow_equations[name]) is not dict: # if the old equation is not subscripted
@@ -3298,6 +3302,14 @@ class sdmodel(object):
 
     def initialize(self):
         # 20251103: Initialization values does not go directly into results; they are calculated automatically ad-hoc as structure changes
+        # 20251217: Preserve stock values if we're re-initializing during a simulation (state == 'changed')
+        preserved_stocks = {}
+        if self.state == 'changed':
+            self.logger.debug('Equation changed after last simulation, preserving stock values.')
+            for stock in self.stock_equations.keys() | self.conveyors.keys():
+                if stock in self.name_space:
+                    preserved_stocks[stock] = deepcopy(self.name_space[stock])
+        
         if self.state in ['loaded', 'changed']:
             if self.state == 'changed':
                 self.logger.debug('Equation changed after last simulation, re-parsing.')
@@ -3342,16 +3354,23 @@ class sdmodel(object):
         # Here this next_dt value is used directly as the stock value for the next time step
         # This is OK if the model equations are not changed 'dynamically' during the simulation
         # However if flow equations are changed, either in themselves or in their dependencies,
-        # then the next_dt value will be incorrect.
-        for stock, stock_value in self.stock_next_dt_values.items():
-            self.name_space[stock] = deepcopy(stock_value)
+        # then the next_dt value will be incorrect. 20251217: In such case, the model must be continuing 
+        # from a 'changed' state, and we should have preserved stocks, so use those instead
+        if preserved_stocks:
+            self.logger.debug('restoring preserved stock values from before parameter change')
+            for stock, stock_value in preserved_stocks.items():
+                self.name_space[stock] = deepcopy(stock_value)
+            # clear preserved stocks to prevent (mistakenly) using them again
+            preserved_stocks.clear()
+        else:
+            for stock, stock_value in self.stock_next_dt_values.items():
+                self.name_space[stock] = deepcopy(stock_value)
 
         # then we need to add delayed auxiliaries as they are implicit stocks
         
         self.logger.debug('clear next_dt value')
         self.stock_next_dt_values.clear()
         self.logger.debug(f'next_dt value: {self.stock_next_dt_values}')
-
         self.logger.debug('populate non-negative temp value with their name_space values')
         for k, v in self.stock_non_negative_temp_value.items():
             self.stock_non_negative_temp_value[k] = deepcopy(self.name_space[k])
@@ -3369,7 +3388,7 @@ class sdmodel(object):
         '''
         time:   simulation time
         dt:     time step
-        pause:  if True, the simulation will pause after the specified time (stop after step 1);
+        pause:  if True, the simulation will pause after the specified time;
                 if time is not specified, the simulation will pause after the last iteration 
         '''
         self.logger.debug(f'Simulation started with specs: {self.sim_specs}')
@@ -3380,8 +3399,8 @@ class sdmodel(object):
         if dt is None:
             dt = self.sim_specs['dt']
 
-        if self.state != 'initialized':
-            self.logger.debug('Simulation state is not initialized, initializing...')
+        if self.state not in ['initialized', 'simulated']:
+            self.logger.debug(f'Simulation state is {self.state}, initializing...')
             self.initialize()
         
         # self.logger.debug("")
@@ -3400,7 +3419,7 @@ class sdmodel(object):
 
         # Calculate end_time and number of iterations to avoid floating-point precision issues
         end_time = self.sim_specs['initial_time'] + self.sim_specs['simulation_time']
-        num_iterations = int(round(self.sim_specs['simulation_time'] / dt))
+        num_iterations = int(round(time / dt))
         
         iteration = 1
         while iteration <= num_iterations:
@@ -3519,7 +3538,7 @@ class sdmodel(object):
         self.solver = Solver(
             sim_specs=self.sim_specs,
             dimension_elements=self.dimension_elements,
-            var_dimension=self.var_dimension,
+            var_dimensions=self.var_dimensions,
             name_space=self.name_space,
             graph_functions=self.graph_functions,
             )

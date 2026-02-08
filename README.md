@@ -2,22 +2,31 @@
 
 ## **Agile System Dynamics Modelling**
 
-ASDM is a Python library that enables users to create and simulate System Dynamics (SD) models. It also supports SD models saved in the XMILE format, including advanced features such as arrays and conveyors. The support is being continuously improved.
+ASDM is a Python library for building and simulating [System Dynamics](https://en.wikipedia.org/wiki/System_dynamics) (SD) models. It supports programmatic model creation, XMILE/`.stmx` import and export, and includes a built-in web simulator. ASDM is suitable for healthcare modelling, policy analysis, and any domain where stock-and-flow models are used.
+
+### **Key Features**
+
+- **Programmatic model building** — create stocks, flows, auxiliaries, and delayed auxiliaries from Python code.
+- **XMILE round-trip** — load `.stmx`/`.xmile` models, modify them, and save back to XMILE format.
+- **Arrays and subscripts** — multi-dimensional variables with element-level or parallel equations.
+- **Conveyors** — conveyor stocks with transit time and leak flows.
+- **Graph functions** — lookup tables with interpolation, modifiable at runtime.
+- **Data import** — feed time-varying or parameter data from CSV files into model variables.
+- **Built-in SD functions** — `DELAY`, `DELAY1`, `DELAY3`, `SMTH1`, `SMTH3`, `PULSE`, `STEP`, `INIT`, `HISTORY`, `NORMAL`, `BINOMIAL`, `LOOKUP`, and more.
+- **Causal Loop Diagrams** — generate CLDs from model structure using NetworkX.
+- **Web simulator** — browser-based interactive simulator with charts and CSV export.
+- **Command-line interface** — run simulations and export results from the terminal.
 
 ### **ASDM's Contribution & Impact**
 
-Check out this presentation: [Project Care Home Demand](https://www.youtube.com/watch?v=tP1X38h8Ks4), given by **Sally Thompson**, Senior Healthcare Analyst at *The Strategy Unit* (part of NHS Midlands and Lancashire CSU). The presentation [highlights](https://www.youtube.com/watch?v=tP1X38h8Ks4&t=492s) the role of ASDM in developing an [**online SD model-based simulator**](https://connect.strategyunitwm.nhs.uk/care-home-demand/).
-
-
-### **Library Structure**
-- `asdm/asdm.py` contains the main functionalities, including the lexer, parser, and interpreter.
-- `asdm/utilities.py` provides a data visualisation tool.
-- `asdm/inference/` consists of tools for model calibration.
-- `asdm/simulator/` provides a **web-based simulation interface** for easy model execution, result downloading, and visualisation.
+Check out this presentation: [Project Care Home Demand](https://www.youtube.com/watch?v=tP1X38h8Ks4), which [highlights](https://www.youtube.com/watch?v=tP1X38h8Ks4&t=492s) the role of ASDM in developing an [online SD model-based simulator](https://connect.strategyunitwm.nhs.uk/care-home-demand/). The presentation is given by **Sally Thompson**, Senior Healthcare Analyst at The Strategy Unit (part of NHS Midlands and Lancashire CSU).
 
 ---
 ## **Installation**
 ### **Install from PyPi**
+
+Requires **Python 3.9** or later.
+
 ```sh
 pip install asdm
 ```
@@ -54,45 +63,71 @@ Export simulation results:
   result = model.export_simulation_result(format='dict')
   ```
 
+Save the model back to XMILE format:
+```python
+model.save_xmile('output_model.stmx')
+```
+
 ---
 
-## **Web-Based Simulation Interface**
-ASDM now includes a **web-based simulation interface** that allows users to:
-- Upload `.stmx` or `.xmile` models for simulation.  
-- Download simulation results as a **CSV file**.  
-- Select variables and visualise them on an **interactive chart**.  
+## **Running Simulations**
 
-![ASDM Simulator](media/asdm_simulator.png)
+Beyond the Python API, ASDM provides two ways to run simulations without writing code:
 
-### **Quick Start**
-Run the ASDM web simulator with:
+### **Web Interface**
+Perfect for exploring models, visualizing results, and quick iterations.
+
+**Launch the simulator:**
 ```sh
 asdm simulator
 ```
-By default, this starts a local server at `http://127.0.0.1:8080`. If port 8080 is unavailable, specify a different port, for example:
-```sh
-asdm simulator --port 8081
-```
-You can also bind to all network interfaces to allow access from others:
-```sh
-asdm simulator --host 0.0.0.0
-```
-Once started, the browser will automatically open the simulator page.
+Opens in your browser at `http://127.0.0.1:8080`. 
 
-You can also provide a model file directly to run it automatically:
+**Run a specific model immediately:**
 ```sh
-asdm simulator path/to/model.stmx
+asdm simulator model.stmx
 ```
-This will launch the simulator and automatically run the specified model, displaying results immediately.
 
-### **Features**
-- **Drag-and-drop file upload**: Upload your `.stmx` or `.xmile` model file.
-- **Simulation results in a table**: Automatically display after the model runs.
-- **CSV download**: You can download simulation results as a CSV file.
-- **Interactive charting**:
-  - Select variables from a dropdown list.
-  - Automatically detects the **time column name** (e.g., "Years", "Months", etc.).
-  - Uses **Plotly.js** to generate interactive line charts.
+**Options:**
+- `--port 8081` — Use a different port
+- `--host 0.0.0.0` — Allow access from other machines
+
+**Features:**
+- Drag-and-drop model upload (`.stmx`, `.xmile`)
+- Interactive charts with variable selection
+- Download results as CSV
+- Auto-detects time units
+
+![ASDM Simulator](media/asdm_simulator.png)
+
+---
+
+### **Command Line**
+Ideal for batch processing, automation, and integrating into pipelines.
+
+**Run a simulation:**
+```sh
+asdm run model.stmx
+```
+Results saved as `model.csv` by default.
+
+**Custom output:**
+```sh
+asdm run model.stmx --output results.csv
+```
+
+**Use in scripts:**
+```sh
+# Process multiple models
+for model in models/*.stmx; do
+  asdm run "$model" --output "results/$(basename $model .stmx).csv"
+done
+```
+
+**Check version:**
+```sh
+asdm --version
+```
 
 ---
 
@@ -117,8 +152,28 @@ Jupyter Notebooks demonstrate ASDM's functionalities:
 - Support for **arrays**.
 - Modify equations and re-run simulations.
 
+### **[Abstract Syntax Tree (AST)](demo/Demo_AST.ipynb)**
+- How ASDM parses model equations into AST structures.
+
 More tutorial notebooks will be added.  
 Feel free to contribute your own via **pull requests**—please ensure they do not contain sensitive data.
+
+---
+
+## **Dependencies**
+
+ASDM relies on the following open-source packages. All use permissive licences compatible with the MIT licence.
+
+| Package | Licence | Purpose |
+|---|---|---|
+| [NumPy](https://numpy.org/) | BSD-3-Clause | Numerical computation |
+| [pandas](https://pandas.pydata.org/) | BSD-3-Clause | Data export and CSV handling |
+| [Matplotlib](https://matplotlib.org/) | PSF-based (BSD-compatible) | Result visualisation |
+| [NetworkX](https://networkx.org/) | BSD-3-Clause | Dependency graphs and CLDs |
+| [lxml](https://lxml.de/) | BSD-3-Clause | XML processing |
+| [Beautiful Soup 4](https://www.crummy.com/software/BeautifulSoup/) | MIT | XMILE parsing |
+| [SciPy](https://scipy.org/) | BSD-3-Clause | Scientific functions |
+| [Flask](https://flask.palletsprojects.com/) | BSD-3-Clause | Web simulator |
 
 ---
 
@@ -129,11 +184,8 @@ ASDM is open-source and released under the **MIT licence**.
 
 ## **Contributors**
 ### **Wang Zhao** (`main author`)
-- Postgraduate research student & research assistant at **University of Strathclyde, UK**.
-- Software engineer at **Newcastle Marine Services, UK**.
-- Speaker at multiple conferences on SD modelling.
-- Contact: [wang.zhao@strath.ac.uk](mailto:wang.zhao@strath.ac.uk); [wzh1895@outlook.com](mailto:wzh1895@outlook.com)
-- Conference talk: [Watch Here on YouTube](https://www.youtube.com/watch?v=I_0YpIKc3yI&t=2321s).
+- Scientific Collaborator at **Swiss Tropical and Public Health Institute, Switzerland**.
+- Contact: [wang.zhao@swisstph.ch](mailto:wang.zhao@swisstph.ch)
 
 ### **Matt Stammers** (`contributor`)
 - Consultant Gastroenterologist & open-source developer at **University Hospital Southampton, UK**.
