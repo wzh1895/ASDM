@@ -3535,15 +3535,30 @@ class sdmodel(object):
         self.full_result = dict()
         self.full_result_flattened = dict()
 
+        # Reset data feeder and custom function registries so batch_parse
+        # re-populates them with fresh names (DATA0, GFUNC0, ...).
+        self.data_feeder_functions = dict()
+        self.data_feeders_renamed = dict()
+        self.custom_functions = dict()
+
+        # Reset DataFeeder time cursors so they can replay from the start.
+        for equations in [self.aux_equations, self.flow_equations]:
+            for var, equation in equations.items():
+                if isinstance(equation, dict):
+                    for v in equation.values():
+                        if isinstance(v, DataFeeder):
+                            v.last_success_time = None
+                elif isinstance(equation, DataFeeder):
+                    equation.last_success_time = None
+
         self.solver = Solver(
             sim_specs=self.sim_specs,
             dimension_elements=self.dimension_elements,
             var_dimensions=self.var_dimensions,
             name_space=self.name_space,
             graph_functions=self.graph_functions,
+            data_feeder_functions=self.data_feeder_functions,
             )
-
-        self.custom_functions = dict()
 
         self.state = 'loaded'
 
