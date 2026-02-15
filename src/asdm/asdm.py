@@ -3134,50 +3134,9 @@ class sdmodel(object):
                     flow_attributes = dg.nodes[var]
                     self.logger.debug(f'    '+'Checking attributes: {flow_attributes}')
                     
-                    if 'considered_for_non_negative_stock' in flow_attributes:
-                        if flow_attributes['considered_for_non_negative_stock'] is True:
-                            flow_to_stock = self.flow_stocks[var]['to']
-                            self.logger.debug(f'    ----considering inflow {var} into non-negative stocks {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
-                            # this is an in_flow to a non-negative stock and this in_flow should be considered before constraining out_flows using that stock
-
-                            # situation 1:
-                            # To prevent a negative inflow from making its "flow-to" stock negative, we need to constrain the inflow
-                            # This only happens if the inflow is a biflow
-                            if self.flow_positivity[var] is False:
-                                if type(self.name_space[var]) is dict:
-                                    for sub, sub_value in self.name_space[var].items():
-                                        if self.stock_non_negative_temp_value[flow_to_stock][sub] + sub_value * self.sim_specs['dt'] < 0:
-                                            self.name_space[var][sub] = self.stock_non_negative_temp_value[flow_to_stock][sub] / self.sim_specs['dt'] *-1 # this outcome is different from some XMILE tools, but it is more reasonable. See AwkwardStockFlow.stmx, stock10
-                                            self.stock_non_negative_temp_value[flow_to_stock][sub] = np.float64(0)
-                                        else:
-                                            self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
-                                elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
-                                    for sub in self.stock_non_negative_temp_value[flow_to_stock]:
-                                        if self.stock_non_negative_temp_value[flow_to_stock][sub] + self.name_space[var] * self.sim_specs['dt'] < 0:
-                                            self.name_space[var] = self.stock_non_negative_temp_value[flow_to_stock][sub] / self.sim_specs['dt'] *-1
-                                            self.stock_non_negative_temp_value[flow_to_stock][sub] = np.float64(0)
-                                        else:
-                                            self.stock_non_negative_temp_value[flow_to_stock][sub] += self.name_space[var] * self.sim_specs['dt']
-                                else:
-                                    if self.stock_non_negative_temp_value[flow_to_stock] + self.name_space[var] * self.sim_specs['dt'] < 0:
-                                        self.name_space[var] = self.stock_non_negative_temp_value[flow_to_stock] / self.sim_specs['dt'] *-1 # this outcome is different from some XMILE tools, but it is more reasonable. See AwkwardStockFlow.stmx, stock10
-                                        self.stock_non_negative_temp_value[flow_to_stock] = np.float64(0)
-                                    else:
-                                        self.stock_non_negative_temp_value[flow_to_stock] += self.name_space[var] * self.sim_specs['dt']
-                            # situation 2:
-                            # Even if the flow is a unidirectional (non-negative) flow, it still can add to the "flow-to" stock's temp value, and this will affect how that stock constrains its out_flows
-                            else:
-                                self.logger.debug(f'    ----Flow {var} is a unidirectional (non-negative flow), adding its value {self.name_space[var]} to the "flow-to" stock {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
-                                if type(self.name_space[var]) is dict:
-                                    for sub, sub_value in self.name_space[var].items():
-                                        self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
-                                elif var in self.var_dimensions and self.var_dimensions[var] is not None: # The variable is subscripted but all elements uses the same equation
-                                    for sub in self.stock_non_negative_temp_value[flow_to_stock]:
-                                        self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
-                                else:
-                                    self.stock_non_negative_temp_value[flow_to_stock] += self.name_space[var] * self.sim_specs['dt']
-                            
-
+                    # ---- STEP 1: Outflow constraining (BEFORE inflow temp update) ----
+                    # Issue #3 fix: constrain outflow first so the post-constraint
+                    # value is used when adding to the destination stock's temp.
                     if 'out_from_non_negative_stock' in flow_attributes:
                         out_from_non_negative_stock = flow_attributes['out_from_non_negative_stock']
                         self.logger.debug('    '+f'----considering outflow {var} out from for non-negative stock {out_from_non_negative_stock} whose name_space value is {self.name_space[var]}')
@@ -3207,6 +3166,49 @@ class sdmodel(object):
                                 self.stock_non_negative_temp_value[out_from_non_negative_stock] = np.float64(0)
                             else:
                                 self.stock_non_negative_temp_value[out_from_non_negative_stock] -= self.name_space[var] * self.sim_specs['dt']
+
+                    # ---- STEP 2: Inflow processing (AFTER outflow constraining) ----
+                    # The flow value is now the CONSTRAINED value (post outflow clamping).
+                    if 'considered_for_non_negative_stock' in flow_attributes:
+                        if flow_attributes['considered_for_non_negative_stock'] is True:
+                            flow_to_stock = self.flow_stocks[var]['to']
+                            no_budget = flow_attributes.get('no_budget', False) or (hasattr(self, 'flow_in_no_budget') and var in self.flow_in_no_budget)
+                            self.logger.debug(f'    ----considering inflow {var} into non-negative stocks {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]} (no_budget={no_budget})')
+
+                            # situation 1: biflow constraining (prevent stock going negative via negative biflow)
+                            if self.flow_positivity[var] is False:
+                                if type(self.name_space[var]) is dict:
+                                    for sub, sub_value in self.name_space[var].items():
+                                        if self.stock_non_negative_temp_value[flow_to_stock][sub] + sub_value * self.sim_specs['dt'] < 0:
+                                            self.name_space[var][sub] = self.stock_non_negative_temp_value[flow_to_stock][sub] / self.sim_specs['dt'] *-1
+                                            self.stock_non_negative_temp_value[flow_to_stock][sub] = np.float64(0)
+                                        elif not no_budget:
+                                            self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
+                                elif var in self.var_dimensions and self.var_dimensions[var] is not None:
+                                    for sub in self.stock_non_negative_temp_value[flow_to_stock]:
+                                        if self.stock_non_negative_temp_value[flow_to_stock][sub] + self.name_space[var] * self.sim_specs['dt'] < 0:
+                                            self.name_space[var] = self.stock_non_negative_temp_value[flow_to_stock][sub] / self.sim_specs['dt'] *-1
+                                            self.stock_non_negative_temp_value[flow_to_stock][sub] = np.float64(0)
+                                        elif not no_budget:
+                                            self.stock_non_negative_temp_value[flow_to_stock][sub] += self.name_space[var] * self.sim_specs['dt']
+                                else:
+                                    if self.stock_non_negative_temp_value[flow_to_stock] + self.name_space[var] * self.sim_specs['dt'] < 0:
+                                        self.name_space[var] = self.stock_non_negative_temp_value[flow_to_stock] / self.sim_specs['dt'] *-1
+                                        self.stock_non_negative_temp_value[flow_to_stock] = np.float64(0)
+                                    elif not no_budget:
+                                        self.stock_non_negative_temp_value[flow_to_stock] += self.name_space[var] * self.sim_specs['dt']
+                            # situation 2: unidirectional flow - add to temp (unless no_budget)
+                            else:
+                                if not no_budget:
+                                    self.logger.debug(f'    ----Flow {var} is a unidirectional (non-negative flow), adding its value {self.name_space[var]} to the "flow-to" stock {flow_to_stock} whose temp value is {self.stock_non_negative_temp_value[flow_to_stock]}')
+                                    if type(self.name_space[var]) is dict:
+                                        for sub, sub_value in self.name_space[var].items():
+                                            self.stock_non_negative_temp_value[flow_to_stock][sub] += sub_value * self.sim_specs['dt']
+                                    elif var in self.var_dimensions and self.var_dimensions[var] is not None:
+                                        for sub in self.stock_non_negative_temp_value[flow_to_stock]:
+                                            self.stock_non_negative_temp_value[flow_to_stock][sub] += self.name_space[var] * self.sim_specs['dt']
+                                    else:
+                                        self.stock_non_negative_temp_value[flow_to_stock] += self.name_space[var] * self.sim_specs['dt']
 
                     self.logger.debug(f'    ----Flow {var} = {self.name_space[var]}')
                 else:
@@ -3858,10 +3860,25 @@ class sdmodel(object):
         self.logger.debug(f'INIT Graph: Nodes (before sanitization): {dg_init.nodes(data=True)}')
         self.logger.debug(f'INIT Graph: Edges (before sanitization): {dg_init.edges(data=True)}')
         
-        # check each non-negative stock for its dependency on inflows and outflows and add to dg_init
+        # ---- Non-negative stock flow constraining setup (INIT) ----
+        # Pre-pass: collect outflows from non-negative stocks for cross-stock detection
+
+        def _is_biflow(flow_name):
+            return self.flow_positivity.get(flow_name, True) is False
+
         for stock, in_out_flows in self.stock_flows.items():
             if self.stock_non_negative[stock] is True:
                 self.logger.debug(f'INIT Graph: Considering non-negative stock {stock}')
+
+                # Issue #2: uni inflows before biflow inflows
+                if 'in' in in_out_flows:
+                    uni_inflows = [f for f in in_out_flows['in'] if not _is_biflow(f) and f in dg_init]
+                    bi_inflows = [f for f in in_out_flows['in'] if _is_biflow(f) and f in dg_init]
+                    for uni in uni_inflows:
+                        for bi in bi_inflows:
+                            if (uni, bi) not in dg_init.edges:
+                                dg_init.add_edge(uni, bi)
+                    
                 if 'out' in in_out_flows:
                     out_flows = in_out_flows['out']
 
@@ -3877,62 +3894,6 @@ class sdmodel(object):
                         else:
                             self.logger.debug(f'INIT Graph: Outflow {out_flow} is not in the graph, skipping it')
 
-                    if 'in' in in_out_flows:
-                        in_flows = in_out_flows['in']
-                        # for each inflow, we need to check if it depends on (i.e., is affected by) any outflow; if yes, we exclude it from outflow constraining.
-                        # Exception: when the inflow is a delayed outflow with an independent initial value; in this case, we do not consider its dependency on the outflow but consider it TRUE as a sanity inflow during initialization.
-                        
-                        in_flow_sanities = {} # sanity: True if the inflow is not explicitly dependent on any outflow
-
-                        for in_flow in in_flows:
-                            if in_flow in dg_init:
-                                self.logger.debug(f'INIT Graph: Inflow {in_flow} is in the graph, examining it...')
-                                # we assume all inflows are sanity at the beginning
-                                in_flow_sanities[in_flow] = True
-                                for out_flow in out_flows:
-                                    if out_flow in dg_init:
-                                        self.logger.debug(f'INIT Graph:     for Inflow {in_flow}, Outflow {out_flow} is in the graph, meaning it is needed during initialization')
-                                        if nx.has_path(dg_init, out_flow, in_flow):
-                                            self.logger.debug(f'INIT Graph:     Inflow {in_flow} explicitly depends on outflow {out_flow}, not a sanity inflow')
-                                            in_flow_sanities[in_flow] = False # if inflow depends on any outflow, it is not a sanity inflow
-                                            # dg_init
-                                            if in_flow in dg_init:
-                                                self.logger.debug(f'INIT Graph:     Inflow {in_flow} is excluded from outflow constraining')
-                                                nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': False}}) # this attribute excludes the inflow from 'how much can flow out'
-                                        else:
-                                            self.logger.debug(f'INIT Graph:     Inflow {in_flow} does not depend on outflow {out_flow} during initialization')
-                                    else:
-                                        self.logger.debug(f'INIT Graph:     for Inflow {in_flow}, Outflow {out_flow} is not in the graph, meaning it is not needed during initialization, skipping it')
-
-                                    if not in_flow_sanities[in_flow]:
-                                        break
-                                if in_flow_sanities[in_flow]:
-                                    # dg_init
-                                    if in_flow in dg_init:
-                                        self.logger.debug(f'INIT Graph: Inflow {in_flow} is included in outflow constraining')
-                                        nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
-                            else:
-                                pass
-
-                        # for inflows without sanity, we need to make them dependent on all outflows, so that they are only calculated after constraining the outflows
-                        for in_flow, sanity in in_flow_sanities.items():
-                            if not sanity:
-                                for out_flow in out_flows:
-                                    # dg_init
-                                    if (out_flow, in_flow) not in dg_init.edges: # avoid overwriting
-                                        dg_init.add_edge(out_flow, in_flow)
-                                        self.logger.debug(f'INIT Graph: Inflow {in_flow} implicitly depends on outflow {out_flow}')
-
-                            else: # for inflow with sanity, we need to make all outflows dependent on it, so that they are calculated before constraining the outflows
-                                for out_flow in out_flows:
-                                    # dg_init
-                                    if (in_flow, out_flow) not in dg_init.edges: # avoid overwriting
-                                        dg_init.add_edge(in_flow, out_flow)
-                                        self.logger.debug(f'INIT Graph: Outflow {out_flow} implicitly depends on inflow {in_flow}')
-                    
-                    else: # no inflow, just determine the prioritisation of outflows
-                        pass
-                
                     # set output priorities
                     # outflow prioritisation
                     # rule 1: first added first
@@ -3964,16 +3925,14 @@ class sdmodel(object):
                     else:
                         self.logger.debug(f"INIT Graph: Stock {stock} has no inflows, skipping")
                 
-                # temporary fix, further validation needed
+                # Exception: when the stock depends on the inflow for initialization; in this case, we consider it FALSE as a sanity inflow during initialization.
+                # This exception comes at the end as it superceedes previous rules
                 if 'in' in in_out_flows:
                     in_flows = in_out_flows['in']
-                    # Exception: when the stock depends on the inflow for initialization; in this case, we consider it FALSE as a sanity inflow during initialization.
                     for in_flow in in_flows:
                         if in_flow in dg_init:
                             if nx.has_path(dg_init, in_flow, stock):
                                 nx.set_node_attributes(dg_init, {in_flow: {'considered_for_non_negative_stock': False}}) # this attribute excludes the inflow from 'how much can flow out'
-                        else:
-                            pass
             else:
                 self.logger.debug(f"INIT Graph: Stock {stock} is not a non-negative stock, skipping")
 
@@ -4024,10 +3983,36 @@ class sdmodel(object):
         self.logger.debug(f'ITER Graph: Nodes (before sanitization): {dg_iter.nodes(data=True)}')
         self.logger.debug(f'ITER Graph: Edges (before sanitization): {dg_iter.edges(data=True)}')
 
-        # check each non-negative stock for dependencies of inflow and outflow and add to dg_iter
+        # ---- Non-negative stock flow constraining setup (ITER) ----
+        # Pre-pass: collect which flows are outflows from non-negative stocks
+        # so we can detect cross-stock flows regardless of stock processing order.
+        _nn_outflow_stocks = {}  # flow_name -> list of stock names it flows out from
+        for stock, in_out_flows in self.stock_flows.items():
+            if self.stock_non_negative[stock] is True:
+                for out_flow in in_out_flows.get('out', []):
+                    _nn_outflow_stocks.setdefault(out_flow, []).append(stock)
+
+        self.flow_in_no_budget = set()  # flows that should skip temp update (delay)
+
+        def _stock_has_biflow_outflow(in_out_flows):
+            return any(_is_biflow(f) for f in in_out_flows.get('out', []))
+
         for stock, in_out_flows in self.stock_flows.items():
             if self.stock_non_negative[stock] is True:
                 self.logger.debug(f'ITER Graph: for non negative stock {stock}')
+
+                # Issue #2: Ensure unidirectional inflows are processed before
+                # biflow inflows for ALL non-negative stocks.
+                if 'in' in in_out_flows:
+                    uni_inflows = [f for f in in_out_flows['in'] if not _is_biflow(f)]
+                    bi_inflows = [f for f in in_out_flows['in'] if _is_biflow(f)]
+                    for uni in uni_inflows:
+                        for bi in bi_inflows:
+                            if uni in dg_iter and bi in dg_iter:
+                                if (uni, bi) not in dg_iter.edges:
+                                    dg_iter.add_edge(uni, bi)
+                                    self.logger.debug(f'ITER Graph: uni inflow {uni} -> biflow inflow {bi} (Issue #2)')
+
                 if 'out' in in_out_flows:
                     out_flows = in_out_flows['out']
 
@@ -4035,38 +4020,62 @@ class sdmodel(object):
                         self.logger.debug(f'ITER Graph: for outflow {out_flow}')
                         nx.set_node_attributes(dg_iter, {out_flow: {'out_from_non_negative_stock': stock}}) # this attribute triggers the constrains in runtime
 
+                    has_biflow_out = _stock_has_biflow_outflow(in_out_flows)
+
                     if 'in' in in_out_flows:
                         in_flows = in_out_flows['in']
-                        # for each inflow, we need to check if it is dependent on (affected by) any outflow; if yes, we exclude it from outflow constraining.
-                        in_flow_sanities = {}
-
+                        # for each inflow, we need to check its sanity; if not, we exclude it from outflow constraining.
                         for in_flow in in_flows:
+                            if in_flow not in dg_iter:
+                                continue
                             self.logger.debug(f'ITER Graph: for inflow {in_flow}')
-                            in_flow_sanities[in_flow] = True
-                            for out_flow in out_flows:
-                                if nx.has_path(dg_iter, out_flow, in_flow):
-                                    in_flow_sanities[in_flow] = False
-                                    nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': False}}) # this attribute excludes the inflow from 'how much can flow out'
-                                if not in_flow_sanities[in_flow]:
-                                    break
-                            if in_flow_sanities[in_flow]:
-                                nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True}}) # this attribute includes the inflow in 'how much can flow out'
-                        
-                        # for inflows without sanity, we need to make them dependent on all outflows, so that they are only calculated after constraining the outflows
-                        for in_flow, sanity in in_flow_sanities.items():
-                            if not sanity:
-                                for out_flow in out_flows:
-                                    if (out_flow, in_flow) not in dg_iter.edges: # avoid overwriting
-                                        dg_iter.add_edge(out_flow, in_flow)
-                                        self.logger.debug(f'ITER Graph: inflow {in_flow} implicitly depends on outflow {out_flow}')
 
-                            else: # for inflow with sanity, we need to make all outflows dependent on it, so that they are calculated before constraining the outflows
-                                for out_flow in out_flows:
+                            # Reason 1: explicit dependency path from outflow to inflow
+                            reason1 = False
+                            for out_flow in out_flows:
+                                if out_flow in dg_iter and nx.has_path(dg_iter, out_flow, in_flow):
+                                    reason1 = True
+                                    break
+
+                            # Reason 2: cross-stock outflow
+                            reason2 = in_flow in _nn_outflow_stocks
+
+                            # Reason 3: biflow delay
+                            reason3 = _is_biflow(in_flow) and has_biflow_out
+
+                            sane_for_edges = not reason1 and not reason2 and not reason3
+
+                            self.logger.debug(f'ITER Graph: inflow {in_flow} sane_edges={sane_for_edges} r1={reason1} r2={reason2} r3={reason3}')
+
+                            # Add edges with cycle guard
+                            for out_flow in out_flows:
+                                if sane_for_edges: # for inflow with sanity, we need to make all outflows dependent on it, so that they are calculated before constraining the outflows
                                     if (in_flow, out_flow) not in dg_iter.edges: # avoid overwriting
                                         dg_iter.add_edge(in_flow, out_flow)
                                         self.logger.debug(f'ITER Graph: outflow {out_flow} implicitly depends on inflow {in_flow}')
+                                else: # for inflows without sanity, we need to make them dependent on all outflows, so that they are only calculated after constraining the outflows
+                                    # Non-sane: outflow before inflow, with cycle guard
+                                    if not nx.has_path(dg_iter, in_flow, out_flow):
+                                        if (out_flow, in_flow) not in dg_iter.edges:
+                                            dg_iter.add_edge(out_flow, in_flow)
+                                            self.logger.debug(f'ITER Graph: inflow {in_flow} implicitly depends on outflow {out_flow}')
 
-                    
+                            # Decide considered_for_non_negative_stock attribute
+                            if reason1 and not reason2 and not reason3:
+                                # Reason 1 only: exclude unless biflow (needs constraining)
+                                if _is_biflow(in_flow):
+                                    nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True, 'no_budget': True}})
+                                    self.flow_in_no_budget.add(in_flow)
+                                else:
+                                    nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': False}})
+                            elif reason3:
+                                # Biflow delay: constrain but skip temp update
+                                nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True, 'no_budget': True}})
+                                self.flow_in_no_budget.add(in_flow)
+                            else:
+                                # Sane or cross-stock (Reason 2): add normally
+                                nx.set_node_attributes(dg_iter, {in_flow: {'considered_for_non_negative_stock': True}})
+
                     else: # no inflow, just determine the prioritisation of outflows
                         pass
                 

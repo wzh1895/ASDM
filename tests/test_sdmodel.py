@@ -1,6 +1,5 @@
 import pytest
 from asdm import sdmodel
-from asdm.utilities import plot_time_series
 
 class GoalGap(sdmodel):
     def __init__(self):
