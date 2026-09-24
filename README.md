@@ -1,3 +1,5 @@
+
+
 # asdm
 
 ## **Agile System Dynamics Modelling**
@@ -21,7 +23,7 @@ Check out this presentation: [Project Care Home Demand](https://www.youtube.com/
 ```sh
 pip install asdm
 ```
-ASDM and its required dependencies will be automatically installed.
+ASDM and its required dependencies will be automatically installed. This package requires Python 3.9 or later.
 
 ---
 
